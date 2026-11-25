@@ -169,7 +169,7 @@ describe('FpsOverlay', () => {
   it('on mobile goes under every drawer and sheet, whose close shares its corner', () => {
     const css = (file: string) => readFileSync(join(process.cwd(), file), 'utf8');
     const zIndex = (source: string, selector: string) => {
-      const escaped = selector.replace(/[.[\]()]/g, '\\$&');
+      const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       const rule = new RegExp(`${escaped}\\s*\\{[^}]*?z-index:\\s*(\\d+)`, 's').exec(source);
       expect(rule, selector).toBeTruthy();
       return Number(rule?.[1]);

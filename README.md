@@ -106,6 +106,7 @@ Without setup the app still starts, but interface art, fonts and models are miss
 | `npm test` | The full Vitest suite |
 | `npm run typecheck` | `tsc -b` |
 | `npm run check` | Biome format and lint (writes fixes) |
+| `npm run check:lockfile` | Checks that every package in `package-lock.json` is a published version from the npm registry with a sha512 integrity hash; CI runs it before installing anything |
 | `npm run check:cache-runtime` | Optional, and takes minutes: runs the simulation and render loaders against the trimmed cache from `npm run setup`, failing on any archive they read that the trim left empty or production cannot decode (`CACHE_RUNTIME_TRIMMED_DIR=dist/osrs-cache` checks a build instead) |
 
 `npm test` passes on a fresh clone without setup: tests that need generated assets skip with a

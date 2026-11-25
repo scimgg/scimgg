@@ -91,7 +91,7 @@ describe('replay practice pointer controls', () => {
   it('wraps the narrow row instead of hiding a label or fixing a width', () => {
     const css = readFileSync(join(process.cwd(), 'src/components/ReplayPractice.css'), 'utf8');
     const rule = (selector: string) =>
-      new RegExp(`${selector.replace(/[.\-[\]()]/g, '\\$&')}\\s*\\{([^}]*)\\}`, 's').exec(css)?.[1] ?? '';
+      new RegExp(`${selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*\\{([^}]*)\\}`, 's').exec(css)?.[1] ?? '';
     expect(rule('.practice-retry-bar__row')).toContain('flex-wrap: wrap');
     expect(rule('.practice-retry-bar__actions')).toContain('flex: 1 1 auto');
     // The compact presentation differs in padding alone; nothing in it may hide a control's

@@ -276,7 +276,8 @@ describe('ZoomHintToast dismissal, wired the way App wires it', () => {
       '',
     );
     const rule = (selector: string) => {
-      const body = new RegExp(`${selector.replace(/[.]/g, '\\.')}\\s*\\{([^}]*)\\}`).exec(css)?.[1] ?? '';
+      const body =
+        new RegExp(`${selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*\\{([^}]*)\\}`).exec(css)?.[1] ?? '';
       const value = (property: string) =>
         new RegExp(`(?:^|;)\\s*${property}:\\s*([^;]+);`).exec(body)?.[1].trim() ?? '';
       return value;

@@ -28,6 +28,21 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
 
+      # Before npm ci, so a lockfile entry pointing at another source fails before npm fetches it.
+      # Bare node, not npm run: npm would also run any pre- and post-scripts in package.json and
+      # read .npmrc settings such as script-shell, all of which a pull request can change.
+      - run: node scripts/check-lockfile.mjs
+
+      # Blocks a pull request that adds or updates a dependency with a known vulnerability.
+      # Development dependencies count too: they run on contributors' machines and in CI.
+      # Licenses are left to `npm run check:licenses`, which holds this project's policy.
+      - if: github.event_name == 'pull_request'
+        uses: actions/dependency-review-action@bbc44d14a204704ccc493733616cd1e93a0321ec # v5.0.1
+        with:
+          fail-on-severity: moderate
+          fail-on-scopes: runtime, development, unknown
+          license-check: false
+
       - run: npm ci
       - run: npm run typecheck
       - run: npx biome ci .

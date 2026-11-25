@@ -129,6 +129,7 @@ synthesizer is an example of the clean-room approach the policy expects:
 
    ```bash
    npm run typecheck
+   npm run check:lockfile          # after changing dependencies
    npm test
    SCIM_REQUIRE_SETUP=1 npm test   # after npm run setup
    npm run build                   # after npm run setup
