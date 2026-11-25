@@ -10,6 +10,9 @@ tick-accurate mechanics and instant resets.
 > fork under **your own name** and [credit Scim.GG in your README](#if-you-build-on-this); the
 > Scim.GG name is not part of the license.
 
+Join the [Scim.GG Discord](https://discord.gg/ScjNrusYeD) for community discussion and help.
+Use [GitHub issues](https://github.com/scimgg/scimgg/issues/new/choose) for bugs and mechanic reports.
+
 ## What is in it
 
 - **Encounters:** Yama phase 3, including the Forfeit Breath, Glyphic Attenuation, Sensory

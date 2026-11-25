@@ -1,5 +1,8 @@
 blank_issues_enabled: false
 contact_links:
+  - name: Community discussion and help
+    url: https://discord.gg/ScjNrusYeD
+    about: Join the Scim.GG Discord. Use the issue forms for bugs and mechanic reports.
   - name: Report a security vulnerability
     url: https://github.com/scimgg/scimgg/security/advisories/new
     about: Report it privately, not in a public issue.
