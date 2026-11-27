@@ -13,10 +13,25 @@ import {
   SOL_NPC_ID,
   WARBAND_BERSERKER_NPC_ID,
 } from '../../../npcs/colosseum/constants';
-import { type ColosseumVisualEvent, colosseumBeamGraphics } from '../../../npcs/colosseum/visualEvents';
+import {
+  COLOSSEUM_SPOT_ANIM_IDS,
+  type ColosseumVisualEvent,
+  colosseumBeamGraphics,
+} from '../../../npcs/colosseum/visualEvents';
 import { ReplayPresentationStateSchema } from '../../../replay/format/presentationFormat';
 import { SeqType } from '../../../rs/config/seqtype/SeqType';
+import { legacySolRecording } from '../../../test/helpers/legacyEncounterRecordings';
 import { validPresentationSample } from '../../../test/helpers/replayFixtures';
+import {
+  activeWindows,
+  installSyntheticSpotAnims,
+  observeScene,
+  replayContextAt,
+  SCENE_OPTIONS,
+  type SceneObservation,
+  syntheticNpcAssets,
+  VIEWPORT,
+} from '../../../test/helpers/sceneObservation';
 import type { RestoredPresentation } from '../../../types/restoredPresentation';
 import type { Coordinate } from '../../../types/simulation';
 import { perfFlags } from '../../../util/PerfFlags';
@@ -29,6 +44,7 @@ import type { FrameClipRef, NpcAnimationSet } from '../../npc/animationTypes';
 import { NpcAnimationController } from '../../npc/NpcAnimationController';
 import { PRIMARY_NPC_ACTOR_ID } from '../../npc/NpcInstanceManager';
 import { ColosseumSceneCompositor, type ColosseumSceneOptions } from '../ColosseumSceneCompositor';
+import { SceneCompositor } from '../SceneCompositor';
 import { createSolHereditSceneBuilder } from '../solHereditSceneBuilder';
 import type { RenderContext } from '../types';
 
@@ -1277,5 +1293,133 @@ describe('Sol melee view rejection', () => {
       enabled ? [[...COLOSSEUM_SPOTANIMS.solMelee], beams] : [],
     );
     expect([...renderer['zeroAreaSkipIds']]).toEqual(enabled ? beams : []);
+  });
+});
+
+/**
+ * Characterization of a recording in the old `colosseum_visual` wire shape (`legacySolRecording`),
+ * drawn by the Sol scene builder. Observed only through the render queue and NPC poses, so this
+ * block is meant to pass unchanged through every commit of the encounter-cue migration.
+ */
+describe('legacy colosseum_visual recording: continuous playback versus direct seek', () => {
+  let recorded: readonly ReplayDisplayFrame[] | undefined;
+  // Built inside the tests: constructing the engine sets the global arena, which `afterEach` resets.
+  const legacyFrames = () => {
+    recorded ??= legacySolRecording().frames;
+    return recorded;
+  };
+  const idleSeqIds = new Set(SOL_HEREDIT_RENDER_CONFIG.preloadNpcTypes?.flatMap(({ idleSeqId }) => idleSeqId ?? []));
+  const built: SceneCompositor[] = [];
+  afterEach(() => {
+    for (const scene of built.splice(0)) scene.dispose();
+  });
+
+  async function legacyScene() {
+    const scene = createSolHereditSceneBuilder();
+    if (!(scene instanceof SceneCompositor)) throw new Error('Expected a scene compositor');
+    built.push(scene);
+    const { loader, animation } = syntheticNpcAssets((id) => (id === SOL_NPC_ID ? 5 : 1));
+    await scene.loadNpc(loader, animation);
+    installSyntheticSpotAnims(scene, COLOSSEUM_SPOT_ANIM_IDS);
+    const context = {
+      speedMultiplier: 1,
+      interaction: { hoveredTile: null, targetTile: null },
+      options: SCENE_OPTIONS,
+    };
+    return (cycle: number, paused = false) =>
+      observeScene(
+        scene,
+        scene.build({ ...context, ...replayContextAt(legacyFrames(), cycle, paused) }, projection, VIEWPORT),
+      );
+  }
+
+  async function continuous(cycle: number, step = 5): Promise<SceneObservation> {
+    const at = await legacyScene();
+    for (let shown = 0; shown < cycle; shown += step) at(shown);
+    return at(cycle);
+  }
+
+  const seek = async (cycle: number) => (await legacyScene())(cycle, true);
+  const cued = ({ poses }: SceneObservation) =>
+    Object.fromEntries(Object.entries(poses).filter(([, pose]) => !idleSeqIds.has(pose.seqId)));
+  const effect = (spotAnimId: number, frame: number, at: [number, number, number]) => ({ spotAnimId, frame, at });
+  const sand = (frames: readonly [number, number, number]) =>
+    frames.map((frame, index) => effect(2698, frame, [28.5 + index, 30.5, 0]));
+
+  it.each([
+    // The shield telegraph, delayed 12 cycles to 42; the sand burst lit at once.
+    { cycle: 45, poses: { [PRIMARY_NPC_ACTOR_ID]: { seqId: 10885, frame: 1 } }, effects: sand([0, 0, 0]) },
+    // Each tile keeps its own ripple delay (0, 2 and 4 cycles).
+    { cycle: 50, poses: { [PRIMARY_NPC_ACTOR_ID]: { seqId: 10885, frame: 2 } }, effects: sand([1, 0, 0]) },
+    {
+      // The graphic attached to Sol rides his rendered center at its own height; the one attached
+      // to an actor that never renders is not drawn at all.
+      cycle: 69,
+      poses: {},
+      effects: [effect(2668, 0, [33.5, 38.5, 0.5]), ...sand([1, 1, 1])],
+    },
+    {
+      cycle: 80,
+      poses: {},
+      effects: [effect(130, 0, [20.5, 20.75, 1.3018]), effect(2668, 0, [33.5, 38.5, 0.5]), ...sand([2, 2, 2])],
+    },
+    {
+      // Each beam's segments and its terminal impact, each on its own delay.
+      cycle: 155,
+      poses: {},
+      effects: [
+        effect(2695, 2, [24.5, 21.5, 1]),
+        effect(2695, 2, [24.5, 22.5, 1]),
+        effect(2696, 2, [23.5, 23.5, 1]),
+        effect(2696, 2, [24.5, 23.5, 1]),
+        effect(2697, 2, [24.5, 23.5, 1]),
+        effect(2697, 2, [25.5, 23.5, 1]),
+      ],
+    },
+  ])('shows the same cues at cycle $cycle whether played or sought', async ({ cycle, poses, effects }) => {
+    for (const observation of [await continuous(cycle), await seek(cycle)]) {
+      expect(cued(observation)).toEqual(poses);
+      expect(observation.effects).toEqual(effects);
+      expect(observation.drawnNpcs).toEqual([PRIMARY_NPC_ACTOR_ID]);
+    }
+  });
+
+  it('starts and ends every flight, graphic and cued clip on the same cycles whether played or sought', async () => {
+    const at = await legacyScene();
+    const played = activeWindows((cycle) => at(cycle), 0, 200, idleSeqIds);
+    // 2667 is attached to an actor that never renders, so it never draws.
+    const effects = {
+      2698: [30, 93],
+      2668: [66, 125],
+      130: [70, 89],
+      131: [90, 149],
+      2695: [93, 158],
+      2696: [93, 158],
+      2697: [99, 158],
+    };
+    const clips = { [`${PRIMARY_NPC_ACTOR_ID}:10885`]: [42, 51] };
+    expect(played).toEqual({ effects, clips });
+    const sought = async (cycle: number) => {
+      const observation = await seek(cycle);
+      return [
+        ...observation.effects.map(({ spotAnimId }) => String(spotAnimId)),
+        ...Object.entries(cued(observation)).map(([actorId, { seqId }]) => `${actorId}:${seqId}`),
+      ];
+    };
+    // 131, on the player, is left to the known baseline failure below.
+    const { 131: _player, ...seekable } = effects;
+    for (const [key, [first, last]] of Object.entries({ ...seekable, ...clips })) {
+      expect(await sought(first - 1), `${key} before ${first}`).not.toContain(key);
+      expect(await sought(first), `${key} at ${first}`).toContain(key);
+      expect(await sought(last), `${key} at ${last}`).toContain(key);
+      expect(await sought(last + 1), `${key} after ${last}`).not.toContain(key);
+    }
+  });
+
+  // Known baseline failure on 49ef532: the first frame after a seek resolves graphics attached to
+  // the player before the player's rendered tile is known that frame, so it hides them; the next
+  // frame shows them. The impact on the player (131, cycles 90-149) is missing from a seek's first frame.
+  it.fails('draws a graphic attached to the player on the first frame of a direct seek', async () => {
+    expect((await seek(95)).effects.map(({ spotAnimId }) => spotAnimId)).toContain(131);
   });
 });

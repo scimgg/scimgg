@@ -28,6 +28,18 @@ import { ModelData } from '../../rs/model/ModelData';
 import { NpcModelLoader } from '../../rs/model/NpcModelLoader';
 import { rgbToHsl } from '../../rs/util/ColorUtil';
 import { zukSnapshot } from '../../test/helpers/encounterSnapshot';
+import { LEGACY_INFERNO, legacyInfernoRecording } from '../../test/helpers/legacyEncounterRecordings';
+import {
+  activeWindows,
+  IDENTITY_PROJECTION,
+  installSyntheticSpotAnims,
+  observeScene,
+  replayContextAt,
+  SCENE_OPTIONS,
+  type SceneObservation,
+  syntheticNpcAssets,
+  VIEWPORT,
+} from '../../test/helpers/sceneObservation';
 import { createZukWaveEncounter } from '../../test/helpers/zukWave';
 import type { RestoredPresentation } from '../../types/restoredPresentation';
 import type { NpcSnapshot, NpcState, SimulationState } from '../../types/simulation';
@@ -41,7 +53,7 @@ import { NpcAnimationController } from '../npc/NpcAnimationController';
 import { PRIMARY_NPC_ACTOR_ID } from '../npc/NpcInstanceManager';
 import { type EncounterRenderConfig, getEncounterRenderConfig } from './encounterRenderConfig';
 import { InfernoSceneCompositor } from './InfernoSceneCompositor';
-import { Z_LAYERS } from './SceneCompositor';
+import { SceneCompositor, Z_LAYERS } from './SceneCompositor';
 import type { RenderContext } from './types';
 import { createZukSceneBuilder } from './zukSceneBuilder';
 
@@ -2591,5 +2603,232 @@ describe('Inferno scene (no primary NPC)', () => {
     expect(waves['isEncounterSpotAnimsLoaded']()).toBe(true);
     waves.dispose();
     zuk.dispose();
+  });
+});
+
+/**
+ * Characterization of a recording in the old `inferno_visual` wire shape (`legacyInfernoRecording`),
+ * drawn by the shipped Inferno scene. Observed only through the render queue and NPC poses, so this
+ * block is meant to pass unchanged through every commit of the encounter-cue migration: continuous
+ * playback and a direct seek must agree with each other and with these values.
+ *
+ * Free-running idle phase is not compared; a seek does not restore it
+ * (docs/architecture/replay-timeline-discontinuity.md, Limits).
+ */
+describe('legacy inferno_visual recording: continuous playback versus direct seek', () => {
+  // Built inside the tests: constructing the engine sets the global arena, which `afterEach` resets.
+  let recorded: readonly ReplayDisplayFrame[] | undefined;
+  const legacyFrames = () => {
+    recorded ??= legacyInfernoRecording().frames;
+    return recorded;
+  };
+  const idleSeqIds = new Set(INFERNO_RENDER_CONFIG.preloadNpcTypes?.flatMap(({ idleSeqId }) => idleSeqId ?? []));
+  const sizes = new Map<number, number>(
+    [LEGACY_INFERNO.nibbler, LEGACY_INFERNO.mager, LEGACY_INFERNO.healer, LEGACY_INFERNO.zuk].map(
+      ({ npcTypeId, size }) => [npcTypeId, size],
+    ),
+  );
+  const scenes: SceneCompositor[] = [];
+  afterEach(() => {
+    for (const scene of scenes.splice(0)) scene.dispose();
+  });
+
+  async function legacyScene() {
+    const scene = createZukSceneBuilder({ encounterRenderConfig: INFERNO_RENDER_CONFIG });
+    if (!(scene instanceof SceneCompositor)) expect.fail('Expected a scene compositor');
+    scenes.push(scene);
+    const { loader, animation } = syntheticNpcAssets((id) => sizes.get(id) ?? 1);
+    await scene.loadNpc(loader, animation);
+    installSyntheticSpotAnims(scene, INFERNO_RENDER_CONFIG.spotAnimIds ?? []);
+    const context = {
+      speedMultiplier: 1,
+      interaction: { hoveredTile: null, targetTile: null },
+      options: SCENE_OPTIONS,
+    };
+    const at = (cycle: number, paused = false) =>
+      observeScene(
+        scene,
+        scene.build({ ...context, ...replayContextAt(legacyFrames(), cycle, paused) }, IDENTITY_PROJECTION, VIEWPORT),
+      );
+    return { scene, context, at };
+  }
+
+  /** Plays from cycle 0 in `step`-cycle frames, landing exactly on `cycle`. */
+  async function continuous(cycle: number, step = 5): Promise<SceneObservation> {
+    const { at } = await legacyScene();
+    for (let shown = 0; shown < cycle; shown += step) at(shown);
+    return at(cycle);
+  }
+
+  async function seek(cycle: number): Promise<SceneObservation> {
+    return (await legacyScene()).at(cycle, true);
+  }
+
+  const cued = ({ poses }: SceneObservation) =>
+    Object.fromEntries(Object.entries(poses).filter(([, pose]) => !idleSeqIds.has(pose.seqId)));
+
+  const effect = (spotAnimId: number, frame: number, at: [number, number, number]) => ({ spotAnimId, frame, at });
+  const standing = ['healer', 'healer-2', 'mager', 'nib'];
+
+  it.each([
+    // Before the nibbler's delayed swing (cycle 50).
+    { cycle: 45, poses: {}, effects: [], drawn: standing },
+    // Its clip four cycles in: the second of its 2/3/5-cycle frames.
+    { cycle: 54, poses: { nib: { seqId: 7574, frame: 1 } }, effects: [], drawn: standing },
+    {
+      // C-8: Zuk rises although his spawn tick is 10. The homing flight left at cycle 60.
+      cycle: 64,
+      poses: { mager: { seqId: 7610, frame: 1 }, zuk: { seqId: 7563, frame: 1 } },
+      effects: [effect(659, 0, [25.5, 25.5, 0]), effect(1375, 0, [31.2333, 31.2333, 0.7792])],
+      drawn: [...standing, 'zuk'],
+    },
+    {
+      // The tracked graphic sits on the nibbler's rendered center, not its recorded [18, 18]. The
+      // pruned healer's corpse plays its death clip; both flights keep their own phase.
+      cycle: 100,
+      poses: { healer: { seqId: 2638, frame: 2 } },
+      effects: [
+        effect(444, 0, [20.5, 20.5, 1.1719]),
+        effect(659, 1, [25.5, 25.5, 0]),
+        effect(660, 1, [26.0245, 29.1421, 1.6784]),
+        effect(1375, 2, [24.3333, 24.3333, 0.5729]),
+      ],
+      drawn: [...standing, 'zuk'],
+    },
+    {
+      // The tile flight's last cycle before its exclusive end at 130.
+      cycle: 129,
+      poses: { healer: { seqId: 2638, frame: 2 } },
+      effects: [effect(444, 1, [20.5, 20.5, 1.1719]), effect(660, 2, [20.6841, 26.5881, 0.1012])],
+      drawn: [...standing, 'zuk'],
+    },
+    {
+      // The never-rendered tracked actor's graphic stands on its recorded fallback's center.
+      cycle: 185,
+      poses: { 'healer-2': { seqId: 2638, frame: 2 } },
+      effects: [effect(448, 0, [23, 27, 2])],
+      drawn: ['healer-2', 'mager', 'nib', 'zuk'],
+    },
+    // The type clear on tick 8 removed the pruned corpse before its clip ended.
+    { cycle: 255, poses: {}, effects: [], drawn: ['mager', 'nib', 'zuk'] },
+  ])('shows the same cues at cycle $cycle whether played or sought', async ({ cycle, poses, effects, drawn }) => {
+    for (const observation of [await continuous(cycle), await seek(cycle)]) {
+      expect(cued(observation)).toEqual(poses);
+      expect(observation.effects).toEqual(effects);
+      expect(observation.drawnNpcs).toEqual(drawn);
+    }
+  });
+
+  it('starts and ends every flight, graphic and cued clip on the same cycles whether played or sought', async () => {
+    const { at } = await legacyScene();
+    const played = activeWindows((cycle) => at(cycle), 0, 270, idleSeqIds);
+    const effects = { 1375: [60, 119], 659: [63, 122], 660: [70, 129], 444: [90, 149], 448: [180, 239] };
+    // Zuk's rise plays from the intro's add at C-8 (tick 2), although his spawn tick is C.
+    const clips = { 'nib:7574': [50, 59], 'mager:7610': [60, 69], 'zuk:7563': [60, 69] };
+    expect(played.effects).toEqual(effects);
+    expect(played.clips).toMatchObject(clips);
+    const sought = async (cycle: number) => {
+      const observation = await seek(cycle);
+      return [
+        ...observation.effects.map(({ spotAnimId }) => String(spotAnimId)),
+        ...Object.entries(cued(observation)).map(([actorId, { seqId }]) => `${actorId}:${seqId}`),
+      ];
+    };
+    for (const [key, [first, last]] of Object.entries({ ...effects, ...clips })) {
+      expect(await sought(first - 1), `${key} before ${first}`).not.toContain(key);
+      expect(await sought(first), `${key} at ${first}`).toContain(key);
+      expect(await sought(last), `${key} at ${last}`).toContain(key);
+      expect(await sought(last + 1), `${key} after ${last}`).not.toContain(key);
+    }
+  });
+
+  it('keeps a pruned corpse to the end of its death clip on a seek, and drops it at a type clear', async () => {
+    const shows = async (cycle: number, actorId: string) => (await seek(cycle)).poses[actorId]?.seqId === 2638;
+    // `healer` dies on tick 3 (cycle 90) and is pruned on tick 4; its corpse lasts 90 cycles.
+    expect(await Promise.all([89, 90, 179, 180].map((cycle) => shows(cycle, 'healer')))).toEqual([
+      false,
+      true,
+      true,
+      false,
+    ]);
+    // `healer-2` dies on tick 6, is pruned on tick 7, and its type is cleared on tick 8.
+    expect(await Promise.all([179, 180, 239, 240].map((cycle) => shows(cycle, 'healer-2')))).toEqual([
+      false,
+      true,
+      true,
+      false,
+    ]);
+    const { at } = await legacyScene();
+    expect(activeWindows((cycle) => at(cycle), 0, 270, idleSeqIds).clips['healer-2:2638']).toEqual([180, 239]);
+  });
+
+  // Known baseline failure on 49ef532: played one cycle per frame, the pruned corpse ends at 178,
+  // one frame before a seek ends it (179), because the death timer is credited the frame's delta
+  // from before the death. Larger frame steps end it earlier still. Not caused by cue playback.
+  it.fails('ends a pruned corpse on the same cycle whether played or sought', async () => {
+    const { at } = await legacyScene();
+    expect(activeWindows((cycle) => at(cycle), 0, 270, idleSeqIds).clips['healer:2638']).toEqual([90, 179]);
+  });
+
+  it('hands in-flight and not-yet-started cues to live play at a takeover exactly as replay shows them', async () => {
+    // Restored from tick 2's end (cycle 90): both flights are airborne, the tile spark is landing, the
+    // tracked graphic starts this cycle and the fallback graphic is still 90 cycles away.
+    const tick = 2;
+    const engine = new SimulationEngine({ encounter: createZukWaveEncounter(1), combatSeed: 1 });
+    const restoration: RestoredPresentation = {
+      engine,
+      tick,
+      timeMs: (tick + 1) * 600,
+      history: { frames: legacyFrames().slice(0, tick + 1), throughFrameIndex: tick },
+    };
+    const restored = await legacyScene();
+    const replay = await legacyScene();
+    const restoredAt = (cycle: number, paused: boolean) => {
+      const frame = legacyFrames()[Math.floor(cycle / 30)];
+      if (!frame) expect.fail(`No frame for cycle ${cycle}`);
+      return observeScene(
+        restored.scene,
+        restored.scene.build(
+          {
+            ...restored.context,
+            simulationState: frame.state,
+            events: frame.events,
+            interpolatedTick: cycle / 30,
+            restoredPresentation: restoration,
+            frameDeltaMs: paused ? 0 : 20,
+            timeline: { timelineKey: 'restored-inferno', paused, timeMs: cycle * 20 },
+          },
+          IDENTITY_PROJECTION,
+          VIEWPORT,
+        ),
+      );
+    };
+    const frame = legacyFrames()[tick];
+    if (!frame) expect.fail('Missing the restored frame');
+    for (let held = 0; held < 3; held++)
+      observeScene(
+        restored.scene,
+        restored.scene.build(
+          {
+            ...restored.context,
+            simulationState: frame.state,
+            events: frame.events,
+            interpolatedTick: tick + 1,
+            restoredPresentation: restoration,
+            frameDeltaMs: 0,
+            timeline: { timelineKey: 'restored-inferno', paused: true, timeMs: restoration.timeMs },
+          },
+          IDENTITY_PROJECTION,
+          VIEWPORT,
+        ),
+      );
+    for (let cycle = 0; cycle <= 90; cycle++) replay.at(cycle);
+    let sawPending = false;
+    for (let cycle = 91; cycle <= 270; cycle++) {
+      const live = restoredAt(cycle, false);
+      expect(live.effects, `cycle ${cycle}`).toEqual(replay.at(cycle).effects);
+      sawPending ||= live.effects.some(({ spotAnimId }) => spotAnimId === 448);
+    }
+    expect(sawPending).toBe(true);
   });
 });

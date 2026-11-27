@@ -191,6 +191,36 @@ describe('ReplayEffectIndex', () => {
     expect(active.at(-1)?.id).toBe('inferno-1-graphic-129999');
   });
 
+  // Known baseline failure on 49ef532. The test above passes only because Vitest's worker threads
+  // have 4 MiB stacks: `activeGraphics` still spreads a whole stream into `push`
+  // (infernoReplayIndex.ts:79), which throws RangeError near 125k arguments on a 1 MiB main-thread
+  // stack (Node's default, and a browser page's). Both tests move to the shared cue index with it.
+  it.fails('collects a large active Inferno graphic stream without passing it as call arguments', () => {
+    const graphics = Array.from({ length: 130_000 }, () => ({
+      spotAnimId: 659,
+      target: { kind: 'tile', position: [1, 1] },
+      delayCycles: 0,
+      height: 0,
+    }));
+    const index = new ReplayEffectIndex([
+      frame(0, [{ type: 'inferno_visual', eventId: 1, tick: 0, animations: [], projectiles: [], graphics }]),
+    ]);
+    // A plain wrapper rather than a spy: a spy's own argument copies overflow even a worker's stack.
+    const push = Array.prototype.push;
+    let widest = 0;
+    Array.prototype.push = function (this: unknown[], ...items: unknown[]) {
+      widest = Math.max(widest, items.length);
+      return push.apply(this, items);
+    };
+    try {
+      index.inferno.activeGraphics({ cycle: 0, throughFrameIndex: 0 }, () => 30);
+    } finally {
+      Array.prototype.push = push;
+    }
+
+    expect(widest).toBeLessThan(graphics.length);
+  });
+
   it.each(
     [
       { spellId: 'Wind Strike', projectileId: 91, castSpotanim: 90, hitSpotanim: 92 },

@@ -7,6 +7,15 @@ import type { ReplayCaptureTrack } from '../../replay/format/capture';
 import { MAX_REPLAY_FRAME_TIMING_MS } from '../../replay/format/limits';
 import { ReplayPresentationStateSchema } from '../../replay/format/presentationFormat';
 import { yamaSnapshot } from '../../test/helpers/encounterSnapshot';
+import {
+  LEGACY_INFERNO_EVENTS,
+  LEGACY_SOL_EVENTS,
+  LEGACY_YAMA,
+  LEGACY_YAMA_EVENTS,
+  legacyInfernoRecording,
+  legacySolRecording,
+  legacyYamaRecording,
+} from '../../test/helpers/legacyEncounterRecordings';
 import { compactReplayCursorSamples } from '../../test/helpers/replayCursorCompaction';
 import { validPresentationSample } from '../../test/helpers/replayFixtures';
 import { createEmptyCombatSupplies } from '../../types/encounterLoadout';
@@ -28,6 +37,7 @@ import {
 import { BackgroundClock } from '../../util/BackgroundClock';
 import type { GameFrameRect } from '../../util/viewportBounds';
 import type { ActorId } from '../actors/types';
+import { isYamaSnapshot } from '../encounters/snapshot';
 import type { GameEvent } from '../events/types';
 import {
   DEFAULT_REPLAY_UI_STATE,
@@ -2668,5 +2678,54 @@ describe('ReplayRecorder finalizeUnadvancedStart', () => {
     for (const recorder of [advanced, forked, loaded, withRunConfig]) {
       expect(recorder.getFrame(0)?.state.playerPosition).toEqual(START);
     }
+  });
+});
+
+/**
+ * The intake of recordings in the 49ef532 encounter visual-event shapes. These hold whether `load`
+ * passes the old events through or converts them: every batch keeps its identity, tick and frame,
+ * Yama's semantic events are untouched, and the caller's data is never rewritten. Meant to pass
+ * unchanged through the encounter-cue migration.
+ */
+describe('ReplayRecorder legacy encounter recordings', () => {
+  const identities = (frames: readonly { readonly events: readonly GameEvent[] }[]) =>
+    frames.map(({ events }) => events.map(({ eventId, tick }) => [eventId, tick]));
+
+  it.each([
+    ['Inferno', legacyInfernoRecording],
+    ['Sol Heredit', legacySolRecording],
+    ['Yama', legacyYamaRecording],
+  ] as const)('publishes every %s batch on its own frame with its id and tick', (_, record) => {
+    const { data, frames } = record();
+    const written = structuredClone(data.frames.map(({ events }) => events));
+
+    expect(frames).toHaveLength(data.frames.length);
+    expect(frames.map(({ state }) => state.currentTick)).toEqual(data.frames.map(({ tick }) => tick));
+    expect(identities(frames)).toEqual(identities(data.frames));
+    expect(data.frames.map(({ events }) => events)).toEqual(written);
+  });
+
+  it('publishes the old inferno_visual and colosseum_visual batches where they were written', () => {
+    expect(identities(legacyInfernoRecording().frames).flat()).toEqual([
+      [LEGACY_INFERNO_EVENTS.delayedClip.eventId, 1],
+      [LEGACY_INFERNO_EVENTS.zukRise.eventId, 2],
+      [LEGACY_INFERNO_EVENTS.barrage.eventId, 2],
+      [LEGACY_INFERNO_EVENTS.clearMinions.eventId, 8],
+    ]);
+    expect(identities(legacySolRecording().frames).flat()).toEqual([
+      [LEGACY_SOL_EVENTS.telegraph.eventId, 1],
+      [LEGACY_SOL_EVENTS.attached.eventId, 2],
+      [LEGACY_SOL_EVENTS.beams.eventId, 3],
+    ]);
+  });
+
+  it("leaves Yama's semantic events and attack snapshot exactly as recorded", () => {
+    const { frames } = legacyYamaRecording();
+
+    expect(frames[LEGACY_YAMA.magicTick]?.events).toEqual([LEGACY_YAMA_EVENTS.magic, LEGACY_YAMA_EVENTS.fireballs]);
+    expect(frames[LEGACY_YAMA.magicTick + 1]?.events).toEqual([LEGACY_YAMA_EVENTS.wave]);
+    const melee = frames[LEGACY_YAMA.meleeTick]?.state.encounter;
+    if (!melee || !isYamaSnapshot(melee)) expect.fail('Expected a Yama snapshot');
+    expect([melee.state.lastAttackTick, melee.state.lastAttackKind]).toEqual([LEGACY_YAMA.meleeTick, 'melee_crush']);
   });
 });
