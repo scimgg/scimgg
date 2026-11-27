@@ -12,6 +12,7 @@ import {
   setResolvedArenaConfig,
 } from '../../../core/constants';
 import { VENOM_THRESHOLD } from '../../../core/poison';
+import { mulberry32 } from '../../../core/rng';
 import { SimulationEngine } from '../../../core/SimulationEngine';
 import type { WorldState } from '../../../core/WorldState';
 import { isInfernoVisualEvent } from '../../../npcs/inferno/visualEvents';
@@ -29,6 +30,7 @@ import {
   ZULRAH_RANGED_SPOTANIM_ID,
   ZULRAH_SNAKELING_ORB_SPOTANIM_ID,
   ZULRAH_TAIL,
+  zulrahCloudOrbLandTicks,
 } from '../../../npcs/zulrah/constants';
 import { snakelingDefinition } from '../../../npcs/zulrah/snakeling';
 import { getZulrahState, isInTailArea, isTailSafeTile, zulrahDefinition } from '../../../npcs/zulrah/zulrah';
@@ -38,10 +40,19 @@ import { enqueueEnginePendingHit } from '../../../test/helpers/pendingHits';
 import { createEmptyStats } from '../../../types/equipmentStats';
 import { parseInventoryFromSetup } from '../../../types/inventory';
 import { type Coordinate, type MechanicsConfig, PrayerType } from '../../../types/simulation';
-import { pickCloudSites, ZULRAH_CLOUD_FILL_ORDER, ZULRAH_CLOUD_SITES } from '../clouds';
+import {
+  cloudCenter,
+  isInCloud,
+  randomCloudBarrage,
+  ZULRAH_CLOUD_FILL,
+  ZULRAH_CLOUD_SEQUENCES,
+  ZULRAH_CLOUD_SITES,
+  zulrahCloudSequence,
+} from '../clouds';
 import { zulrahIslandTiles } from '../constants';
 import {
   ZULRAH_OPENING_PAUSE_TICKS,
+  ZULRAH_OPENING_POSITION,
   ZULRAH_OPENING_RISE_TICKS,
   ZULRAH_ROTATION_NUMBERS,
   ZULRAH_ROTATIONS,
@@ -49,9 +60,12 @@ import {
   ZULRAH_SURFACE_PAUSE_TICKS,
   ZULRAH_UNDERWATER_TICKS,
 } from '../rotation';
+import { randomSnakelingSite, ZULRAH_SNAKELING_SITES, zulrahSnakelingSequence } from '../snakelingOrbs';
 import { ZULRAH_ACTOR_ID, ZULRAH_PLAYER_START, ZulrahEncounter } from '../ZulrahEncounter';
 import { ZulrahSceneObjectController } from '../ZulrahSceneObjectController';
 import {
+  ZULRAH_CAPTURE_CLOUD_SEQUENCES,
+  ZULRAH_CAPTURE_CLOUD_SITES,
   ZULRAH_CAPTURE_EMERGE_FACING_TILE,
   ZULRAH_CAPTURE_EXTRA_PHASE,
   ZULRAH_CAPTURE_FIRST_ATTACKABLE,
@@ -59,6 +73,7 @@ import {
   ZULRAH_CAPTURE_SIGHT,
   ZULRAH_CAPTURE_SIGHT_GIVE_UP,
   ZULRAH_CAPTURE_SIGHT_RESUME,
+  ZULRAH_CAPTURE_SNAKELING_SEQUENCES,
   ZULRAH_CAPTURE_TAIL_STUN,
 } from './fixtures/zulrahCapture';
 
@@ -255,8 +270,8 @@ describe('ZulrahEncounter', () => {
     };
     while (stateOf(run).phaseIndex === 0 && clouds().length === 0) run.tick();
     const firstLand = Math.min(...clouds().map((cloud) => cloud.landTick));
-    // The spit comes at rise + pause; its clouds land ZULRAH_CLOUD.flightTicks later.
-    expect(firstLand - ZULRAH_CLOUD.flightTicks - risen).toBe(ZULRAH_OPENING_RISE_TICKS + ZULRAH_OPENING_PAUSE_TICKS);
+    // The spit comes at rise + pause; its first cloud lands as the first orb does.
+    expect(firstLand - zulrahCloudOrbLandTicks(0) - risen).toBe(ZULRAH_OPENING_RISE_TICKS + ZULRAH_OPENING_PAUSE_TICKS);
   });
 
   it('makes every listed attack in a ranged phase, all ranged', () => {
@@ -592,14 +607,16 @@ describe('Zulrah venom clouds', () => {
     return snapshot.kind === 'zulrah' ? snapshot.visuals.clouds : [];
   };
 
-  it('fills the island through the opening phase, base first and the arms last', () => {
-    const run = startRun(6);
+  it.each(ZULRAH_ROTATION_NUMBERS)('opens rotation %i on the captured fill', (rotation) => {
+    const opening = ZULRAH_CAPTURE_CLOUD_SEQUENCES.find((s) => s.index === 0);
+    if (!opening) throw new Error('No captured opening');
+    const run = startRun(6, { zulrahRotation: String(rotation) as '1' | '2' | '3' | '4' });
     runToPhase(run, 1);
     const centers = visualClouds(run)
       .slice()
       .sort((a, b) => a.landTick - b.landTick)
       .map((cloud) => [cloud.center[0], cloud.center[1]]);
-    expect(centers).toEqual(ZULRAH_CLOUD_FILL_ORDER.map((site) => [site[0], site[1]]));
+    expect(centers).toEqual(opening.barrages.flat().map(cloudCenter));
   });
 
   it('deals 1-5 a tick to a player standing in one, and nothing with clouds off', () => {
@@ -655,22 +672,102 @@ describe('Zulrah venom clouds', () => {
 });
 
 describe('Zulrah cloud sites', () => {
-  it('leave both arm tips clear', () => {
-    for (const site of ZULRAH_CLOUD_SITES) {
-      for (const tip of [
-        [23, 69],
-        [33, 69],
-      ] as const) {
-        expect(Math.max(Math.abs(site[0] - tip[0]), Math.abs(site[1] - tip[1]))).toBeGreaterThan(ZULRAH_CLOUD.radius);
-      }
-    }
+  const siteIndex = (site: readonly number[]) =>
+    ZULRAH_CLOUD_SITES.findIndex((s) => s[0] === site[0] && s[1] === site[1]);
+  const covers = (site: Coordinate, tile: Coordinate) =>
+    isInCloud(tile, { center: cloudCenter(site), landTick: 0, expireTick: 1 }, 0);
+
+  it('are the captured sites, around the U from the west arm tip, each barrage at most two steps apart', () => {
+    expect(ZULRAH_CLOUD_SITES).toEqual(ZULRAH_CAPTURE_CLOUD_SITES);
+    const steps = [
+      ...ZULRAH_CAPTURE_CLOUD_SEQUENCES.flatMap((s) => s.barrages),
+      ...ZULRAH_CAPTURE_EXTRA_PHASE.barrages,
+    ].map(([a, b]) => Math.abs(siteIndex(a) - siteIndex(b)));
+    expect(steps.filter((step) => step === 1).length).toBeGreaterThan(0);
+    expect(steps.filter((step) => step === 2).length).toBeGreaterThan(0);
+    expect(steps.every((step) => step === 1 || step === 2)).toBe(true);
   });
 
-  it('pick distinct sites, the nearest to the player first', () => {
-    const sites = pickCloudSites([33, 65], () => 0.5);
-    expect(sites).toHaveLength(ZULRAH_CLOUD.perBarrage);
-    expect(sites[0]).toEqual([33, 65]);
-    expect(new Set(sites.map(String)).size).toBe(sites.length);
+  it("repeat rotation 2's captured sequences in capture 4, and its last phase is the captured fill", () => {
+    const capture4 = ZULRAH_CAPTURE_CLOUD_SEQUENCES.filter((s) => s.capture === 4);
+    expect(capture4.map((s) => s.index)).toEqual([3, 4, 7, 8, 10]);
+    for (const { index, barrages } of capture4) {
+      const capture2 = ZULRAH_CAPTURE_CLOUD_SEQUENCES.find((s) => s.capture === 2 && s.index === index);
+      expect(barrages, `phase ${index}`).toEqual(index === 10 ? ZULRAH_CLOUD_FILL : capture2?.barrages);
+    }
+    const orbs4 = ZULRAH_CAPTURE_SNAKELING_SEQUENCES.filter((s) => s.capture === 4 && !s.partial);
+    expect(orbs4.map((s) => s.index)).toEqual([4, 7]);
+    for (const { index, sites } of orbs4)
+      expect(sites).toEqual(
+        ZULRAH_CAPTURE_SNAKELING_SEQUENCES.find((s) => s.capture === 2 && s.index === index)?.sites,
+      );
+    expect(ZULRAH_CLOUD_SEQUENCES[2]?.[10]).toBe(ZULRAH_CLOUD_FILL);
+  });
+
+  it('fill without covering the arm tips', () => {
+    const tips: Coordinate[] = [
+      [24, 70],
+      [32, 70],
+    ];
+    for (const site of ZULRAH_CLOUD_FILL.flat())
+      for (const tip of tips) expect(covers(site, tip), `${site}`).toBe(false);
+    // The fill never uses the east arm's tip site, the one that would cover (32, 70).
+    expect(covers([32, 69], [32, 70])).toBe(true);
+  });
+
+  it('use the captured sequence, then the fill for the opening and each last phase, else none', () => {
+    for (const { rotation, index, barrages, partial } of ZULRAH_CAPTURE_CLOUD_SEQUENCES) {
+      const sequence = zulrahCloudSequence(index === 0 ? ZULRAH_OPENING_POSITION : { rotation, index });
+      expect(partial ? sequence?.slice(0, barrages.length) : sequence).toEqual(barrages);
+    }
+    for (const rotation of ZULRAH_ROTATION_NUMBERS) {
+      const phases = ZULRAH_ROTATIONS[rotation];
+      expect(zulrahCloudSequence({ rotation, index: phases.length - 1 })).toEqual(ZULRAH_CLOUD_FILL);
+      phases.forEach((phase, index) => {
+        const sequence = zulrahCloudSequence(index === 0 ? ZULRAH_OPENING_POSITION : { rotation, index });
+        const barrages = [...(phase.before ?? []), ...(phase.after ?? [])].filter((s) => s === 'cloud').length;
+        // Each sequence covers its phase's barrages exactly.
+        if (sequence) expect(sequence, `rotation ${rotation} phase ${index}`).toHaveLength(barrages);
+      });
+    }
+    // Rotation 1's blue south and jad west, like rotation 2's, stay on the fallback until captured.
+    expect(zulrahCloudSequence({ rotation: 1, index: 7 })).toBeNull();
+    expect(zulrahCloudSequence({ rotation: 1, index: 8 })).toBeNull();
+  });
+
+  it('fall back to a random pair at most two steps apart on the U, either orb first, the same for the same seed', () => {
+    const draw = (seed: number) => {
+      const random = mulberry32(seed);
+      return Array.from({ length: 400 }, () => randomCloudBarrage(random));
+    };
+    const barrages = draw(7);
+    expect(draw(7)).toEqual(barrages);
+    expect(draw(8)).not.toEqual(barrages);
+    const pairs = new Set<string>();
+    let westFirst = 0;
+    for (const [a, b] of barrages) {
+      expect(siteIndex(a)).toBeGreaterThanOrEqual(0);
+      expect(siteIndex(b)).toBeGreaterThanOrEqual(0);
+      expect([1, 2]).toContain(Math.abs(siteIndex(a) - siteIndex(b)));
+      pairs.add(`${Math.min(siteIndex(a), siteIndex(b))}-${Math.max(siteIndex(a), siteIndex(b))}`);
+      if (siteIndex(a) < siteIndex(b)) westFirst += 1;
+    }
+    // The 8 neighboring pairs and the 7 one site apart.
+    expect(pairs.size).toBe(15);
+    expect(westFirst).toBeGreaterThan(0);
+    expect(westFirst).toBeLessThan(barrages.length);
+  });
+
+  it('fall back the same way in the same seeded run (rotation 1, phase 3)', () => {
+    const barrages = (seed: number) => {
+      const run = startRun(seed);
+      runToPhase(run, 4);
+      const snapshot = run.engine.getEncounterSnapshot();
+      return snapshot.kind === 'zulrah' ? snapshot.visuals.clouds.map((c) => c.center) : [];
+    };
+    const first = barrages(21);
+    expect(first.length).toBeGreaterThan(0);
+    expect(barrages(21)).toEqual(first);
   });
 });
 
@@ -817,19 +914,80 @@ describe('Zulrah snakelings', () => {
     return run;
   }
 
-  it('spits 4 orbs that land as snakelings 1-3 tiles from the player', () => {
-    const run = runToFirstSnakelings(8);
-    const spawned = snakelings(run);
-    expect(spawned).toHaveLength(4);
-    for (const snakeling of spawned) {
-      const distance = Math.max(
-        Math.abs(snakeling.position[0] - ZULRAH_PLAYER_START[0]),
-        Math.abs(snakeling.position[1] - ZULRAH_PLAYER_START[1]),
-      );
-      expect(distance).toBeLessThanOrEqual(SNAKELING.landingMaxDistance + 1);
-      expect([SNAKELING_MELEE_NPC_ID, SNAKELING_MAGIC_NPC_ID]).toContain(snakeling.npcTypeId);
-      expect(snakeling.vitals).toEqual({ hp: 1, maxHp: 1 });
+  it('spits 4 orbs that land as snakelings on 4 different sites (an uncaptured phase)', () => {
+    expect(zulrahSnakelingSequence({ rotation: 4, index: 1 })).toBeNull();
+    for (let seed = 8; seed < 14; seed++) {
+      const run = startRun(seed, { zulrahRotation: '4', zulrahClouds: false });
+      runToPhase(run, 1);
+      // Each one's tile as it lands, before it moves.
+      const landed = new Map<string, Coordinate>();
+      for (let i = 0; i < 40 && landed.size < 4; i++) {
+        run.tick();
+        for (const s of snakelings(run)) if (!landed.has(s.id)) landed.set(s.id, [s.position[0], s.position[1]]);
+      }
+      const spawned = snakelings(run);
+      expect(spawned).toHaveLength(4);
+      for (const snakeling of spawned) {
+        expect(ZULRAH_SNAKELING_SITES).toContainEqual(landed.get(snakeling.id));
+        expect([SNAKELING_MELEE_NPC_ID, SNAKELING_MAGIC_NPC_ID]).toContain(snakeling.npcTypeId);
+        expect(snakeling.vitals).toEqual({ hp: 1, maxHp: 1 });
+      }
+      expect(new Set([...landed.values()].map(String)).size, `seed ${seed}`).toBe(4);
     }
+  });
+
+  it("lands only on the nine cloud sites' centers, as every captured orb did", () => {
+    expect(ZULRAH_SNAKELING_SITES).toEqual(ZULRAH_CLOUD_SITES.map(cloudCenter));
+    for (const { sites } of ZULRAH_CAPTURE_SNAKELING_SEQUENCES)
+      for (const site of sites) expect(ZULRAH_SNAKELING_SITES).toContainEqual(site);
+  });
+
+  it('use the captured sequence of each fully captured phase, and no site twice in one', () => {
+    for (const { rotation, index, sites, partial } of ZULRAH_CAPTURE_SNAKELING_SEQUENCES) {
+      const sequence = zulrahSnakelingSequence({ rotation, index });
+      if (partial) {
+        // Rotation 3 phase 2's earlier round agrees with its full capture; rotation 4 phase 3 stays on the fallback.
+        if (sequence) expect(sequence.slice(-sites.length)).toEqual(sites);
+        continue;
+      }
+      expect(sequence, `rotation ${rotation} phase ${index}`).toEqual(sites);
+      expect(new Set(sites.map(String)).size).toBe(sites.length);
+    }
+    expect(zulrahSnakelingSequence({ rotation: 4, index: 3 })).toBeNull();
+    for (const rotation of ZULRAH_ROTATION_NUMBERS) {
+      ZULRAH_ROTATIONS[rotation].forEach((phase, index) => {
+        const orbs = [...(phase.before ?? []), ...(phase.after ?? [])].filter((s) => s === 'snakeling').length;
+        const sequence = zulrahSnakelingSequence({ rotation, index });
+        if (sequence) expect(sequence, `rotation ${rotation} phase ${index}`).toHaveLength(orbs);
+      });
+    }
+  });
+
+  it('falls back to a seeded random site the phase has not used yet', () => {
+    const draw = (seed: number) => {
+      const random = mulberry32(seed);
+      const used: Coordinate[] = [];
+      for (let i = 0; i < ZULRAH_SNAKELING_SITES.length; i++) used.push(randomSnakelingSite(random, used));
+      return used;
+    };
+    const sites = draw(3);
+    expect(draw(3)).toEqual(sites);
+    expect(draw(4)).not.toEqual(sites);
+    expect(new Set(sites.map(String)).size).toBe(ZULRAH_SNAKELING_SITES.length);
+  });
+
+  it('walks a snakeling off (33, 70), a site the island leaves out, as in the capture', () => {
+    expect(zulrahIslandTiles().has('33,70')).toBe(false);
+    const run = startRun(8, { zulrahRotation: '4', zulrahClouds: false, zulrahAttacks: false });
+    runToPhase(run, 6); // Green south: its last orb lands on (33, 70).
+    let snakeling: NpcActor | undefined;
+    for (let i = 0; i < 60 && !snakeling; i++) {
+      run.tick();
+      snakeling = snakelings(run).find((s) => s.position[0] === 33 && s.position[1] === 70);
+    }
+    if (!snakeling) throw new Error('No snakeling on (33, 70)');
+    for (let i = 0; i < 10; i++) run.tick();
+    expect(snakeling.position).not.toEqual([33, 70]);
   });
 
   it('draws both styles across runs', () => {
@@ -1250,6 +1408,19 @@ describe('Zulrah line of sight, against private gameplay captures', () => {
     const resumed = styles(300);
     expect(resumed.length).toBeGreaterThan(10);
     expect(styles(0).filter((made) => Number(made.split(':')[0]) > 300)).toEqual(resumed);
+  });
+
+  it('waits for sight and gives up on the same ticks with attacks off, the player behind a pillar for part of a phase', () => {
+    // Green east: seen from (24, 64) for its first two attacks, then hidden on (24, 63) until it gives up.
+    const tileFor = (zulrah: NpcActor): Coordinate => {
+      const atEast = zulrah.position[0] === ZULRAH_SPOTS.east[0] && zulrah.position[1] === ZULRAH_SPOTS.east[1];
+      return atEast && (getZulrahState(zulrah)?.attacksMade ?? 0) >= 2 ? [24, 63] : [24, 64];
+    };
+    const on = recordTimeline(true, tileFor);
+    const off = recordTimeline(false, tileFor);
+    expect(on.gaveUp).toBeGreaterThan(0);
+    expect(on.attacksAtDive).toContain(2);
+    expect(off).toEqual(on);
   });
 
   it('spits its clouds and snakeling orbs without sight, once it gives up its attacks', () => {

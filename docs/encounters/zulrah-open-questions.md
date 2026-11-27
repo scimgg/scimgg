@@ -47,31 +47,27 @@ Paths: **N/** = `src/npcs/zulrah/`, **E/** = `src/encounters/zulrah/`.
 
 | Question | Simulator | Label | Settled by |
 |---|---|---|---|
-| While spitting venom | Faces each barrage's landing sites until its next attack | UNVERIFIED | A cloud phase |
 | During the tail stare | Holds its bearing on the locked tile until the slam | INFERENCE ("stare at the player's position") | Walking away during a stare. OBSERVATION: the captured stares face one of a few fixed tiles, never the player's: (16,67), (38,55), (39,51), (39,48), (32,48), (32,52), (39,49), each stare's with the player's tile in the fixture (`ZULRAH_CAPTURE_TAIL_SIDES`); always west (angle 512) or south to south-east (about 1820–1980), never north. Not modeled |
 
 ## Clouds
 
 | Question | Simulator | Label | Settled by |
 |---|---|---|---|
-| Clouds per barrage | 2; `ZULRAH_CLOUD.perBarrage` | POLICY | Orbs per barrage |
-| Landing sites | 8 fixed sites. A 4-barrage phase fills them in order, base first, arm tips clear; other barrages land first on the site nearest the player, then random; `E/clouds.ts` | INFERENCE (fill, tips clear); POLICY (order, other barrages) | Cloud positions over several barrages |
-| Flight; lifetime | 3 ticks; 30 ticks | UNVERIFIED | Orb launch to cloud; cloud appearance to disappearance |
+| Landing sites | 9 sites around the island's U; each phase's barrages follow its captured sequence, else the fill, else a random pair at most two steps apart; `E/clouds.ts` | FOR DISCUSSION | Evidence: all 108 captured cloud orbs used the 9 sites (south-west tiles (22,67), (22,64), (22,61), (25,60), (28,60), (31,60), (32,63), (32,66), (32,69)); every barrage's two sites were at most two steps apart on the U (49 of 54 neighbors, 5 one site apart, all in Z3); the spot does not change the set; a repeated phase repeated its sequence wherever the player stood (the fill in Z2's opening and Z1's rotation 3 last phase; Z1's red middle phase at its start and from t516; rotation 4's green south matched rotation 3's green middle; Z4 repeated Z2's rotation 2 phases 3, 4, 7 and 8). Captured: the opening (Z2), rotation 2 phases 3, 4, 7, 8 (Z2, Z4) and 10, the fill (Z4), rotation 3 phases 2, 6, 8, 11 (Z1), rotation 4 phases 4, 6, 9 (Z3). Partly captured: rotation 4 phase 12, the fill's first barrage (Z3 t1090). Inferred, the fill (INFERENCE: three fills matched exactly): rotation 1 phase 10, the rest of rotation 4 phase 12. Fallback (POLICY: one of the 15 pairs at most two steps apart at random, either orb first, from the seeded cloud stream): rotation 1 phases 3, 6, 7, 8; rotation 4 phase 2. Phase indexes are 0-based into `ZULRAH_ROTATIONS`. Settled by captures of the fallback phases |
+| Rotation 1's blue south and jad west (phases 7, 8) | Fallback | INFERENCE (not applied) | Same form, spot and specials as rotation 2's phases 7 and 8, so they likely share those sequences; they stay on the fallback until captured |
 | Damage | 1–5 typeless a tick, once however many clouds overlap | UNVERIFIED ("varying damage per tick") | Hitsplats in one cloud, and in two |
-| Orb launched as Zulrah dives | Not modelled | Gap | — |
 
 ## Snakelings
 
 | Question | Simulator | Label | Settled by |
 |---|---|---|---|
-| Landing tile | Random walkable tile 1–3 tiles from the player | POLICY | Landing tiles relative to the player |
+| Landing tile | One of the 9 cloud sites' centers; a phase follows its captured orb sequence, else picks a site it has not used yet at random; no walkability check; `E/snakelingOrbs.ts` | FOR DISCUSSION | Evidence: all 51 captured orbs (Z1 17, Z2 11, Z3 15, Z4 8) targeted the 9 centers (23,68), (23,65), (23,62), (26,61), (29,61), (32,61), (33,64), (33,67), (33,70), wherever the player stood; none twice in a phase; six landed on (33,70), off the walkable island; rotation 3's red middle phase took (23,68) for its last orb in both rounds (Z1 t232, t531). Captured: rotation 2 phases 3, 4, 7 (Z2; Z4 repeated 4 and 7), rotation 3 phases 1, 2, 6, 8, 10 (Z1), rotation 4 phases 6, 7, 11 (Z3). Partly captured, on the fallback: rotation 4 phase 3, its last orb (29,61) (Z3 t813). Fallback (POLICY): rotation 1 phases 3, 6, 7; rotation 4 phases 1, 3. Rotation 1's blue south (phase 7) has rotation 2 phase 7's form, spot and specials, so likely its orbs (not applied). Settled by captures of the fallback phases |
 | Style odds | 50/50 | POLICY | Melee vs magic counts over many orbs |
-| Orb flight; first attack | 3 ticks; 3 ticks after landing | UNVERIFIED | Video |
+| First attack | 3 ticks after landing | UNVERIFIED | Video |
 | Magic range; bolt timing | 7 tiles; lands the next tick | UNVERIFIED | Video |
 | Venom chance | 25% per attack (`SNAKELING_VENOM_CHANCE`) | POLICY | Many hits on an un-envenomed player |
 | Lifetime | 67 ticks | INFERENCE ("more than 40 seconds") | Spawn to die-off of an idle snakeling |
 | Dying NPC 2047 | Unused; 2045/2046 play 2408 | UNVERIFIED | A snakeling dying |
-| Orb launched as Zulrah dives | Not modelled | Gap | — |
 
 ## Venom
 

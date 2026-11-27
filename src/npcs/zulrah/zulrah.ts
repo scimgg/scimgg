@@ -36,6 +36,7 @@ import {
   ZULRAH_TAIL,
   ZULRAH_TAIL_SAFE_TILES,
   type ZulrahForm,
+  zulrahCloudOrbLandTicks,
 } from './constants';
 
 /**
@@ -349,30 +350,34 @@ function spitClouds(
   context: NpcDefinitionContext,
 ): void {
   scheduleNpcAction(actor.combat, context.tick, ZULRAH_ATTACK_SPEED_TICKS);
-  state.lastImpactTick = context.tick + ZULRAH_CLOUD.flightTicks;
-  const tiles = config.launchCloudBarrage(actor, context);
-  if (tiles.length === 0) return;
-  // Reported from play: Zulrah turns to each barrage as it spits, rather than watching the player. It
-  // holds that bearing until its next attack (`takeAttack`) or form change clears it.
-  const aim: Coordinate = [
-    tiles.reduce((sum, tile) => sum + tile[0], 0) / tiles.length,
-    tiles.reduce((sum, tile) => sum + tile[1], 0) / tiles.length,
-  ];
-  actor.actionFacing = facingToward(actor, aim);
-  const endDelayCycles = ZULRAH_CLOUD.flightTicks * 30;
+  state.lastImpactTick = context.tick + zulrahCloudOrbLandTicks(ZULRAH_CLOUD.perBarrage - 1);
+  const centers = config.launchCloudBarrage(actor, context);
+  const [first] = centers;
+  if (!first) return;
+  // Zulrah faces the first cloud's center as it spits, and holds that bearing until its next attack or
+  // form change (private gameplay capture zulrah-packet-data-1.txt, every barrage, e.g. t313).
+  actor.actionFacing = facingToward(actor, first);
   emitInfernoVisual(context.tickEvents, {
     animations: [{ actorId: actor.id, clipId: 'attack', delayCycles: 0 }],
-    projectiles: tiles.map((tile) => ({
-      spotAnimId: ZULRAH_CLOUD_ORB_SPOTANIM_ID,
-      sourcePosition: npcProjectileSource(actor),
-      target: { kind: 'tile', position: [tile[0], tile[1]] },
-      startDelayCycles: 20,
-      endDelayCycles,
-      slope: 32,
-      startOffset: 64,
-      startHeight: 220,
-      endHeight: 0,
-    })),
+    // Each orb flies at its cloud LOC's south-west tile (the same capture, t313 to t316).
+    projectiles: centers.map((center, index) => {
+      const flight = ZULRAH_CLOUD.orbFlights[index];
+      if (!flight) throw new RangeError(`A barrage has ${ZULRAH_CLOUD.orbFlights.length} orbs, not ${centers.length}`);
+      return {
+        spotAnimId: ZULRAH_CLOUD_ORB_SPOTANIM_ID,
+        sourcePosition: npcProjectileSource(actor),
+        target: {
+          kind: 'tile' as const,
+          position: [center[0] - ZULRAH_CLOUD.radius, center[1] - ZULRAH_CLOUD.radius] as const,
+        },
+        startDelayCycles: flight.startCycles,
+        endDelayCycles: flight.endCycles,
+        slope: 32,
+        startOffset: 64,
+        startHeight: 220,
+        endHeight: 0,
+      };
+    }),
     graphics: [],
   });
 }
@@ -398,8 +403,8 @@ function spitSnakelingOrb(
         spotAnimId: ZULRAH_SNAKELING_ORB_SPOTANIM_ID,
         sourcePosition: npcProjectileSource(actor),
         target: { kind: 'tile', position: [tile[0], tile[1]] },
-        startDelayCycles: 20,
-        endDelayCycles: SNAKELING.orbFlightTicks * 30,
+        startDelayCycles: SNAKELING.orbStartCycles,
+        endDelayCycles: SNAKELING.orbEndCycles,
         slope: 32,
         startOffset: 64,
         startHeight: 220,

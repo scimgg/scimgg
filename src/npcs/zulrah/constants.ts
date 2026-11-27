@@ -96,19 +96,32 @@ export const SNAKELING_VENOM_CHANCE = 0.25;
 /**
  * Venom clouds. The wiki: Zulrah spawns them "via a barrage of dark-green orbs"; standing in a
  * cloud's "3x3 area" deals "varying damage per tick"; the clouds "do not envenom the player"
- * (https://oldschool.runescape.wiki/w/Zulrah/Strategies, Special attacks and Venom clouds). It gives
- * no counts, durations or damage figures, so these are simulator policy:
- * - 2 clouds per barrage, landing 3 ticks after it is spat;
- * - each lasts 30 ticks (18 s);
- * - 1-5 typeless damage on every tick the player stands in at least one.
+ * (https://oldschool.runescape.wiki/w/Zulrah/Strategies, Special attacks and Venom clouds). The
+ * private gameplay capture zulrah-packet-data-1.txt measures the rest of the timing (t313: orbs
+ * 40-90 and 45-120 cycles, clouds at t316 and t317, removed at t346 and t347; 17/17 clouds last 30):
+ * - each barrage is 2 orbs, each aimed at its cloud LOC's south-west tile;
+ * - the first orb lands 3 ticks after the spit and the second 4, each cloud appearing as its orb lands;
+ * - each cloud lasts 30 ticks (18 s).
+ * Simulator policy: 1-5 typeless damage on every tick the player stands in at least one.
  */
 export const ZULRAH_CLOUD = {
   perBarrage: 2,
-  flightTicks: 3,
+  /** Each orb's flight in client cycles, first orb first; it lands `floor(endCycles / 30)` ticks later. */
+  orbFlights: [
+    { startCycles: 40, endCycles: 90 },
+    { startCycles: 45, endCycles: 120 },
+  ],
   durationTicks: 30,
   radius: 1,
   damage: [1, 5] as [number, number],
 } as const;
+
+/** Ticks from a barrage's spit to orb `index` landing. */
+export function zulrahCloudOrbLandTicks(index: number): number {
+  const flight = ZULRAH_CLOUD.orbFlights[index];
+  if (!flight) throw new RangeError(`No cloud orb ${index}`);
+  return Math.floor(flight.endCycles / 30);
+}
 
 /**
  * SNAKEBOSS_POISONCLOUD (RuneLite gameval ObjectID, same commit): in the pinned cache a 3x3 loc with no
@@ -137,7 +150,9 @@ export const SNAKELING_MAGIC_SPOTANIM_ID = 1230;
 export const SNAKELING_MELEE_NPC_ID = 2045;
 export const SNAKELING_MAGIC_NPC_ID = 2046;
 export const SNAKELING = {
-  orbFlightTicks: 3,
+  orbStartCycles: 40,
+  orbEndCycles: 120,
+  orbFlightTicks: 4,
   /** 40 seconds at 0.6 s a tick, rounded up. */
   lifetimeTicks: 67,
   firstAttackDelayTicks: 3,
@@ -145,8 +160,6 @@ export const SNAKELING = {
   magicRange: 7,
   meleeMaxHit: 15,
   magicMaxHit: 13,
-  landingMinDistance: 1,
-  landingMaxDistance: 3,
 } as const;
 
 /**

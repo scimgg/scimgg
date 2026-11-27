@@ -170,8 +170,96 @@ export const ZULRAH_CAPTURE_DIVES: readonly ZulrahCaptureDive[] = [
   { after: 'tailHit', tick: 2256, dive: 2259 },
 ];
 
+/**
+ * One barrage: each orb's target tile is the cloud LOC's south-west tile (11700, 3x3); the cloud
+ * appears on its orb's landing tick and is removed 30 ticks later (17/17 clouds that landed in
+ * time). Zulrah faces the first cloud's center, (33, 67), as it spits.
+ */
+export const ZULRAH_CAPTURE_CLOUD_BARRAGE = {
+  launch: 313,
+  facing: [33, 67],
+  orbs: [
+    { target: [32, 66], lands: 316, removed: 346 },
+    { target: [32, 69], lands: 317, removed: 347 },
+  ],
+} as const;
+
+/** Snakeling orbs that landed before a dive: the snakeling appears on the orb's tile as it lands. */
+export const ZULRAH_CAPTURE_SNAKELING_ORBS: readonly { readonly launch: number; readonly lands: number }[] = [
+  { launch: 232, lands: 236 },
+  { launch: 323, lands: 327 },
+  { launch: 326, lands: 330 },
+  { launch: 379, lands: 383 },
+  { launch: 382, lands: 386 },
+  { launch: 431, lands: 435 },
+  { launch: 434, lands: 438 },
+  { launch: 437, lands: 441 },
+  { launch: 500, lands: 504 },
+  { launch: 503, lands: 507 },
+  { launch: 519, lands: 523 },
+  { launch: 525, lands: 529 },
+  { launch: 531, lands: 535 },
+  // Capture 3.
+  { launch: 813, lands: 817 },
+  { launch: 925, lands: 929 },
+  { launch: 928, lands: 932 },
+  { launch: 931, lands: 935 },
+  { launch: 934, lands: 938 },
+  { launch: 937, lands: 941 },
+  { launch: 940, lands: 944 },
+  { launch: 975, lands: 979 },
+  { launch: 978, lands: 982 },
+  { launch: 981, lands: 985 },
+  { launch: 1064, lands: 1068 },
+  { launch: 1067, lands: 1071 },
+  { launch: 1070, lands: 1074 },
+  // Capture 4.
+  { launch: 2033, lands: 2037 },
+  { launch: 2036, lands: 2040 },
+  { launch: 2045, lands: 2049 },
+  { launch: 2116, lands: 2120 },
+  { launch: 2122, lands: 2126 },
+];
+
 /** Zulrah faces the snakeling orb's target tile as it spits: t323, orb at (23, 62), facing (23, 62). */
 export const ZULRAH_CAPTURE_SNAKELING_FACING = { launch: 323, target: [23, 62], facing: [23, 62] } as const;
+
+/**
+ * Orbs whose landing tick is the dive (SINKFAST) tick: the effect comes on the next form's first-action
+ * tick (emerge + 3) instead, even where that form first acts later (t3068, emerge; snakeling t3071;
+ * first attack t3074). The barrages' first orbs (t475, landing t478; t2993; t3232) appeared on time.
+ */
+export const ZULRAH_CAPTURE_DEFERRED: readonly {
+  readonly kind: 'snakeling' | 'cloud';
+  readonly launch: number;
+  readonly dive: number;
+  readonly appears: number;
+  readonly removed?: number;
+}[] = [
+  { kind: 'snakeling', launch: 329, dive: 333, appears: 339 },
+  { kind: 'snakeling', launch: 385, dive: 389, appears: 395 },
+  { kind: 'snakeling', launch: 440, dive: 444, appears: 450 },
+  { kind: 'snakeling', launch: 506, dive: 510, appears: 516 },
+  { kind: 'cloud', launch: 475, dive: 479, appears: 485, removed: 515 },
+  // Capture 2.
+  { kind: 'snakeling', launch: 3061, dive: 3065, appears: 3071 },
+  { kind: 'snakeling', launch: 3095, dive: 3099, appears: 3105 },
+  { kind: 'snakeling', launch: 3183, dive: 3187, appears: 3193 },
+  { kind: 'cloud', launch: 2993, dive: 2997, appears: 3003 },
+  { kind: 'cloud', launch: 3232, dive: 3236, appears: 3242 },
+  // Capture 3: each barrage's second orb.
+  { kind: 'snakeling', launch: 984, dive: 988, appears: 994 },
+  { kind: 'snakeling', launch: 1073, dive: 1077, appears: 1083 },
+  { kind: 'cloud', launch: 897, dive: 901, appears: 907 },
+  { kind: 'cloud', launch: 950, dive: 954, appears: 960 },
+  { kind: 'cloud', launch: 1024, dive: 1028, appears: 1034 },
+  // Capture 4.
+  { kind: 'snakeling', launch: 2008, dive: 2012, appears: 2018 },
+  { kind: 'snakeling', launch: 2048, dive: 2052, appears: 2058 },
+  { kind: 'snakeling', launch: 2128, dive: 2132, appears: 2138 },
+  { kind: 'cloud', launch: 2177, dive: 2181, appears: 2187 },
+  { kind: 'cloud', launch: 2233, dive: 2237, appears: 2243 },
+];
 
 /**
  * A tail hit with no knockback (capture 2, t3015): the stun graphic (spotanim 245, stunned_thieving,
@@ -263,6 +351,558 @@ export const ZULRAH_CAPTURE_SIGHT_RESUME = {
  * third attack on t3134, its next due and blocked from t3137 on, the dive on t3145.
  */
 export const ZULRAH_CAPTURE_SIGHT_GIVE_UP = { lastAttack: 3134, blockedFrom: 3137, dive: 3145 } as const;
+
+/**
+ * Cloud barrages by phase: each barrage's two SNAKEBOSS_DOUBLE_ORB (1045) targets, the cloud locs'
+ * south-west tiles, the 40-90 cycle orb first and the 45-120 one second. `index` is the phase's index
+ * in `ZULRAH_ROTATIONS[rotation]`; the opening is rotation 2's phase 0 here. A `partial` phase's capture
+ * ends before its last barrage.
+ */
+export const ZULRAH_CAPTURE_CLOUD_SEQUENCES: readonly {
+  readonly capture: 1 | 2 | 3 | 4;
+  readonly rotation: 2 | 3 | 4;
+  readonly index: number;
+  readonly launches: readonly number[];
+  readonly barrages: readonly (readonly [Coordinate, Coordinate])[];
+  readonly partial?: true;
+}[] = [
+  {
+    capture: 2,
+    rotation: 2,
+    index: 0,
+    launches: [2984, 2987, 2990, 2993],
+    barrages: [
+      [
+        [28, 60],
+        [31, 60],
+      ],
+      [
+        [22, 61],
+        [25, 60],
+      ],
+      [
+        [32, 63],
+        [32, 66],
+      ],
+      [
+        [22, 67],
+        [22, 64],
+      ],
+    ],
+  },
+  {
+    capture: 2,
+    rotation: 2,
+    index: 3,
+    launches: [3042, 3045, 3048],
+    barrages: [
+      [
+        [32, 63],
+        [31, 60],
+      ],
+      [
+        [32, 66],
+        [32, 69],
+      ],
+      [
+        [28, 60],
+        [25, 60],
+      ],
+    ],
+  },
+  {
+    capture: 2,
+    rotation: 2,
+    index: 4,
+    launches: [3086, 3089],
+    barrages: [
+      [
+        [22, 61],
+        [25, 60],
+      ],
+      [
+        [31, 60],
+        [32, 63],
+      ],
+    ],
+  },
+  {
+    capture: 2,
+    rotation: 2,
+    index: 7,
+    launches: [3174, 3180],
+    barrages: [
+      [
+        [25, 60],
+        [28, 60],
+      ],
+      [
+        [31, 60],
+        [32, 63],
+      ],
+    ],
+  },
+  {
+    capture: 2,
+    rotation: 2,
+    index: 8,
+    launches: [3223, 3226, 3229, 3232],
+    barrages: [
+      [
+        [22, 61],
+        [25, 60],
+      ],
+      [
+        [28, 60],
+        [31, 60],
+      ],
+      [
+        [22, 64],
+        [22, 67],
+      ],
+      [
+        [32, 63],
+        [32, 66],
+      ],
+    ],
+  },
+  {
+    capture: 1,
+    rotation: 3,
+    index: 2,
+    launches: [516, 522, 528],
+    barrages: [
+      [
+        [32, 69],
+        [32, 66],
+      ],
+      [
+        [31, 60],
+        [28, 60],
+      ],
+      [
+        [22, 64],
+        [22, 61],
+      ],
+    ],
+  },
+  {
+    capture: 1,
+    rotation: 3,
+    index: 6,
+    launches: [313, 316, 319],
+    barrages: [
+      [
+        [32, 66],
+        [32, 69],
+      ],
+      [
+        [31, 60],
+        [32, 63],
+      ],
+      [
+        [28, 60],
+        [25, 60],
+      ],
+    ],
+  },
+  {
+    capture: 1,
+    rotation: 3,
+    index: 8,
+    launches: [373, 376],
+    barrages: [
+      [
+        [22, 64],
+        [22, 67],
+      ],
+      [
+        [25, 60],
+        [22, 61],
+      ],
+    ],
+  },
+  {
+    capture: 1,
+    rotation: 3,
+    index: 11,
+    launches: [466, 469, 472, 475],
+    barrages: [
+      [
+        [28, 60],
+        [31, 60],
+      ],
+      [
+        [22, 61],
+        [25, 60],
+      ],
+      [
+        [32, 63],
+        [32, 66],
+      ],
+      [
+        [22, 67],
+        [22, 64],
+      ],
+    ],
+  },
+  {
+    capture: 3,
+    rotation: 4,
+    index: 4,
+    launches: [894, 897],
+    barrages: [
+      [
+        [22, 61],
+        [28, 60],
+      ],
+      [
+        [25, 60],
+        [31, 60],
+      ],
+    ],
+  },
+  {
+    capture: 3,
+    rotation: 4,
+    index: 6,
+    launches: [944, 947, 950],
+    barrages: [
+      [
+        [32, 66],
+        [32, 69],
+      ],
+      [
+        [31, 60],
+        [32, 63],
+      ],
+      [
+        [28, 60],
+        [25, 60],
+      ],
+    ],
+  },
+  {
+    capture: 3,
+    rotation: 4,
+    index: 9,
+    launches: [1018, 1021, 1024],
+    barrages: [
+      [
+        [22, 64],
+        [25, 60],
+      ],
+      [
+        [22, 61],
+        [22, 67],
+      ],
+      [
+        [28, 60],
+        [31, 60],
+      ],
+    ],
+  },
+  // Capture 4: rotation 2 again, each the same as capture 2's, and phase 10's fill.
+  {
+    capture: 4,
+    rotation: 2,
+    index: 3,
+    launches: [2283, 2286, 2289],
+    barrages: [
+      [
+        [32, 63],
+        [31, 60],
+      ],
+      [
+        [32, 66],
+        [32, 69],
+      ],
+      [
+        [28, 60],
+        [25, 60],
+      ],
+    ],
+  },
+  {
+    capture: 4,
+    rotation: 2,
+    index: 4,
+    launches: [2039, 2042],
+    barrages: [
+      [
+        [22, 61],
+        [25, 60],
+      ],
+      [
+        [31, 60],
+        [32, 63],
+      ],
+    ],
+  },
+  {
+    capture: 4,
+    rotation: 2,
+    index: 7,
+    launches: [2119, 2125],
+    barrages: [
+      [
+        [25, 60],
+        [28, 60],
+      ],
+      [
+        [31, 60],
+        [32, 63],
+      ],
+    ],
+  },
+  {
+    capture: 4,
+    rotation: 2,
+    index: 8,
+    launches: [2168, 2171, 2174, 2177],
+    barrages: [
+      [
+        [22, 61],
+        [25, 60],
+      ],
+      [
+        [28, 60],
+        [31, 60],
+      ],
+      [
+        [22, 64],
+        [22, 67],
+      ],
+      [
+        [32, 63],
+        [32, 66],
+      ],
+    ],
+  },
+  {
+    capture: 4,
+    rotation: 2,
+    index: 10,
+    launches: [2224, 2227, 2230, 2233],
+    barrages: [
+      [
+        [28, 60],
+        [31, 60],
+      ],
+      [
+        [22, 61],
+        [25, 60],
+      ],
+      [
+        [32, 63],
+        [32, 66],
+      ],
+      [
+        [22, 67],
+        [22, 64],
+      ],
+    ],
+  },
+  // The player teleported out after the first barrage.
+  {
+    capture: 3,
+    rotation: 4,
+    index: 12,
+    launches: [1090],
+    barrages: [
+      [
+        [28, 60],
+        [31, 60],
+      ],
+    ],
+    partial: true,
+  },
+];
+
+/** The cloud sites every capture barrage used (78 orbs), around the U from the west arm's tip. */
+export const ZULRAH_CAPTURE_CLOUD_SITES: readonly Coordinate[] = [
+  [22, 67],
+  [22, 64],
+  [22, 61],
+  [25, 60],
+  [28, 60],
+  [31, 60],
+  [32, 63],
+  [32, 66],
+  [32, 69],
+];
+
+/**
+ * Snakeling orbs (SNAKEBOSS_EGG 1047) by phase: each orb's target tile, where its snakeling appears, in
+ * launch order. All 51 orbs of four captures targeted one of the nine cloud sites' centers. A `partial`
+ * phase's capture begins after its first orbs.
+ */
+export const ZULRAH_CAPTURE_SNAKELING_SEQUENCES: readonly {
+  readonly capture: 1 | 2 | 3 | 4;
+  readonly rotation: 2 | 3 | 4;
+  readonly index: number;
+  readonly launches: readonly number[];
+  readonly sites: readonly Coordinate[];
+  readonly partial?: true;
+}[] = [
+  {
+    capture: 1,
+    rotation: 3,
+    index: 1,
+    launches: [500, 503, 506],
+    sites: [
+      [33, 70],
+      [33, 67],
+      [33, 64],
+    ],
+  },
+  {
+    capture: 1,
+    rotation: 3,
+    index: 2,
+    launches: [519, 525, 531],
+    sites: [
+      [33, 64],
+      [26, 61],
+      [23, 68],
+    ],
+  },
+  // The same phase's previous round, from its last orb (the capture began at t229).
+  { capture: 1, rotation: 3, index: 2, launches: [232], sites: [[23, 68]], partial: true },
+  {
+    capture: 1,
+    rotation: 3,
+    index: 6,
+    launches: [323, 326, 329],
+    sites: [
+      [23, 62],
+      [23, 68],
+      [23, 65],
+    ],
+  },
+  {
+    capture: 1,
+    rotation: 3,
+    index: 8,
+    launches: [379, 382, 385],
+    sites: [
+      [29, 61],
+      [32, 61],
+      [33, 64],
+    ],
+  },
+  {
+    capture: 1,
+    rotation: 3,
+    index: 10,
+    launches: [431, 434, 437, 440],
+    sites: [
+      [23, 68],
+      [23, 62],
+      [33, 64],
+      [33, 70],
+    ],
+  },
+  {
+    capture: 2,
+    rotation: 2,
+    index: 3,
+    launches: [3052, 3055, 3058, 3061],
+    sites: [
+      [26, 61],
+      [23, 62],
+      [23, 65],
+      [23, 68],
+    ],
+  },
+  {
+    capture: 2,
+    rotation: 2,
+    index: 4,
+    launches: [3080, 3083, 3092, 3095],
+    sites: [
+      [23, 68],
+      [23, 65],
+      [33, 67],
+      [33, 70],
+    ],
+  },
+  {
+    capture: 2,
+    rotation: 2,
+    index: 7,
+    launches: [3171, 3177, 3183],
+    sites: [
+      [23, 62],
+      [23, 68],
+      [23, 65],
+    ],
+  },
+  // Capture 4: rotation 2 again, each the same as capture 2's.
+  { capture: 4, rotation: 2, index: 3, launches: [2008], sites: [[23, 68]], partial: true },
+  {
+    capture: 4,
+    rotation: 2,
+    index: 4,
+    launches: [2033, 2036, 2045, 2048],
+    sites: [
+      [23, 68],
+      [23, 65],
+      [33, 67],
+      [33, 70],
+    ],
+  },
+  {
+    capture: 4,
+    rotation: 2,
+    index: 7,
+    launches: [2116, 2122, 2128],
+    sites: [
+      [23, 62],
+      [23, 68],
+      [23, 65],
+    ],
+  },
+  { capture: 3, rotation: 4, index: 3, launches: [813], sites: [[29, 61]], partial: true },
+  {
+    capture: 3,
+    rotation: 4,
+    index: 6,
+    launches: [925, 928, 931, 934, 937, 940],
+    sites: [
+      [23, 68],
+      [23, 65],
+      [23, 62],
+      [33, 64],
+      [33, 67],
+      [33, 70],
+    ],
+  },
+  {
+    capture: 3,
+    rotation: 4,
+    index: 7,
+    launches: [975, 978, 981, 984],
+    sites: [
+      [23, 68],
+      [23, 65],
+      [23, 62],
+      [26, 61],
+    ],
+  },
+  {
+    capture: 3,
+    rotation: 4,
+    index: 11,
+    launches: [1064, 1067, 1070, 1073],
+    sites: [
+      [23, 68],
+      [23, 65],
+      [33, 67],
+      [33, 70],
+    ],
+  },
+];
 
 /**
  * A phase the wiki's rotation 4 table does not list (capture 3), between phases 3 and 4: after blue

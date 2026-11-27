@@ -1,6 +1,5 @@
 import { type NpcActor, submergeNpc } from '../../core/actors/NpcActor';
 import type { ArenaConfig } from '../../core/arena/ArenaConfig';
-import { isWalkableTile } from '../../core/constants';
 import { ACTIVE_ENCOUNTER_OUTCOME, type EncounterOutcome } from '../../core/encounters/outcome';
 import type { EncounterSnapshotContext, ZulrahSnapshot } from '../../core/encounters/snapshot';
 import type {
@@ -16,7 +15,7 @@ import { NpcDefinitionCollection, type NpcDefinitionContext } from '../../core/n
 import { mulberry32 } from '../../core/rng';
 import { getMonsterHp } from '../../data/monsterData';
 import { emitInfernoVisual } from '../../npcs/inferno/visualEvents';
-import { SNAKELING, ZULRAH_CLOUD, ZULRAH_RANGED_NPC_ID } from '../../npcs/zulrah/constants';
+import { SNAKELING, ZULRAH_CLOUD, ZULRAH_RANGED_NPC_ID, zulrahCloudOrbLandTicks } from '../../npcs/zulrah/constants';
 import {
   createSnakeling,
   type SnakelingStyle,
@@ -27,12 +26,12 @@ import { createZulrahActor, getZulrahState, transformZulrah, zulrahDefinition } 
 import { getBoundsFromRegion } from '../../rs/collision/WalkabilityAnalyzer';
 import type { Coordinate, MechanicsConfig } from '../../types/simulation';
 import {
-  fillCloudSites,
+  cloudCenter,
   isInCloud,
   liveClouds,
-  pickCloudSites,
-  ZULRAH_FILL_BARRAGES,
+  randomCloudBarrage,
   type ZulrahCloud,
+  zulrahCloudSequence,
 } from './clouds';
 import { zulrahIslandTiles } from './constants';
 import {
@@ -48,6 +47,7 @@ import {
   nextZulrahPosition,
   ZULRAH_DIVE_TICKS,
   ZULRAH_EMERGE_TICKS,
+  ZULRAH_FORM_CHANGE_TICKS,
   ZULRAH_OPENING_PAUSE_TICKS,
   ZULRAH_OPENING_POSITION,
   ZULRAH_OPENING_RISE_TICKS,
@@ -61,6 +61,7 @@ import {
   zulrahPhaseActions,
   zulrahPhaseAt,
 } from './rotation';
+import { randomSnakelingSite, zulrahSnakelingSequence } from './snakelingOrbs';
 import type { ZulrahStage } from './snapshot';
 
 /** Zulrah is one actor for the whole fight; each form change transforms it in place. */
@@ -81,6 +82,8 @@ type PhaseRuntime = {
   position: ZulrahPosition;
   /** Cloud barrages spat so far this phase. */
   cloudBarrages: number;
+  /** Where this phase's snakeling orbs have been aimed, in order. */
+  snakelingSites: Coordinate[];
   actorId: string;
   stage: ZulrahStage;
   /** Tick the current stage ends: emerge → active, idle phase → dive, dive → next form. */
@@ -92,6 +95,11 @@ type PhaseRuntime = {
 const ROTATION_STREAM_SALT = 0x5a55_4c52;
 const CLOUD_STREAM_SALT = 0x434c_4f55;
 const SNAKELING_STREAM_SALT = 0x534e_414b;
+
+/** What lands from a sink on `sinkTick` until the next form's first turn (E+3) waits for that turn. */
+function heldUntil(sinkTick: number): number {
+  return sinkTick + ZULRAH_FORM_CHANGE_TICKS + ZULRAH_SURFACE_PAUSE_TICKS;
+}
 
 /**
  * The tick the current phase dives, once its last turn is taken: when that turn's last projectile has
@@ -387,6 +395,7 @@ export class ZulrahEncounter implements Encounter {
       index: 0,
       position: ZULRAH_OPENING_POSITION,
       cloudBarrages: 0,
+      snakelingSites: [],
       actorId: ZULRAH_ACTOR_ID,
       stage: 'emerging',
       stageEndTick: ZULRAH_OPENING_RISE_TICKS,
@@ -398,6 +407,15 @@ export class ZulrahEncounter implements Encounter {
     if (!actor) return true;
     const dive = diveTick(actor);
     return dive !== null && tick >= dive;
+  }
+
+  /**
+   * When an orb's effect (a cloud, a snakeling) lands: on its landing tick, unless that is the dive
+   * tick, when it waits for the next form's first turn (private gameplay capture
+   * zulrah-packet-data-1.txt: snakeling orbs t329, t385, t440, t506 and the second cloud orb of t475).
+   */
+  private effectTick(actor: NpcActor, landTick: number): number {
+    return landTick === diveTick(actor) ? heldUntil(landTick) : landTick;
   }
 
   private startDive(actor: NpcActor | null, ctx: EncounterContext): void {
@@ -450,6 +468,7 @@ export class ZulrahEncounter implements Encounter {
       index: this.phase.index + 1,
       position,
       cloudBarrages: 0,
+      snakelingSites: [],
       actorId: this.phase.actorId,
       stage: 'emerging',
       stageEndTick: ctx.tick + ZULRAH_EMERGE_TICKS,
@@ -499,26 +518,6 @@ export class ZulrahEncounter implements Encounter {
     }
   }
 
-  /**
-   * Where a snakeling orb lands. Simulator policy: a walkable tile 1-3 tiles from the player that no
-   * orb is already headed for, drawn at random.
-   */
-  private pickSnakelingTile(player: Coordinate): Coordinate | null {
-    const taken = new Set(this.pendingSnakelings.map((orb) => `${orb.tile[0]},${orb.tile[1]}`));
-    const candidates: Coordinate[] = [];
-    const { landingMinDistance: min, landingMaxDistance: max } = SNAKELING;
-    for (let dx = -max; dx <= max; dx++) {
-      for (let dy = -max; dy <= max; dy++) {
-        const distance = Math.max(Math.abs(dx), Math.abs(dy));
-        if (distance < min || distance > max) continue;
-        const tile: Coordinate = [player[0] + dx, player[1] + dy];
-        if (isWalkableTile(tile[0], tile[1]) && !taken.has(`${tile[0]},${tile[1]}`)) candidates.push(tile);
-      }
-    }
-    if (candidates.length === 0) return null;
-    return candidates[Math.floor(this.snakelingRandom() * candidates.length)] ?? null;
-  }
-
   private createNpcDefinitions(): NpcDefinitionCollection {
     return new NpcDefinitionCollection([
       zulrahDefinition.register({
@@ -528,32 +527,30 @@ export class ZulrahEncounter implements Encounter {
         stunPlayer: (untilTick) => {
           this.stunUntilTick = Math.max(this.stunUntilTick, untilTick);
         },
-        launchCloudBarrage: (_actor, context) => {
+        launchCloudBarrage: (actor, context) => {
           if (!this.cloudsEnabled) return [];
-          const player = context.world.getPlayer();
-          if (!player) return [];
-          const phase = zulrahPhaseAt(this.phase.position);
-          const barrages = [...(phase.before ?? []), ...(phase.after ?? [])].filter((s) => s === 'cloud').length;
+          // The phase's captured or inferred sequence, else the fallback (`clouds.ts`).
           const index = this.phase.cloudBarrages++;
-          const sites =
-            barrages === ZULRAH_FILL_BARRAGES
-              ? fillCloudSites(index)
-              : pickCloudSites(player.position, this.cloudRandom);
-          const landTick = context.tick + ZULRAH_CLOUD.flightTicks;
-          for (const center of sites) {
+          const barrage = zulrahCloudSequence(this.phase.position)?.[index] ?? randomCloudBarrage(this.cloudRandom);
+          const sites = barrage.map(cloudCenter);
+          sites.forEach((center, orb) => {
+            const landTick = this.effectTick(actor, context.tick + zulrahCloudOrbLandTicks(orb));
             this.clouds.push({ center, landTick, expireTick: landTick + ZULRAH_CLOUD.durationTicks });
-          }
+          });
           return sites;
         },
-        launchSnakelingOrb: (_actor, context) => {
+        launchSnakelingOrb: (actor, context) => {
           if (!this.snakelingsEnabled) return null;
-          const player = context.world.getPlayer();
-          if (!player) return null;
-          const tile = this.pickSnakelingTile(player.position);
-          if (!tile) return null;
+          // The phase's captured sequence, else the fallback (`snakelingOrbs.ts`).
+          const sites = this.phase.snakelingSites;
+          const captured = zulrahSnakelingSequence(this.phase.position)?.[sites.length];
+          const site = captured ?? randomSnakelingSite(this.snakelingRandom, sites);
+          sites.push(site);
+          const tile: Coordinate = [site[0], site[1]];
           // Simulator policy: each style equally likely; the wiki says only that each has one.
           const style: SnakelingStyle = this.snakelingRandom() < 0.5 ? 'melee' : 'magic';
-          this.pendingSnakelings.push({ tile, landTick: context.tick + SNAKELING.orbFlightTicks, style });
+          const landTick = this.effectTick(actor, context.tick + SNAKELING.orbFlightTicks);
+          this.pendingSnakelings.push({ tile, landTick, style });
           return tile;
         },
       }),

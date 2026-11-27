@@ -20,7 +20,8 @@ Not simulated: the random out-of-pattern phases the wiki describes after the fir
 |---|---|
 | [`ZulrahEncounter.ts`](./ZulrahEncounter.ts) | Phase machine (emerge, active, dive, next form), opening, clouds, snakeling landings, outcome |
 | [`rotation.ts`](./rotation.ts) | The four rotation tables, spot tiles, rotation stepping and form-change timing |
-| [`clouds.ts`](./clouds.ts) | Cloud sites, fill order and site selection |
+| [`clouds.ts`](./clouds.ts) | The 9 cloud sites, the captured barrage sequences and the fill, the random fallback (for discussion: [open questions](../../../docs/encounters/zulrah-open-questions.md#clouds)) |
+| [`snakelingOrbs.ts`](./snakelingOrbs.ts) | The snakeling orb sites, the captured orb sequences, the random fallback (for discussion: [open questions](../../../docs/encounters/zulrah-open-questions.md#snakelings)) |
 | [`controls.ts`](./controls.ts) | Rotation choice and mechanic toggles |
 | [`renderConfig.ts`](./renderConfig.ts), [`ZulrahSceneObjectController.ts`](./ZulrahSceneObjectController.ts) | Form clips and the cloud locs, drawn by the Inferno compositor (`render/scene/zulrahSceneBuilder.ts`) |
 | [`../../npcs/zulrah/zulrah.ts`](../../npcs/zulrah/zulrah.ts) | The Zulrah actor: attack queue and its line-of-sight wait, tail, cloud and snakeling spits, transformation |
