@@ -1,3 +1,4 @@
+import { ENCOUNTER_RENDER_CONFIGS } from '../../encounters/declaredNpcSeqIds';
 import { encounterPresentationModuleForKind } from '../../encounters/presentationModules';
 import type { MapSquareOffsets } from '../../rs/map/mapSquareBlock';
 import type { Coordinate, SimulationState } from '../../types/simulation';
@@ -105,15 +106,16 @@ export interface EncounterRenderConfig {
   createSceneObjectController?: EncounterSceneObjectControllerFactory;
 }
 
-/** A presentation module's render config: the map footprint is the core descriptor's alone. */
+/** An encounter's authored render config (`ENCOUNTER_RENDER_CONFIGS`): the map footprint is the core descriptor's alone. */
 export type AuthoredEncounterRenderConfig = Omit<
   EncounterRenderConfig,
   'terrainMapSquare' | 'mapSquareOffsets' | 'arenaMapSquareOffsets'
 >;
 
 /**
- * Render config per encounter kind, taken from the presentation manifest and merged with the
- * core descriptor's map-square block so `SceneCompositor` stays registry-agnostic.
+ * Render config per encounter kind: the authored config registered for its presentation entry's
+ * kind (a variant's parent's) in `ENCOUNTER_RENDER_CONFIGS`, merged with `encounterKind`'s core
+ * descriptor map-square block so `SceneCompositor` stays registry-agnostic.
  *
  * Built lazily and memoized: `withDescriptorMapBlock` reads the encounter registry, populated
  * at the composition root's own module load (`src/encounters/registry.ts`), so no import order
@@ -123,7 +125,8 @@ const RESOLVED_BY_KIND = new Map<string, EncounterRenderConfig | undefined>();
 
 export function getEncounterRenderConfig(encounterKind: string): EncounterRenderConfig | undefined {
   if (RESOLVED_BY_KIND.has(encounterKind)) return RESOLVED_BY_KIND.get(encounterKind);
-  const base = encounterPresentationModuleForKind(encounterKind)?.renderConfig;
+  const presentedKind = encounterPresentationModuleForKind(encounterKind)?.kind;
+  const base = presentedKind === undefined ? undefined : ENCOUNTER_RENDER_CONFIGS.get(presentedKind);
   const resolved = base ? withDescriptorMapBlock(base, encounterKind) : undefined;
   RESOLVED_BY_KIND.set(encounterKind, resolved);
   return resolved;

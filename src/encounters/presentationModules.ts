@@ -7,7 +7,8 @@
  * instead.
  *
  * Variant kinds are expanded from the core manifest, so Yama's contracts inherit this
- * entry's scene builder, render config, camera, and audio without being listed again.
+ * entry's scene builder, camera, and audio without being listed again, and its kind's render config
+ * (`ENCOUNTER_RENDER_CONFIGS`, the one place a kind's render config is registered).
  *
  */
 import type { SoundRule } from '../audio/EventAudioPlayer';
@@ -18,7 +19,6 @@ import { SOL_NPC_ID } from '../npcs/colosseum/constants';
 import { ZUK_NPC_ID, ZUK_SEQS } from '../npcs/inferno/constants';
 import type { BossPortraitConfig } from '../render/preview/bossPortraitFraming';
 import { OSRS_DEFAULT_PITCH } from '../render/projections/Projection3D';
-import type { AuthoredEncounterRenderConfig } from '../render/scene/encounterRenderConfig';
 import { createLobbySceneBuilder } from '../render/scene/lobbySceneBuilder';
 import type { SceneBuilderFactory } from '../render/scene/sceneBuilderFactory';
 import { createSolHereditSceneBuilder } from '../render/scene/solHereditSceneBuilder';
@@ -28,10 +28,7 @@ import { YAMA_NPC_ID } from '../rs/model/NpcModelLoader';
 import type { Coordinate, MechanicsConfig } from '../types/simulation';
 import { FIRST_INFERNO_WAVE, INFERNO_PRACTICE_START_TILE, WAVE_67_JAD_TILE, ZUK_WAVE } from './inferno/constants';
 import { INFERNO_START_WAVE_KEY } from './inferno/controls';
-import { INFERNO_RENDER_CONFIG } from './inferno/renderConfig';
 import { ENCOUNTER_CORE_MODULES, encounterKindsOf } from './modules';
-import { SOL_HEREDIT_RENDER_CONFIG } from './solHeredit/renderConfig';
-import { YAMA_ENCOUNTER_RENDER_CONFIG } from './yamaP3/renderConfig';
 
 /** Orbit camera the scene opens on. Omit to accept the default south-facing view. */
 export interface EncounterCameraConfig {
@@ -86,9 +83,8 @@ export interface EncounterSetupCamera {
 
 export interface EncounterPresentationModule {
   readonly kind: string;
-  /** Omit for the common scene (`SceneCompositor`) with {@link renderConfig}. */
+  /** Omit for the common scene (`SceneCompositor`) with the kind's resolved render config. */
   readonly sceneBuilder?: SceneBuilderFactory;
-  readonly renderConfig?: AuthoredEncounterRenderConfig;
   readonly defaultCamera?: EncounterCameraConfig;
   /**
    * Opening views for particular run setups, tried in order before {@link defaultCamera}: an
@@ -144,7 +140,6 @@ export const ENCOUNTER_PRESENTATION_MODULES: readonly EncounterPresentationModul
   {
     kind: 'yama_p3',
     sceneBuilder: (opts) => createYamaSceneBuilder(opts),
-    renderConfig: YAMA_ENCOUNTER_RENDER_CONFIG,
     audio: { layerName: 'yama', rules: yamaAudioRules },
     defaultCamera: { yaw: 180, pitch: -62, zoom: 220 },
     presentation: {
@@ -169,7 +164,6 @@ export const ENCOUNTER_PRESENTATION_MODULES: readonly EncounterPresentationModul
   {
     kind: 'sol_heredit',
     sceneBuilder: (opts) => createSolHereditSceneBuilder(opts),
-    renderConfig: SOL_HEREDIT_RENDER_CONFIG,
     audio: { layerName: 'solHeredit', rules: solHereditAudioRules },
     // The server runs `cam_forceangle(181, 0)` (pitch, yaw in JAU) as the player lands in the
     // arena (capture colosseum-sol-heredit-packet-data-2.txt, tick 7301). It sets no zoom,
@@ -189,7 +183,6 @@ export const ENCOUNTER_PRESENTATION_MODULES: readonly EncounterPresentationModul
     kind: 'inferno',
     // One scene for waves 1-69: the stage-dependent scenery is the render config's scene controller.
     sceneBuilder: (opts) => createZukSceneBuilder(opts),
-    renderConfig: INFERNO_RENDER_CONFIG,
     // Every Inferno NPC's sounds, the ordinary waves' and wave 69's.
     audio: { layerName: 'inferno', rules: zukAudioRules },
     // Waves 2-66 open facing south over the arena from the practice start tile, somewhat zoomed out

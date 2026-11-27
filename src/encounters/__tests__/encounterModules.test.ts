@@ -503,14 +503,23 @@ describe('encounter catalog invariants', () => {
     }
   });
 
-  it('lists every presentation render config in the node-safe build-script view', () => {
-    const presented = new Map(
-      ENCOUNTER_PRESENTATION_MODULES.flatMap((module) =>
-        module.renderConfig ? [[module.kind, module.renderConfig] as const] : [],
-      ),
-    );
-    expect(ENCOUNTER_RENDER_CONFIGS).toEqual(presented);
-    for (const [kind, config] of presented) expect(ENCOUNTER_RENDER_CONFIGS.get(kind)).toBe(config);
+  it("resolves every registered kind's render config from the one its presentation entry's kind registers", () => {
+    // A config registered under any other key would never be drawn.
+    for (const kind of ENCOUNTER_RENDER_CONFIGS.keys()) {
+      expect(encounterPresentationModuleForKind(kind)?.kind, `render config for unpresented kind '${kind}'`).toBe(kind);
+    }
+    for (const kind of encounterRegistry.getRegisteredKinds()) {
+      const presentedKind = encounterPresentationModuleForKind(kind)?.kind;
+      const authored = presentedKind === undefined ? undefined : ENCOUNTER_RENDER_CONFIGS.get(presentedKind);
+      const resolved = getEncounterRenderConfig(kind);
+      if (!authored) {
+        expect(resolved, kind).toBeUndefined();
+        continue;
+      }
+      for (const [field, value] of Object.entries(authored)) {
+        expect(resolved?.[field as keyof typeof authored], `${kind} ${field}`).toBe(value);
+      }
+    }
   });
 
   it("draws each boss portrait from an npc and stand clip the encounter's render config keeps in the cache", () => {
@@ -522,7 +531,7 @@ describe('encounter catalog invariants', () => {
       portrayed.push(module.kind);
       expect(Number.isInteger(portrait.npcTypeId) && portrait.npcTypeId >= 0, module.kind).toBe(true);
       // Only the render config's npcs are trimmed into the shipped cache.
-      const config = module.renderConfig;
+      const config = ENCOUNTER_RENDER_CONFIGS.get(module.kind);
       const loadedNpcIds = [config?.primaryNpc?.npcTypeId, ...(config?.preloadNpcTypes ?? []).map((n) => n.npcTypeId)];
       expect(loadedNpcIds, module.kind).toContain(portrait.npcTypeId);
       if (portrait.idleSeqId !== undefined) expect(declaredSeqIds.has(portrait.idleSeqId), module.kind).toBe(true);

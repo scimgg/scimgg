@@ -8,8 +8,9 @@ import { SOL_HEREDIT_RENDER_CONFIG } from './solHeredit/renderConfig';
 import { YAMA_ENCOUNTER_RENDER_CONFIG } from './yamaP3/renderConfig';
 
 /**
- * Every render config in `ENCOUNTER_PRESENTATION_MODULES`, keyed by kind. Listed by hand because
- * that manifest is browser-only; `frameSoundManifest.test.ts` fails if the two drift.
+ * Each encounter's authored render config, keyed by its presentation module's kind: the one place
+ * a config is registered. The browser's `getEncounterRenderConfig` and default scene builder read
+ * it, as do the build scripts, so it stays free of the browser-only presentation manifest.
  */
 export const ENCOUNTER_RENDER_CONFIGS: ReadonlyMap<string, AuthoredEncounterRenderConfig> = new Map([
   ['yama_p3', YAMA_ENCOUNTER_RENDER_CONFIG],

@@ -1,10 +1,14 @@
 import { describe, expect, it } from 'vitest';
+import type { CacheManager } from '../../../cache/CacheManager';
+import { resolveEncounterMapFootprint } from '../../../core/encounters/mapFootprint';
+import { encounterRegistry } from '../../../encounters/registry';
 import { SOL_HEREDIT_RENDER_CONFIG } from '../../../encounters/solHeredit/renderConfig';
 import type { MapSquareData } from '../../../rs/map/MapLoader';
 import { withDescriptorMapBlock } from '../encounterMapBlock';
 import { getEncounterRenderConfig } from '../encounterRenderConfig';
 import { createEncounterSceneBuilder } from '../encounterSceneBuilder';
-import type { SceneCompositor } from '../SceneCompositor';
+import { SceneCompositor } from '../SceneCompositor';
+import { sceneBuilderFactoryFor } from '../sceneBuilderFactory';
 import { createSolHereditSceneBuilder } from '../solHereditSceneBuilder';
 import type { SceneBuilder } from '../types';
 import { YamaSceneBuilder } from '../yamaSceneBuilder';
@@ -30,6 +34,25 @@ describe('withDescriptorMapBlock', () => {
   it('leaves a config for a kind with no descriptor as it is', () => {
     const config = { spotAnimIds: [1] };
     expect(withDescriptorMapBlock(config, 'not_an_encounter')).toBe(config);
+  });
+});
+
+describe('the default scene builder factory', () => {
+  it("gives a presentation entry with no config or builder its kind's authored assets and descriptor footprint", () => {
+    const scene = sceneBuilderFactoryFor({ kind: 'sol_heredit' })({ cacheManager: {} as CacheManager });
+    if (!(scene instanceof SceneCompositor)) expect.fail('Expected the common scene');
+    expect(Object.getPrototypeOf(scene)).toBe(SceneCompositor.prototype);
+    const descriptor = encounterRegistry.getDescriptorForKind('sol_heredit');
+    if (!descriptor) expect.fail('sol_heredit has no descriptor');
+    const footprint = resolveEncounterMapFootprint(descriptor);
+    const config = scene['encounterRenderConfig'];
+    expect(config?.primaryNpc).toBe(SOL_HEREDIT_RENDER_CONFIG.primaryNpc);
+    expect(config?.preloadNpcTypes).toBe(SOL_HEREDIT_RENDER_CONFIG.preloadNpcTypes);
+    expect(config?.spotAnimIds).toBe(SOL_HEREDIT_RENDER_CONFIG.spotAnimIds);
+    expect(config?.terrainMapSquare).toBe(footprint.origin);
+    expect(config?.mapSquareOffsets).toBe(footprint.sceneOffsets);
+    expect(config?.arenaMapSquareOffsets).toBe(footprint.arenaOffsets);
+    scene.dispose();
   });
 });
 

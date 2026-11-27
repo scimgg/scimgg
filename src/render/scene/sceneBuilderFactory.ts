@@ -1,5 +1,6 @@
 import type { EventAudioPlayer, FrameSoundTracker } from '../../audio';
 import type { CacheManager } from '../../cache/CacheManager';
+import { ENCOUNTER_RENDER_CONFIGS } from '../../encounters/declaredNpcSeqIds';
 import { ENCOUNTER_CORE_MODULES, encounterKindsOf } from '../../encounters/modules';
 import { ENCOUNTER_PRESENTATION_MODULES, type EncounterPresentationModule } from '../../encounters/presentationModules';
 import type { EncounterRenderConfig } from './encounterRenderConfig';
@@ -49,9 +50,15 @@ for (const module of ENCOUNTER_PRESENTATION_MODULES) {
   }
 }
 
-/** The module's own scene builder, else the common scene with the module's resolved render config. */
+/**
+ * The module's own scene builder, else the common scene with the render config registered for the
+ * module's kind, resolved when a scene is built rather than while the manifests load.
+ */
 export function sceneBuilderFactoryFor(
-  module: Pick<EncounterPresentationModule, 'kind' | 'sceneBuilder' | 'renderConfig'>,
+  module: Pick<EncounterPresentationModule, 'kind' | 'sceneBuilder'>,
 ): SceneBuilderFactory {
-  return module.sceneBuilder ?? ((options) => createEncounterSceneBuilder(module.kind, module.renderConfig, options));
+  return (
+    module.sceneBuilder ??
+    ((options) => createEncounterSceneBuilder(module.kind, ENCOUNTER_RENDER_CONFIGS.get(module.kind), options))
+  );
 }
