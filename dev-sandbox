@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# dev-sandbox - `npm run dev` for code you did not write: `./sandbox dev`, a dev server in a
+# credential-free Docker sandbox, opened in a separate browser profile. See ./sandbox --help and
+# docs/sandbox.md for targets, options and limits.
+#
+# Usage: ./dev-sandbox [COMMIT-ISH | --pr N | --worktree] [--no-open] | --stop | --status
+exec "$(dirname "${BASH_SOURCE[0]}")/sandbox" dev "$@"
