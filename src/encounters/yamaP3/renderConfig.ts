@@ -4,6 +4,7 @@ import { SpotAnimID } from '../../rs/config/spotanimtype/SpotAnimID';
 import { YAMA_NPC_ID, YAMA_SIMULATOR_POSITION } from '../../rs/model/NpcModelLoader';
 import { OSRS_TICK_MS } from '../../types/simulation';
 import { YAMA_VICTORY_COMPLETION_DELAY_TICKS } from './constants';
+import { FIREBALL_PRELOAD_IDS, VOID_FLARE_PRELOAD_IDS, WAVE_PRELOAD_IDS, YAMA_ATTACK_PRELOAD_IDS } from './spotAnims';
 import { YamaSceneObjectController } from './YamaSceneObjectController';
 
 export const YAMA_ENCOUNTER_RENDER_CONFIG: AuthoredEncounterRenderConfig = {
@@ -43,6 +44,7 @@ export const YAMA_ENCOUNTER_RENDER_CONFIG: AuthoredEncounterRenderConfig = {
       },
     },
   ],
+  spotAnimIds: [...WAVE_PRELOAD_IDS, ...FIREBALL_PRELOAD_IDS, ...VOID_FLARE_PRELOAD_IDS, ...YAMA_ATTACK_PRELOAD_IDS],
   // The start glyphs hint, a countdown-only practice aid.
   createSceneObjectController: () => new YamaSceneObjectController(),
 };

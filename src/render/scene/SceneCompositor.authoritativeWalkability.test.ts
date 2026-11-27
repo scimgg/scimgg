@@ -18,7 +18,6 @@ import { SpotAnimModelLoader } from '../../rs/model/SpotAnimModelLoader';
 import { ResidentMeshEmbedder } from '../../test/helpers/residentMeshDraws';
 import type { LineMarker } from '../../types/lineMarkers';
 import type { TileGridStyle } from '../../types/tileGrid';
-import { animationFrames } from '../../util/animationFrames';
 import { classifyMesh3DCommands } from '../backends/picogl/commandClassifier';
 import type { Projection2D } from '../core/camera';
 import { createQueue, type RenderQueue } from '../core/commands';
@@ -149,65 +148,6 @@ function shotScene() {
     );
   return { scene, effects, draw, loadType, loader, state };
 }
-
-describe('SceneCompositor NPC background clock', () => {
-  let scene: TestCompositor | undefined;
-
-  afterEach(() => {
-    scene?.dispose();
-    scene = undefined;
-    animationFrames.setSuspended(false);
-    animationFrames.clock.reset();
-  });
-
-  it.each([500, 60_000])('excludes a %s ms pause at the animation and facing consumers', (pauseMs) => {
-    const now = vi.spyOn(performance, 'now').mockReturnValue(1000);
-    const fixture = shotScene();
-    scene = fixture.scene;
-    const animations = vi.spyOn(scene['npcInstanceManager'], 'updateAnimations');
-    const facing = vi.fn(scene['updateEncounterNpcFacing'].bind(scene));
-    scene['updateEncounterNpcFacing'] = facing;
-    const draw = () => fixture.draw(0, [], { speedMultiplier: 2 });
-
-    draw();
-    now.mockReturnValue(1100);
-    draw();
-    now.mockReturnValue(1150);
-    animationFrames.setSuspended(true);
-    now.mockReturnValue(1150 + pauseMs);
-    animationFrames.setSuspended(false);
-    now.mockReturnValue(1250 + pauseMs);
-    draw();
-    now.mockReturnValue(1275 + pauseMs);
-    draw();
-
-    expect(animations.mock.calls.map(([deltaMs, speed]) => [deltaMs, speed])).toEqual([
-      [0, 2],
-      [100, 2],
-      [150, 2],
-      [25, 2],
-    ]);
-    expect(facing.mock.calls.map(([, deltaMs]) => deltaMs)).toEqual([0, 200, 300, 50]);
-  });
-
-  it('retains the zero sentinel, active-time stall guard and dispose reset', () => {
-    const now = vi.spyOn(performance, 'now').mockReturnValue(0);
-    const fixture = shotScene();
-    scene = fixture.scene;
-    const animations = vi.spyOn(scene['npcInstanceManager'], 'updateAnimations');
-
-    for (const timeMs of [0, 100, 1100, 2101, 2201, 2201, 2190]) {
-      now.mockReturnValue(timeMs);
-      fixture.draw(0);
-    }
-    expect(animations.mock.calls.map(([deltaMs]) => deltaMs)).toEqual([0, 0, 0, 0, 100, 0, 0]);
-
-    scene.dispose();
-    now.mockReturnValue(2300);
-    fixture.draw(0);
-    expect(animations.mock.lastCall?.[0]).toBe(0);
-  });
-});
 
 const arrowShot = {
   type: 'attack_started',

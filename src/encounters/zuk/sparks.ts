@@ -1,5 +1,5 @@
 import type { EncounterContext, EnvironmentalDamage } from '../../core/encounters/types';
-import { emitInfernoVisual, type InfernoVisualCue } from '../../npcs/inferno/visualEvents';
+import { type EncounterVisualBatch, emitEncounterVisual } from '../../core/events/encounterVisual';
 import type { Coordinate } from '../../types/simulation';
 import type { ZukSparkVolleyCommand } from './commands';
 
@@ -59,7 +59,7 @@ type Landing = {
 export class ZukSparkLandings {
   private pending: Landing[] = [];
 
-  emit(command: Pick<ZukSparkVolleyCommand, 'sparks'>, tick: number): InfernoVisualCue | undefined {
+  emit(command: Pick<ZukSparkVolleyCommand, 'sparks'>, tick: number): EncounterVisualBatch | undefined {
     const sparks = structuredClone(command.sparks);
     this.pending.push(...sparks.map((spark) => ({ tick: tick + 3, spark })));
     const projectiles = sparks.flatMap((spark) =>
@@ -90,7 +90,7 @@ export class ZukSparkLandings {
           ]
         : [],
     );
-    if (graphics.length > 0) emitInfernoVisual(ctx.tickEvents, { animations: [], projectiles: [], graphics });
+    if (graphics.length > 0) emitEncounterVisual(ctx.tickEvents, { animations: [], projectiles: [], graphics });
     return due.flatMap(({ spark }): EnvironmentalDamage[] =>
       Math.abs(ctx.playerPos[0] - spark.position[0]) <= 1 && Math.abs(ctx.playerPos[1] - spark.position[1]) <= 1
         ? [{ baseDamage: spark.amount, attackType: 'typeless', source: 'ZukSpark', playerPosition: [...ctx.playerPos] }]

@@ -7,7 +7,9 @@ import { SimulationEngine } from '../../core/SimulationEngine';
 import { HEALING_TOTEM_NPC_ID } from '../../npcs/colosseum/constants';
 import { ZUK_HEALER_NPC_ID, ZUK_SEQS } from '../../npcs/inferno/constants';
 import { getEncounterRenderConfig } from '../../render/scene/encounterRenderConfig';
-import { sceneBuilderRegistry } from '../../render/scene/sceneBuilderFactory';
+import { createSceneBuilderForKind } from '../../render/scene/sceneBuilderFactory';
+import { YamaSceneCompositor } from '../../render/scene/YamaSceneCompositor';
+import { encounterScene, UNBOOTSTRAPPED_CACHE_MANAGER } from '../../test/helpers/encounterScene';
 import { BOOLEAN_MECHANICS_KEY_SET, type MechanicsConfig, mergeMechanicsConfig } from '../../types/simulation';
 import {
   baseEncounterKind,
@@ -16,7 +18,6 @@ import {
   REGISTERED_CATALOG_KINDS,
   RETIRED_ENCOUNTER_KINDS,
 } from '../catalog';
-import { collectDeclaredNpcSeqIds, ENCOUNTER_RENDER_CONFIGS } from '../declaredNpcSeqIds';
 import { LOBBY_BOSS_NPCS, LOBBY_NPC_ENCOUNTERS, LOBBY_PORTALS } from '../lobby/metadata';
 import {
   ENCOUNTER_CORE_MODULES,
@@ -28,13 +29,13 @@ import {
 import {
   DEFAULT_ORBIT_PITCH,
   ENCOUNTER_PRESENTATION_MODULES,
-  encounterAudioLayers,
   encounterDefaultCamera,
   encounterPresentationModuleForKind,
   FALLBACK_ENCOUNTER_CAMERA,
   orbitYawToward,
 } from '../presentationModules';
 import { encounterRegistry } from '../registry';
+import { collectDeclaredNpcSeqIds, ENCOUNTER_RENDER_CONFIGS } from '../renderConfigs';
 import { RETIRED_SLUG_TO_KIND, SLUG_TO_KIND } from '../slugs';
 import { YAMA_CONTRACTS } from '../yamaP3/contracts';
 
@@ -262,9 +263,11 @@ describe('encounter registration invariants', () => {
     }
   });
 
-  it('gives every registered encounter kind scene-builder coverage', () => {
+  it('creates a scene for every registered encounter kind', () => {
     for (const kind of encounterRegistry.getRegisteredKinds()) {
-      expect(sceneBuilderRegistry.hasKind(kind), `no scene builder registered for '${kind}'`).toBe(true);
+      const scene = createSceneBuilderForKind(kind, { cacheManager: UNBOOTSTRAPPED_CACHE_MANAGER });
+      expect(scene.isTerrainLoaded(), kind).toBe(false);
+      scene.dispose?.();
     }
   });
 
@@ -281,12 +284,6 @@ describe('encounter registration invariants', () => {
     }
   });
 
-  it('keeps only registered encounter audio layers (core is appended by the player)', () => {
-    // EventAudioPlayer stops at the first non-pass rule, so layer precedence must remain stable.
-    // The event types the layers answer are disjoint, so the Inferno's moving after Sol changes no sound.
-    expect(encounterAudioLayers().map((layer) => layer.name)).toEqual(['yama', 'solHeredit', 'inferno']);
-  });
-
   it("gives Yama variants the base encounter's camera, intro and scene builder", () => {
     const yamaVariants = Object.keys(
       ENCOUNTER_CORE_MODULES.find((module) => module.kind === 'yama_p3')?.variantFactories ?? {},
@@ -296,6 +293,7 @@ describe('encounter registration invariants', () => {
       expect(encounterDefaultCamera(kind)).toEqual(encounterDefaultCamera('yama_p3'));
       expect(encounterEnablesIntro(kind), `variant '${kind}' lost the intro`).toBe(true);
       expect(getEncounterRenderConfig(kind)).toEqual(getEncounterRenderConfig('yama_p3'));
+      encounterScene(kind, YamaSceneCompositor).dispose();
     }
   });
 
@@ -503,14 +501,23 @@ describe('encounter catalog invariants', () => {
     }
   });
 
-  it('lists every presentation render config in the node-safe build-script view', () => {
-    const presented = new Map(
-      ENCOUNTER_PRESENTATION_MODULES.flatMap((module) =>
-        module.renderConfig ? [[module.kind, module.renderConfig] as const] : [],
-      ),
-    );
-    expect(ENCOUNTER_RENDER_CONFIGS).toEqual(presented);
-    for (const [kind, config] of presented) expect(ENCOUNTER_RENDER_CONFIGS.get(kind)).toBe(config);
+  it("resolves every registered kind's render config from the one its base kind registers", () => {
+    // A config registered under any other key would never be drawn.
+    const registeredBases = ENCOUNTER_CATALOG.filter((entry) => entry.registered).map((entry) => entry.kind);
+    for (const kind of ENCOUNTER_RENDER_CONFIGS.keys()) {
+      expect(registeredBases, `render config for unregistered base kind '${kind}'`).toContain(kind);
+    }
+    for (const kind of encounterRegistry.getRegisteredKinds()) {
+      const authored = ENCOUNTER_RENDER_CONFIGS.get(baseEncounterKind(kind));
+      const resolved = getEncounterRenderConfig(kind);
+      if (!authored) {
+        expect(resolved, kind).toBeUndefined();
+        continue;
+      }
+      for (const [field, value] of Object.entries(authored)) {
+        expect(resolved?.[field as keyof typeof authored], `${kind} ${field}`).toBe(value);
+      }
+    }
   });
 
   it("draws each boss portrait from an npc and stand clip the encounter's render config keeps in the cache", () => {
@@ -522,7 +529,7 @@ describe('encounter catalog invariants', () => {
       portrayed.push(module.kind);
       expect(Number.isInteger(portrait.npcTypeId) && portrait.npcTypeId >= 0, module.kind).toBe(true);
       // Only the render config's npcs are trimmed into the shipped cache.
-      const config = module.renderConfig;
+      const config = ENCOUNTER_RENDER_CONFIGS.get(module.kind);
       const loadedNpcIds = [config?.primaryNpc?.npcTypeId, ...(config?.preloadNpcTypes ?? []).map((n) => n.npcTypeId)];
       expect(loadedNpcIds, module.kind).toContain(portrait.npcTypeId);
       if (portrait.idleSeqId !== undefined) expect(declaredSeqIds.has(portrait.idleSeqId), module.kind).toBe(true);
@@ -542,15 +549,17 @@ describe('encounter catalog invariants', () => {
           {
             primaryNpc: { actorId: 'boss', npcTypeId: 1, basePosition: [0, 0], size: 1, deathSeqId: 10 },
             preloadNpcTypes: [
-              { npcTypeId: 1, attackClips: { swing: 11, unused: -1 } },
-              { npcTypeId: 2, idleSeqId: 20, spawnSeqId: 21, deathSeqId: 22 },
+              // -1 drops the walk clip rather than naming one.
+              { npcTypeId: 1, walkSeqId: -1, attackClips: { swing: 11, unused: -1 } },
+              { npcTypeId: 2, idleSeqId: 20, walkSeqId: 23, spawnSeqId: 21, deathSeqId: 22 },
             ],
           },
         ],
       ]),
     );
-    expect([...ids.keys()].sort((a, b) => a - b)).toEqual([10, 11, 20, 21, 22]);
+    expect([...ids.keys()].sort((a, b) => a - b)).toEqual([10, 11, 20, 21, 22, 23]);
     expect(ids.get(21)).toBe('test npc 2 spawn');
+    expect(ids.get(23)).toBe('test npc 2 walk');
   });
 
   it('opts only Sol healing totems into a relative transparent depth tolerance', () => {

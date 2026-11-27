@@ -3,9 +3,16 @@
 import { cleanup, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AudioEngine, EventAudioPlayer } from '../../audio';
+import { decodeLegacyReplayFrames } from '../../core/legacyReplayEvents';
+import { LEGACY_INFERNO_EVENTS } from '../../test/helpers/legacyEncounterRecordings';
 import { tickBus } from '../../tutorial/runtime/tickBus';
 import { resetPageActivityForTests } from '../pageActivity';
-import { type UseAudioManagerReturn, useAudioManager } from '../useAudioManager';
+import {
+  createEventAudioPlayer,
+  type UseAudioManagerReturn,
+  useAudioManager,
+  useEventAudioScope,
+} from '../useAudioManager';
 
 let activeAudio: UseAudioManagerReturn | undefined;
 
@@ -208,10 +215,7 @@ describe('useAudioManager replay cue cancellation', () => {
     });
     activeAudio = hook.result.current;
     const engine = activeAudio.audioEngine;
-    const player = new EventAudioPlayer(engine, {
-      name: 'delayed',
-      rules: { actor_died: { resolve: { id: 10313, delayCycles: 21 } } },
-    });
+    const player = new EventAudioPlayer(engine, { actor_died: { resolve: { id: 10313, delayCycles: 21 } } });
     activeAudio.eventAudioPlayerRef.current = player;
     vi.spyOn(engine, 'play').mockImplementation(() => {});
     return { ...hook, engine, player };
@@ -362,5 +366,153 @@ describe('useAudioManager tick metronome', () => {
     tickBus.publish(10, []);
 
     expect(playBeat).not.toHaveBeenCalled();
+  });
+});
+
+describe('useEventAudioScope', () => {
+  const settings = {
+    areaVolume: 1,
+    masterVolume: 1,
+    sfxVolume: 1,
+    muteWhenUnfocused: false,
+    tickAudioMetronomeEnabled: false,
+    tickAudioMetronomeTock: false,
+    tickAudioMetronomeVolume: 1,
+  };
+  // An Inferno spark landing on [25, 25] at tick 2, its sound 3 cycles later (due at 1260 ms), as a
+  // loaded recording delivers it: in today's shape.
+  const spark = decodeLegacyReplayFrames([{ events: [LEGACY_INFERNO_EVENTS.barrage] }])[0].events[0];
+
+  type DisplayedScene = { kind: string; sceneLoadId: number };
+
+  function mountScoped(kind: string, sceneLoadId = 1) {
+    const hook = renderHook(
+      (scene: DisplayedScene) => {
+        const audio = useAudioManager(settings);
+        useEventAudioScope(audio.eventAudioPlayerRef, audio.audioEngine, scene.kind, scene.sceneLoadId);
+        return audio;
+      },
+      { initialProps: { kind, sceneLoadId } },
+    );
+    activeAudio = hook.result.current;
+    const play = vi.spyOn(activeAudio.audioEngine, 'play').mockImplementation(() => {});
+    return { ...hook, play, player: activeAudio.eventAudioPlayerRef.current };
+  }
+
+  it("dispatches the displayed encounter's rules and follows the displayed kind", () => {
+    const { play, player, rerender } = mountScoped('lobby');
+    player.onEvents([spark], [25, 25]);
+    expect(play).not.toHaveBeenCalled();
+
+    rerender({ kind: 'inferno', sceneLoadId: 2 });
+    player.onEvents([spark], [25, 25]);
+
+    expect(play.mock.calls.map(([id]) => id)).toEqual([156]);
+  });
+
+  it("drops the old scene's queued replay sounds when the displayed encounter changes", () => {
+    const { play, player, rerender } = mountScoped('inferno');
+    player.updateReplayClock(1200);
+    player.onEvents([spark], [25, 25]);
+
+    rerender({ kind: 'lobby', sceneLoadId: 1 });
+    player.updateReplayClock(1300);
+
+    expect(play).not.toHaveBeenCalled();
+  });
+
+  it('keeps queued replay sounds while the displayed scene stays the same', () => {
+    const { play, player, rerender } = mountScoped('inferno');
+    player.updateReplayClock(1200);
+    player.onEvents([spark], [25, 25]);
+
+    rerender({ kind: 'inferno', sceneLoadId: 1 });
+    player.updateReplayClock(1300);
+
+    expect(play.mock.calls.map(([id]) => id)).toEqual([156]);
+  });
+
+  /**
+   * Live sounds go straight to the engine, natively delayed, so only the engine can cancel them. Uses
+   * its own engine on a fake Web Audio context, leaving the app's shared engine without one.
+   */
+  describe('live sounds the engine already owns', () => {
+    const buffer = { duration: 1, length: 1, numberOfChannels: 1 } as AudioBuffer;
+    let sources: Array<{ start: ReturnType<typeof vi.fn>; stop: ReturnType<typeof vi.fn> }>;
+    let engine: AudioEngine;
+
+    beforeEach(() => {
+      sources = [];
+      const node = () => ({ connect: vi.fn(), disconnect: vi.fn() });
+      const context = {
+        currentTime: 10,
+        state: 'running',
+        destination: {},
+        createGain: () => ({ ...node(), gain: { value: 1 } }),
+        createBufferSource: () => {
+          const source = { ...node(), buffer: null, onended: null, start: vi.fn(), stop: vi.fn() };
+          sources.push(source);
+          return source;
+        },
+        close: vi.fn().mockResolvedValue(undefined),
+      };
+      vi.stubGlobal('AudioContext', function FakeAudioContext() {
+        return context;
+      });
+      engine = new AudioEngine(undefined, async () => buffer);
+    });
+
+    afterEach(() => {
+      engine.dispose();
+      vi.unstubAllGlobals();
+    });
+
+    function mountLiveScope(kind: string, sceneLoadId: number) {
+      const playerRef = { current: createEventAudioPlayer(engine) };
+      return {
+        ...renderHook((scene: DisplayedScene) => useEventAudioScope(playerRef, engine, scene.kind, scene.sceneLoadId), {
+          initialProps: { kind, sceneLoadId },
+        }),
+        player: playerRef.current,
+      };
+    }
+
+    it('stops a delayed live sound before its onset when a new load replaces the scene, not on rerender', async () => {
+      await engine.preloadSounds([156]);
+      const { player, rerender } = mountLiveScope('inferno', 1);
+      player.onEvents([spark], [25, 25]);
+      expect(sources).toHaveLength(1);
+      const [scheduled] = sources;
+      expect(scheduled.start).toHaveBeenCalledExactlyOnceWith(10.06, 0);
+
+      rerender({ kind: 'inferno', sceneLoadId: 1 });
+      expect(scheduled.stop).not.toHaveBeenCalled();
+
+      rerender({ kind: 'inferno', sceneLoadId: 2 });
+      expect(scheduled.stop).toHaveBeenCalledOnce();
+    });
+
+    it("keeps a finished replay's tail sounds, which end no scene", async () => {
+      await engine.preloadSounds([156]);
+      const { player, rerender } = mountLiveScope('inferno', 1);
+      player.updateReplayClock(1200);
+      player.onEvents([spark], [25, 25]);
+
+      player.finishReplay(1);
+      rerender({ kind: 'inferno', sceneLoadId: 1 });
+
+      expect(sources).toHaveLength(1);
+      expect(sources[0].stop).not.toHaveBeenCalled();
+    });
+
+    it('never starts a live sound still loading when the scene is replaced', async () => {
+      const { player, rerender } = mountLiveScope('inferno', 1);
+      player.onEvents([spark], [25, 25]);
+
+      rerender({ kind: 'lobby', sceneLoadId: 1 });
+      await engine.preloadSounds([156]);
+
+      expect(sources).toHaveLength(0);
+    });
   });
 });

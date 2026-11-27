@@ -18,6 +18,7 @@ import type {
   EnvironmentalDamage,
   NpcMovementRequest,
 } from '../../core/encounters/types';
+import { emitEncounterVisual, encounterVisual } from '../../core/events/encounterVisual';
 import { CHAT_HIGHLIGHT_COLORS } from '../../core/events/gameMessages';
 import type { EmittableGameEvent } from '../../core/events/TickEvents';
 import type { OverheadTextSegment } from '../../core/events/types';
@@ -51,7 +52,7 @@ import {
   solLaunchesThisTick,
 } from '../../npcs/colosseum/sol';
 import { isInsideArena, type SolAttackStyle } from '../../npcs/colosseum/solAttacks';
-import { colosseumBeamGraphics, emitColosseumVisual } from '../../npcs/colosseum/visualEvents';
+import { colosseumBeamGraphics } from '../../npcs/colosseum/visualEvents';
 import { warbanderDefinition } from '../../npcs/colosseum/warband';
 import type { Coordinate, MechanicsConfig } from '../../types/simulation';
 import { beesDefinition } from '../colosseum/modifiers/bees';
@@ -341,7 +342,8 @@ export class SolHereditEncounter implements Encounter {
     // Stop attacks immediately; the retained pools/crystals are harmless behind the alive guards.
     this.beams.reset();
     // The crystals play their despawn on the death tick and are removed at the cleanup tick.
-    emitColosseumVisual(ctx.tickEvents, {
+    emitEncounterVisual(ctx.tickEvents, {
+      projectiles: [],
       animations: this.crystals(ctx.world).map((crystal) => ({
         actorId: crystal.id,
         clipId: 'despawn',
@@ -575,7 +577,8 @@ export class SolHereditEncounter implements Encounter {
     });
     const charging = this.beams.startChargeIfDue(crystals, ctx.tick);
     if (charging)
-      emitColosseumVisual(ctx.tickEvents, {
+      emitEncounterVisual(ctx.tickEvents, {
+        projectiles: [],
         animations: charging.lines.map((line) => ({ actorId: line.actorId, clipId: 'charge', delayCycles: 0 })),
         graphics: charging.lines.flatMap((line) =>
           colosseumBeamGraphics(crystalBeamDirection(line.index), line.tiles, 'charge'),
@@ -588,7 +591,8 @@ export class SolHereditEncounter implements Encounter {
       random: this.random,
     });
     if (fired)
-      emitColosseumVisual(ctx.tickEvents, {
+      emitEncounterVisual(ctx.tickEvents, {
+        projectiles: [],
         animations: fired.round.lines.map((line) => ({ actorId: line.actorId, clipId: 'attack', delayCycles: 0 })),
         graphics: fired.round.lines.flatMap((line) =>
           colosseumBeamGraphics(crystalBeamDirection(line.index), line.tiles, 'fire'),
@@ -609,7 +613,8 @@ export class SolHereditEncounter implements Encounter {
     this.beams.enroll(ctx.tick);
     ctx.spawnNpc(actor);
     if (ctx.tickEvents)
-      emitColosseumVisual(ctx.tickEvents, {
+      emitEncounterVisual(ctx.tickEvents, {
+        projectiles: [],
         animations: [{ actorId: actor.id, clipId: 'spawn', delayCycles: 0 }],
         graphics: [],
       });
@@ -627,14 +632,16 @@ function solHereditStylePin(mechanics: Readonly<Partial<MechanicsConfig>>): SolA
 const SOL_ENTRY_MESSAGE: readonly OverheadTextSegment[] = [
   { text: `${SOL_CHAT_NAME} jumps down from his seat...`, color: CHAT_HIGHLIGHT_COLORS.red },
 ];
+/** A sand strike's lightning on each struck tile; emitted even when it struck none, as it always was. */
 function sandVisualEvent(strike: SandStrike): EmittableGameEvent {
-  return {
-    type: 'colosseum_visual',
+  return encounterVisual({
     animations: [],
+    projectiles: [],
     graphics: strike.tiles.map(([x, y]) => ({
       spotAnimId: COLOSSEUM_SPOTANIMS.sunfireLightning,
-      position: [x, y],
+      target: { kind: 'tile', position: [x, y] },
       delayCycles: 30,
+      height: 0,
     })),
-  };
+  });
 }

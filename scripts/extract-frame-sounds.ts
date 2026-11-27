@@ -1,7 +1,7 @@
 /**
  * Extract frameSounds from SeqType cache data for every animation sequence the
- * app can play: core player clips, weapon attack clips, spotanim sequences, and
- * every NPC clip declared by an encounter render config.
+ * app can play: core player clips, weapon attack clips, spotanim sequences (encounter
+ * render config effects included), and every NPC clip declared by an encounter render config.
  *
  * Usage: npx tsx scripts/extract-frame-sounds.ts
  *
@@ -23,7 +23,7 @@ import {
   WEAPON_ANIMATION_SETS,
   WEAPON_COMBAT_VISUALS,
 } from '../src/data/weaponCombatVisuals.generated';
-import { collectDeclaredNpcSeqIds } from '../src/encounters/declaredNpcSeqIds';
+import { collectDeclaredNpcSeqIds, collectDeclaredSpotAnimIds } from '../src/encounters/renderConfigs';
 import type { CacheInfo } from '../src/rs/cache/CacheInfo';
 import { CacheSystem } from '../src/rs/cache/CacheSystem';
 import { Bzip2 } from '../src/rs/compression/Bzip2';
@@ -63,15 +63,17 @@ const CORE_SEQ_IDS: Record<number, string> = {
 };
 
 /**
- * Every spotanim the app can draw from a weapon, spell or special attack. The handwritten visuals
- * and the special-attack registry matter as much as the generated table: Eviscerate's swipe sounds
- * hang off its player graphic's sequence, not off the swing or the server.
+ * Every spotanim the app can draw: from a weapon, spell or special attack, and every effect an
+ * encounter render config declares. The handwritten visuals and the special-attack registry matter
+ * as much as the generated table: Eviscerate's swipe sounds hang off its player graphic's sequence,
+ * not off the swing or the server. Encounter effects need not be `SpotAnimID` members.
  */
 function collectPlayedSpotAnimIds(): Set<number> {
   const visuals = [...Object.values(WEAPON_COMBAT_VISUALS), ...HANDWRITTEN_WEAPON_COMBAT_VISUALS];
   return new Set<number>(
     [
       ...Object.values(SpotAnimID),
+      ...collectDeclaredSpotAnimIds().keys(),
       ...visuals.flatMap((v) => [v.castSpotanim, v.projectileId, v.hitSpotanim]),
       ...Object.values(SPELL_VISUALS).flatMap((v) => [v.castSpotanimId, v.projectileId, v.hitSpotanimId]),
       ...Object.values(SPECIAL_ATTACK_REGISTRY).flatMap((def) => [

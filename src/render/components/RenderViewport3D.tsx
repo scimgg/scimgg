@@ -83,7 +83,6 @@ import {
   type Projection3D,
 } from '../projections/Projection3D';
 import { replayViewportStateToOrbitCameraState } from '../projections/replayViewportMapper';
-import type { EncounterRenderConfig } from '../scene/encounterRenderConfig';
 import type { RenderContext, SceneBuilderLike, TextureIndexMapper } from '../scene/types';
 import { didOrbitCameraStateChange } from './cameraChangeDetection';
 import { HITSPLAT_SPRITE_BY_TYPE } from './hitsplatSprites';
@@ -257,7 +256,6 @@ interface RenderViewport3DProps {
   playerConfig?: PlayerConfig;
   animationSystem?: AnimationSystem;
   mapLocs?: LocWithType[];
-  encounterRenderConfig?: EncounterRenderConfig;
   width?: number;
   height?: number;
   /** Viewport height in client pixels when the frame is magnified — see Viewport.logicalHeight. */
@@ -353,7 +351,6 @@ export const RenderViewport3D: React.FC<RenderViewport3DProps> = ({
   playerConfig,
   animationSystem,
   mapLocs,
-  encounterRenderConfig,
   width = 800,
   height = 600,
   logicalHeight,
@@ -991,38 +988,6 @@ export const RenderViewport3D: React.FC<RenderViewport3DProps> = ({
       };
     }
   }, [npcModelLoader, animationSystem, sceneBuilder, terrainLoaded]);
-
-  useEffect(() => {
-    if (
-      npcModelLoader &&
-      animationSystem &&
-      terrainLoaded &&
-      sceneBuilder.isTerrainLoaded() &&
-      encounterRenderConfig?.preloadNpcTypes?.length &&
-      sceneBuilder.isNpcTypeLoaded &&
-      sceneBuilder.loadNpcType
-    ) {
-      const pendingNpcTypes = encounterRenderConfig.preloadNpcTypes.filter(
-        ({ npcTypeId }) => !sceneBuilder.isNpcTypeLoaded!(npcTypeId),
-      );
-      if (pendingNpcTypes.length === 0) {
-        return;
-      }
-
-      const loadVersion = sceneLoadVersionRef.current;
-      Promise.all(
-        pendingNpcTypes.map((type) => sceneBuilder.loadNpcType!(type.npcTypeId, npcModelLoader, animationSystem, type)),
-      )
-        .then(() => {
-          if (sceneLoadVersionRef.current !== loadVersion) return;
-          log.info('Renderer', 'Encounter NPC types loaded');
-        })
-        .catch((error: Error) => {
-          if (sceneLoadVersionRef.current !== loadVersion) return;
-          log.error('Renderer', 'Failed to load encounter NPC types', error);
-        });
-    }
-  }, [npcModelLoader, sceneBuilder, terrainLoaded, animationSystem, encounterRenderConfig]);
 
   useEffect(() => {
     tryFireSceneReady();

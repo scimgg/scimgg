@@ -1,11 +1,10 @@
-import { SOL_HEREDIT_RENDER_CONFIG } from '../../encounters/solHeredit/renderConfig';
 import { isAppleTouchDevice } from '../../util/mobileDetection';
 import { ColosseumSceneCompositor } from './ColosseumSceneCompositor';
-import { withDescriptorMapBlock } from './encounterMapBlock';
+import { configureEncounterScene } from './encounterSceneBuilder';
 import type { SceneBuilderOptions } from './sceneBuilderFactory';
 import type { SceneBuilder } from './types';
 
-export function createSolHereditSceneBuilder(options?: Partial<SceneBuilderOptions>): SceneBuilder {
+export function createSolHereditSceneBuilder(options: Partial<SceneBuilderOptions>): SceneBuilder {
   // iOS only, as mitigations for Safari page crashes under Sol's heaviest effects (cause unknown):
   // skip the puffs no camera can see and the beam parts that rasterize nothing, and draw runs of the
   // rest as single instanced draws. None changes what is on screen. Desktop draws every part singly.
@@ -15,11 +14,5 @@ export function createSolHereditSceneBuilder(options?: Partial<SceneBuilderOptio
     batchSolEffects: ios,
     skipZeroAreaBeamParts: ios,
   });
-  compositor.setEncounterRenderConfig(
-    options?.encounterRenderConfig ?? withDescriptorMapBlock(SOL_HEREDIT_RENDER_CONFIG, 'sol_heredit'),
-  );
-  compositor.setEventAudioPlayer(options?.eventAudioPlayer ?? null);
-  compositor.setFrameSoundTracker(options?.frameSoundTracker ?? null);
-  compositor.setGroundItemLoaderSource(options?.cacheManager ?? null);
-  return compositor;
+  return configureEncounterScene(compositor, options);
 }

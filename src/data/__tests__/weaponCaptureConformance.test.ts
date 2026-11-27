@@ -168,10 +168,7 @@ describe(`every attack in capture ${CAPTURE}`, () => {
     expect(attack.tick + (event.impactDelayTicks ?? 0)).toBe(attack.splatTick);
 
     const play = vi.fn();
-    const audio = new EventAudioPlayer({ play, preloadSounds: vi.fn() } as unknown as AudioEngine, {
-      name: 'core',
-      rules: coreAudioRules,
-    });
+    const audio = new EventAudioPlayer({ play, preloadSounds: vi.fn() } as unknown as AudioEngine, coreAudioRules);
     audio.onEvents([event], PLAYER_TILE);
     const sounds = play.mock.calls
       .map(([id, options]) => [id, Math.round((options.delayMs ?? 0) / 20)] as const)

@@ -4,6 +4,7 @@
  * serves empty or in a container the production mirror may not use (stored and gzip only, no bzip2).
  * Independent of the trimmer's root discovery by design; see `cacheRuntimeFixture.ts`. Run with
  * `npm run check:cache-runtime` (`CACHE_RUNTIME_TRIMMED_DIR=dist/osrs-cache` checks a built artifact). */
+// biome-ignore-all lint/complexity/useLiteralKeys: the check reads private engine and renderer state, which TypeScript allows only through bracket access.
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
@@ -21,6 +22,7 @@ import {
 } from '../src/core/constants';
 import type { EncounterCommand } from '../src/core/encounters/commands';
 import type { EncounterModifierSelection, EncounterModifierTier } from '../src/core/encounters/encounterFactory';
+import { isEncounterVisualEvent } from '../src/core/events/encounterVisual';
 import { type GameEvent, isCoreEvent } from '../src/core/events/types';
 import { mulberry32 } from '../src/core/rng';
 import type { SimulationEngine } from '../src/core/SimulationEngine';
@@ -39,7 +41,6 @@ import { encounterDefaultCamera } from '../src/encounters/presentationModules';
 import { ALL_ENCOUNTER_KINDS, encounterRegistry } from '../src/encounters/registry';
 import { createSimulationEngineForNewRun } from '../src/encounters/simulationEngineFactory';
 import { COLOSSEUM_SPOTANIMS } from '../src/npcs/colosseum/constants';
-import { isColosseumVisualEvent } from '../src/npcs/colosseum/visualEvents';
 import type { AnimationSequence } from '../src/render/core/animation';
 import type { RenderQueue } from '../src/render/core/commands';
 import { sharedModelTextureIndex } from '../src/render/core/modelTextures';
@@ -49,7 +50,7 @@ import type { PlayerAnimationSet, PlayerPoseSet } from '../src/render/player/pla
 import { createProjection3D, type Projection3D } from '../src/render/projections/Projection3D';
 import { getEncounterRenderConfig } from '../src/render/scene/encounterRenderConfig';
 import { SceneCompositor } from '../src/render/scene/SceneCompositor';
-import { sceneBuilderRegistry } from '../src/render/scene/sceneBuilderFactory';
+import { createSceneBuilderForKind } from '../src/render/scene/sceneBuilderFactory';
 import type { RenderContext, SceneBuilderLike } from '../src/render/scene/types';
 import type { LocTypeInfo } from '../src/rs/map/MapLoader';
 import type { ModelData } from '../src/rs/model/ModelData';
@@ -238,10 +239,8 @@ async function openEncounter(
     if (config.bounds !== null) setResolvedArenaConfig(descriptor.kind, config);
   }
 
-  const scene = sceneBuilderRegistry.create(kind, {
-    cacheManager,
-    encounterRenderConfig: getEncounterRenderConfig(kind),
-  });
+  const renderConfig = getEncounterRenderConfig(kind);
+  const scene = createSceneBuilderForKind(kind, { cacheManager, encounterRenderConfig: renderConfig });
   const compositor = compositorOf(scene);
   const animationSystem = need(cacheManager.getAnimationSystem(), 'animation system');
   const npcModelLoader = need(cacheManager.getNpcModelLoader(), 'npc model loader');
@@ -263,12 +262,15 @@ async function openEncounter(
     await scene.loadLocs(need(cacheManager.getLocModelLoader(), 'loc model loader'), mapLocs);
   }
   await scene.loadNpc(npcModelLoader, animationSystem);
-  const renderConfig = getEncounterRenderConfig(kind);
-  if (scene.loadNpcType) {
-    for (const type of renderConfig?.preloadNpcTypes ?? []) {
-      await scene.loadNpcType(type.npcTypeId, npcModelLoader, animationSystem, type);
-    }
-  }
+  // `loadNpc` settles a declared type whose model fails without failing; report it rather than
+  // load it again here, which would pass a scene the app could not draw.
+  const declaredNpcTypeIds = [
+    renderConfig?.primaryNpc?.npcTypeId,
+    ...(renderConfig?.preloadNpcTypes ?? []).map((type) => type.npcTypeId),
+  ].filter((id) => id !== undefined);
+  const unloaded = [...new Set(declaredNpcTypeIds)].filter((id) => !compositor.isNpcTypeLoaded(id));
+  if (unloaded.length > 0)
+    throw new Error(`[cache-runtime] ${kind} declared NPC types not loaded: ${unloaded.join(', ')}`);
   await scene.loadSpotAnims(need(cacheManager.getSpotAnimModelLoader(), 'spotanim model loader'));
   await scene.loadPlayer(
     need(cacheManager.getPlayerModelLoader(), 'player model loader'),
@@ -1154,7 +1156,7 @@ const hasEvent = (session: EncounterSession, type: string) => session.events.som
 const colosseumCue = (session: EncounterSession, match: (clipIds: string[], spotAnimIds: number[]) => boolean) =>
   session.events.some(
     (event) =>
-      isColosseumVisualEvent(event) &&
+      isEncounterVisualEvent(event) &&
       match(
         event.animations.map((cue) => cue.clipId),
         event.graphics.map((cue) => cue.spotAnimId),

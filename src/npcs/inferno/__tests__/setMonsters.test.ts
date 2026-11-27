@@ -5,6 +5,7 @@ import { canNpcAttack, hasNpcAttackReach } from '../../../core/combat/npcAttackR
 import { notifyNpcOfPlayerAttack, processNpcRetaliations } from '../../../core/combat/retaliation';
 import { setArenaConfig, setDefaultArenaConfig } from '../../../core/constants';
 import type { EncounterContext } from '../../../core/encounters/types';
+import { type EncounterVisualEvent, isEncounterVisualEvent } from '../../../core/events/encounterVisual';
 import { TickEvents } from '../../../core/events/TickEvents';
 import { NpcDefinitionCollection, type NpcDefinitionContext } from '../../../core/npcs';
 import { SimulationEngine } from '../../../core/SimulationEngine';
@@ -26,7 +27,6 @@ import {
   rangerDefinition,
   type SetMonsterSpawnOptions,
 } from '../setMonsters';
-import { type InfernoVisualEvent, isInfernoVisualEvent } from '../visualEvents';
 import { createInfernoWaveNpc } from '../waveNpcs';
 import { ZUK_WAVE_GRAPHICS } from './fixtures/zukWaveGraphicsCapture';
 import { createWaveEngine } from './waveFixture';
@@ -166,7 +166,7 @@ describe.each([
       { attack: `${species}_melee`, sourceId: actor.id, targetId: player.id, launchTick: 22, impactTick: 22 },
     ]);
     expect(emitted.filter(isZukAttackEvent)[0]).not.toHaveProperty('projectileArrivalCycles');
-    expect(emitted.filter(isInfernoVisualEvent)).toMatchObject([
+    expect(emitted.filter(isEncounterVisualEvent)).toMatchObject([
       {
         animations: [{ actorId: actor.id, clipId: 'melee', delayCycles: 0 }],
         projectiles: [],
@@ -201,7 +201,7 @@ describe.each([
     const result = definitions.tick(actor, { ...context(22), random });
 
     expect(result.npcAttacks).toMatchObject([{ style: primary }]);
-    expect(events.flush().filter(isInfernoVisualEvent)[0]?.projectiles).toHaveLength(species === 'mager' ? 1 : 2);
+    expect(events.flush().filter(isEncounterVisualEvent)[0]?.projectiles).toHaveLength(species === 'mager' ? 1 : 2);
     expect(random).toHaveBeenCalledTimes(3);
   });
 
@@ -560,7 +560,7 @@ describe('reusable Jal-Zek and Jal-Xil long-range actions', () => {
       }),
     ]);
     const cues = events.flush();
-    expect(cues.find(isInfernoVisualEvent)?.projectiles).toHaveLength(projectiles);
+    expect(cues.find(isEncounterVisualEvent)?.projectiles).toHaveLength(projectiles);
     expect(cues.filter(isZukAttackEvent)).toMatchObject([
       { sourceId: actor.id, targetId: 'player', launchTick: 22, impactTick: 25 },
     ]);
@@ -572,7 +572,7 @@ describe('reusable Jal-Zek and Jal-Xil long-range actions', () => {
     const { world, events, context } = fixture([actor]);
     const player = world.getPlayer();
     if (!player) throw new TypeError('Missing player fixture');
-    const volleys: InfernoVisualEvent[] = [];
+    const volleys: EncounterVisualEvent[] = [];
     const attackTicks: number[] = [];
     const facing: number[] = [];
     const recordedTicks = [106, 110, 114];
@@ -584,7 +584,7 @@ describe('reusable Jal-Zek and Jal-Xil long-range actions', () => {
       player.position = [target[0], target[1]];
       const result = definitions.tick(actor, context(tick));
       const emitted = events.flush();
-      volleys.push(...emitted.filter(isInfernoVisualEvent));
+      volleys.push(...emitted.filter(isEncounterVisualEvent));
       attackTicks.push(...emitted.filter(isZukAttackEvent).map((event) => event.launchTick));
       if ((tick - 22) % 4 === 0) {
         expect(result.npcAttacks).toHaveLength(1);
@@ -693,7 +693,7 @@ describe('reusable Jal-Zek and Jal-Xil long-range actions', () => {
     expect(result.npcAttacks).toMatchObject([
       { attackerId: actor.id, targetId: glyph.id, accuracySucceeded: true, rolledDamage: 0, impactDelayTicks: 3 },
     ]);
-    const visuals = events.flush().filter(isInfernoVisualEvent);
+    const visuals = events.flush().filter(isEncounterVisualEvent);
     expect(visuals).toHaveLength(1);
     expect(visuals[0].projectiles).toHaveLength(create === createZukRanger ? 2 : 1);
     expect(visuals[0].projectiles.map((projectile) => projectile.target)).toEqual(
@@ -874,9 +874,9 @@ describe('reusable Jal-Zek and Jal-Xil long-range actions', () => {
     engine.advanceTick([10, 20]);
 
     expect(glyph.vitals.hp).toBe(create === createTestMager ? 530 : 554);
-    expect(engine.getLastTickEvents().filter(isInfernoVisualEvent)).toContainEqual(
+    expect(engine.getLastTickEvents().filter(isEncounterVisualEvent)).toContainEqual(
       expect.objectContaining({
-        type: 'inferno_visual',
+        type: 'encounter_visual',
         animations: [{ actorId: glyph.id, clipId: 'hit', delayCycles: 0 }],
         projectiles: [],
         graphics: [],
@@ -1087,7 +1087,7 @@ describe('ordinary-wave Jal-Xil and Jal-Zek', () => {
     const { advanceTo, events } = createWaveEngine([mager]);
     advanceTo(1);
     expect(mager).toMatchObject({ npcTypeId: 7699, size: 4, combat: { attackRange: 15 } });
-    expect(events.filter(isInfernoVisualEvent)[0]?.projectiles).toMatchObject([{ spotAnimId: 1376 }]);
+    expect(events.filter(isEncounterVisualEvent)[0]?.projectiles).toMatchObject([{ spotAnimId: 1376 }]);
   });
 });
 
@@ -1133,7 +1133,7 @@ describe('Jal-Zek resurrection', () => {
     // Revived during the NPC turns, it takes an ordinary first step that tick (toward the player at
     // (10,20)); the captured add tile is where that step ends (20/34 revivals step).
     expect(bat?.position).toEqual([position[0] - 1, position[1] - 1]);
-    const visual = events.filter(isInfernoVisualEvent).find((event) => event.animations[0]?.clipId === 'resurrect');
+    const visual = events.filter(isEncounterVisualEvent).find((event) => event.animations[0]?.clipId === 'resurrect');
     expect(visual).toMatchObject({
       tick: 1,
       animations: [{ actorId: 'zek', clipId: 'resurrect' }],
@@ -1154,7 +1154,7 @@ describe('Jal-Zek resurrection', () => {
     // The mager's next attack is rez+8.
     advanceTo(9);
     const casts = events
-      .filter(isInfernoVisualEvent)
+      .filter(isEncounterVisualEvent)
       .filter((event) => event.animations.some((cue) => cue.actorId === 'zek' && cue.clipId === 'magic'));
     expect(casts.map((event) => event.tick)).toEqual([9]);
   });
@@ -1165,7 +1165,7 @@ describe('Jal-Zek resurrection', () => {
     advanceTo(1);
 
     const [{ position }] = revived;
-    const visual = events.filter(isInfernoVisualEvent).find((event) => event.animations[0]?.clipId === 'resurrect');
+    const visual = events.filter(isEncounterVisualEvent).find((event) => event.animations[0]?.clipId === 'resurrect');
     expect(visual?.graphics[0]?.target).toEqual({ kind: 'tile', position: [position[0] + 1, position[1] + 1] });
     expect(position[0] >= 31 && position[0] <= 37 && position[1] >= 28 && position[1] <= 34).toBe(true);
   });

@@ -2,9 +2,9 @@ import type { NpcActor } from '../../core/actors/NpcActor';
 import type { PlayerActor } from '../../core/actors/PlayerActor';
 import { calculateProjectileEndTime } from '../../core/combat/hitDelay';
 import { projectileDistance } from '../../core/combat/npcAttackRequest';
-import { actorVisualTarget, type NpcProjectileCue, npcProjectileSource } from '../projectileCue';
+import type { EncounterVisualBatch, NpcProjectileCue } from '../../core/events/encounterVisual';
+import { actorVisualTarget, npcProjectileSource } from '../projectileCue';
 import { JAL_XIL_PROJECTILE_TIMING, JAL_ZEK_PROJECTILE_TIMING } from './projectileProfiles';
-import type { InfernoVisualCue } from './visualEvents';
 
 // Visual-only cues; packet fields are not autonomous attacks or HP changes (docs/encounters/zuk-projectile-evidence.md).
 
@@ -12,7 +12,7 @@ export function demonstrateJad(
   jad: NpcActor,
   target: PlayerActor | NpcActor,
   style: 'magic' | 'range',
-): InfernoVisualCue {
+): EncounterVisualBatch {
   faceInfernoAction(jad, target);
   const animations = [{ actorId: jad.id, clipId: style, delayCycles: 0 }];
   switch (style) {
@@ -50,7 +50,7 @@ export function demonstrateJad(
 const isMager = (actor: NpcActor) => actor.npcTypeId === 7703 || actor.npcTypeId === 7699;
 const isRanger = (actor: NpcActor) => actor.npcTypeId === 7702 || actor.npcTypeId === 7698;
 
-export function demonstrateSet(actors: readonly NpcActor[], target: NpcActor | PlayerActor): InfernoVisualCue {
+export function demonstrateSet(actors: readonly NpcActor[], target: NpcActor | PlayerActor): EncounterVisualBatch {
   for (const actor of actors) faceInfernoAction(actor, target);
   const magerProjectiles = actors.filter(isMager).map((actor) => ({
     spotAnimId: 1376,
@@ -104,7 +104,7 @@ export function demonstrateSet(actors: readonly NpcActor[], target: NpcActor | P
   };
 }
 
-export function demonstrateHeal(healers: readonly NpcActor[], zuk: NpcActor): InfernoVisualCue {
+export function demonstrateHeal(healers: readonly NpcActor[], zuk: NpcActor): EncounterVisualBatch {
   for (const actor of healers) faceInfernoAction(actor, zuk);
   return {
     animations: healers.map((actor) => ({ actorId: actor.id, clipId: 'heal', delayCycles: 0 })),

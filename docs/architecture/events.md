@@ -1,7 +1,8 @@
 # Events
 
 Events are the semantic bridge from simulation to render/audio: the simulation says *what*
-happened (`attackKind: 'magic_fire'`), never a cache or asset id; the renderer decides how it looks.
+happened (`attackKind: 'magic_fire'`), never a cache or asset id, outside the
+[visual batches](#visual-batches) below; the renderer decides how it looks.
 
 - `GameEvent = CoreGameEvent | EncounterGameEvent`
   ([`src/core/events/types.ts`](../../src/core/events/types.ts)). `CoreGameEvent` is a closed
@@ -17,12 +18,47 @@ happened (`attackKind: 'magic_fire'`), never a cache or asset id; the renderer d
   emitted on the attack tick so the XP drop overlay can show a hit before a delayed hit lands.
   Read the union.
 
+## Visual batches
+
+Semantic events are the normal API. The narrow exception is a transition that *is* a set of
+explicitly scheduled visual instructions, such as a volley with per-occurrence delays, landing tiles
+and heights: the encounter emits one `encounter_visual` batch
+([`src/core/events/encounterVisual.ts`](../../src/core/events/encounterVisual.ts)) of keyed NPC
+clips, NPC projectiles and one-shot graphics. Never also map a semantic event to the same effect.
+Each cue's identity is its batch's `eventId`, its family and its ordinal, so batch boundaries and
+order are part of the wire contract. A graphic stands on a tile's center, on a tracked actor's
+rendered center (its recorded position while the actor is not rendered), or rides an `attached`
+actor's rendered model, hidden while the actor is absent. The scene's `EncounterCuePlayer` plays
+batches live and restores them in replay from `ReplayEffectIndex`, in every scene, the common one
+included: an encounter emits the batch and declares the clips and effects it names in its render
+config, and needs no scene code to play it ([presenting an encounter](encounters.md#presenting-it)).
+A clip or an `attached` graphic belongs to the life of its actor it was emitted for, or, for an
+actor not yet present, to the actor's next life
+([`actorCueLife.ts`](../../src/render/core/actorCueLife.ts)). The life ends at an explicit
+`actor_despawned`, taken in event order with the batches, or when the actor shows a changed
+`spawnTick`; the cue is then dropped, live and in replay, whatever clip keys a successor's type
+declares. A successor under the same id with the same (or no) `spawnTick` and no removal is not told
+apart. Projectiles and every other graphic play on.
+
+`actor_presentations_removed` drops every drawn presentation of the listed NPC types, corpses
+included, before the frame's actors are synced (a practice command replacing a set). Plain
+`actor_despawned` is not equivalent: a corpse the simulation already pruned may still be shown.
+
+Recordings from older builds are converted as `ReplayRecorder.load` reads them
+([`legacyReplayEvents.ts`](../../src/core/legacyReplayEvents.ts)): `inferno_visual` and Sol
+Heredit's `colosseum_visual` become `encounter_visual` and `inferno_clear_minions` becomes
+`actor_presentations_removed`, with ids, ticks, frames and parameters kept. A `colosseum_visual`
+graphic's `position` is a tile target and its `actorId` an `attached` one; a missing height is 0 and
+missing projectiles are none. A malformed recognized event fails the load before anything is
+installed.
+
 ## Consumption
 
-`SceneCompositor.build()` filters events through `getUnprocessedEvents()` (by
-`lastProcessedEventId`) and forwards the new ones to controllers, `onEncounterEvents()` and
-`EventAudioPlayer`. The cursor makes a one-shot effect fire once however many frames render the
-same tick. A replay discontinuity rewinds the cursor so the landed frame's own events are consumed
+Live visuals consume events through `lastProcessedEventId`: `SceneCompositor.build()` filters
+them with `getUnprocessedEvents()` and hands the new ones to the cue player, controllers and
+`onEncounterEvents()`, so a one-shot effect fires once however many frames render the same tick.
+History-backed cues come from the replay index instead. Event audio consumes the displayed frame
+through its own `lastPlayedAudioEventId` while unpaused. A replay discontinuity rewinds the cursor so the landed frame's own events are consumed
 again ([Replay timeline discontinuity](replay-timeline-discontinuity.md)).
 
 The tick an event is *delivered* on can matter beyond its `tick` field: `EventAudioPlayer` measures

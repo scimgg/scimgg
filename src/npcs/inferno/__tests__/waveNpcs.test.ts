@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { setArenaConfig, setDefaultArenaConfig } from '../../../core/constants';
+import { isEncounterVisualEvent } from '../../../core/events/encounterVisual';
 import { enqueueEnginePendingHit } from '../../../test/helpers/pendingHits';
 import { isZukAttackEvent } from '../events';
 import { createRanger } from '../setMonsters';
-import { isInfernoVisualEvent } from '../visualEvents';
 import { createInfernoWaveNpc, type InfernoWaveNpcSpecies } from '../waveNpcs';
 import { createWaveEngine } from './waveFixture';
 
@@ -219,7 +219,7 @@ describe('ordinary-wave sound owners', () => {
       { tick: 2, npcKind },
     ]);
     const defends = events
-      .filter(isInfernoVisualEvent)
+      .filter(isEncounterVisualEvent)
       .flatMap((event) => event.animations)
       .filter((cue) => cue.clipId === 'defend');
     expect(defends).toHaveLength(defend ? 1 : 0);

@@ -11,6 +11,7 @@ import {
   WARBAND_BERSERKER_NPC_ID,
   WARBAND_SEER_NPC_ID,
 } from '../../npcs/colosseum/constants';
+import { COLOSSEUM_SPOT_ANIM_IDS } from '../../npcs/colosseum/visualEvents';
 import { FLOOR_EFFECT_DEPTH_BIAS } from '../../render/effects/spotAnimRenderPolicy';
 import { FULL_MAP_SQUARE_ALL_LEVELS } from '../../render/environment/locRenderOptions';
 import type { AuthoredEncounterRenderConfig } from '../../render/scene/encounterRenderConfig';
@@ -104,6 +105,7 @@ export const SOL_HEREDIT_RENDER_CONFIG: AuthoredEncounterRenderConfig = {
       deathSeqId: COLOSSEUM_SEQS.crystal.despawn,
     },
   ],
+  spotAnimIds: COLOSSEUM_SPOT_ANIM_IDS,
   // The arena sits inside a much larger amphitheater, so the whole map square renders. Its seating
   // ring is map level 1 and its awnings level 2 (level 3 is empty). Every tile with level 1 or 2
   // content is a bridge (level 1 flag 0x2, drawn as the player's plane) or visible-below (0x8),

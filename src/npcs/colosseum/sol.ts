@@ -2,6 +2,7 @@ import type { NpcActor } from '../../core/actors/NpcActor';
 import type { PlayerActor } from '../../core/actors/PlayerActor';
 import { enableNpcHitpointRegen } from '../../core/combat/npcRegeneration';
 import type { EncounterContext, EnvironmentalDamage, EquipmentClickSlot } from '../../core/encounters/types';
+import { type EncounterGraphicCue, emitEncounterVisual } from '../../core/events/encounterVisual';
 import { CHAT_HIGHLIGHT_COLORS } from '../../core/events/gameMessages';
 import type { OverheadTextSegment } from '../../core/events/types';
 import { isNpcMovementSuppressed } from '../../core/npcCombatMovement';
@@ -42,7 +43,6 @@ import {
   startSolGrapple,
 } from './grapple';
 import { type ArenaRect, isInsideArena, type SolAttackStyle, telegraphDelayCycles } from './solAttacks';
-import { type ColosseumGraphicCue, emitColosseumVisual } from './visualEvents';
 
 export interface SolState {
   scheduler: SolAttackState;
@@ -107,12 +107,14 @@ export const solDefinition = createNpcDefinition<SolState, { readonly arena: Are
       arena: config.arena,
     });
     if (landing) {
-      emitColosseumVisual(context.tickEvents, {
+      emitEncounterVisual(context.tickEvents, {
         animations: [],
+        projectiles: [],
         graphics: landing.tiles.map((tile, index) => ({
           spotAnimId: COLOSSEUM_SPOTANIMS.solMelee[index % COLOSSEUM_SPOTANIMS.solMelee.length],
-          position: [tile[0], tile[1]],
+          target: { kind: 'tile', position: [tile[0], tile[1]] },
           delayCycles: telegraphDelayCycles(tile, landing.centre),
+          height: 0,
         })),
       });
       if (landing.tiles.some(([x, y]) => x === player.position[0] && y === player.position[1])) {
@@ -314,7 +316,7 @@ export function launchSolIfReady(
   let movementLock = 1;
   let clipId: string;
   let delayCycles = 0;
-  const graphics: ColosseumGraphicCue[] = [];
+  const graphics: EncounterGraphicCue[] = [];
   let taunt: string | null = null;
   switch (launch.kind) {
     case 'regular':
@@ -331,16 +333,21 @@ export function launchSolIfReady(
     case 'triple':
       clipId = launch.long ? 'triple' : 'tripleShort';
       graphics.push({
-        actorId: actor.id,
         spotAnimId: launch.long ? COLOSSEUM_SPOTANIMS.tripleTelegraphLong : COLOSSEUM_SPOTANIMS.tripleTelegraphShort,
+        target: { kind: 'attached', actorId: actor.id },
         delayCycles: 0,
+        height: 0,
       });
       break;
     default:
       return assertNever(launch);
   }
   actor.state.immobileUntilTick = Math.max(actor.state.immobileUntilTick, ctx.tick + movementLock);
-  emitColosseumVisual(ctx.tickEvents, { animations: [{ actorId: actor.id, clipId, delayCycles }], graphics });
+  emitEncounterVisual(ctx.tickEvents, {
+    animations: [{ actorId: actor.id, clipId, delayCycles }],
+    projectiles: [],
+    graphics,
+  });
   return { launched: true, taunt };
 }
 

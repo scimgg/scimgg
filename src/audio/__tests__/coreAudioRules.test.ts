@@ -22,7 +22,7 @@ describe('coreAudioRules', () => {
   });
 
   function createPlayer(): EventAudioPlayer {
-    return new EventAudioPlayer(mockAudioEngine as unknown as AudioEngine, { name: 'core', rules: coreAudioRules });
+    return new EventAudioPlayer(mockAudioEngine as unknown as AudioEngine, coreAudioRules);
   }
 
   it.each(EQUIPMENT_COMBAT_FAMILIES)('inherits ordinary and special sound resolution for family $baseId', ({

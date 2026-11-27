@@ -2,7 +2,12 @@ import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { ENCOUNTER_RENDER_CONFIGS } from '../../src/encounters/declaredNpcSeqIds';
+import {
+  collectDeclaredNpcSeqIds,
+  collectDeclaredSpotAnimIds,
+  ENCOUNTER_RENDER_CONFIGS,
+} from '../../src/encounters/renderConfigs';
+import { COLOSSEUM_SPOTANIMS } from '../../src/npcs/colosseum/constants';
 import { type CacheRoots, collectCacheRoots } from '../cacheRoots';
 import { discoverCacheUsage } from '../discoverCacheUsage';
 
@@ -81,6 +86,25 @@ describe('collectCacheRoots', () => {
         expect(registryRoots.spotAnims.has(id), `${kind} render config spotAnimIds: ${id}`).toBe(true);
       }
     }
+    // The primary NPCs' death effects too, and each config's effects, Sol's included, which are no
+    // `SpotAnimID` members: the same list the scene preloads and frame-sound extraction walks.
+    const declared = collectDeclaredSpotAnimIds();
+    expect(declared.size).toBeGreaterThan(0);
+    for (const [id, label] of declared) expect(registryRoots.spotAnims.has(id), label).toBe(true);
+    expect(declared.get(COLOSSEUM_SPOTANIMS.totemImpact)).toBe('sol_heredit render config spotAnimIds');
+  });
+
+  it('roots every NPC type and NPC sequence the render configs make the scene load', () => {
+    const registryRoots = collectCacheRoots();
+    for (const [kind, config] of ENCOUNTER_RENDER_CONFIGS) {
+      const npcTypeIds = [
+        config.primaryNpc?.npcTypeId,
+        ...(config.preloadNpcTypes ?? []).map((type) => type.npcTypeId),
+      ];
+      for (const id of npcTypeIds.filter((id) => id !== undefined))
+        expect(registryRoots.npcs.has(id), `${kind} npc ${id}`).toBe(true);
+    }
+    for (const [seqId, label] of collectDeclaredNpcSeqIds()) expect(registryRoots.seqs.has(seqId), label).toBe(true);
   });
 
   it('roots the Surge potion drink graphic in its item action (the 3232 production gap)', () => {

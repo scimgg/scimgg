@@ -1,8 +1,10 @@
 import { createHash } from 'node:crypto';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { EncounterVisualEvent } from '../../../core/events/encounterVisual';
 import type { ReplayDisplayFrame } from '../../../core/ReplayRecorder';
+import { SimulationEngine } from '../../../core/SimulationEngine';
+import { SolHereditEncounter } from '../../../encounters/solHeredit/SolHereditEncounter';
 import { COLOSSEUM_SPOTANIMS, SOL_ACTOR_ID } from '../../../npcs/colosseum/constants';
-import type { ColosseumVisualEvent } from '../../../npcs/colosseum/visualEvents';
 import { openSpotAnimModelLoader } from '../../../rs/model/__tests__/encounterModelFixtures';
 import { REAL_CACHE_TEST_TIMEOUT_MS, skipWithoutRealCache } from '../../../test/helpers/real-cache';
 import { perfFlags } from '../../../util/PerfFlags';
@@ -13,8 +15,10 @@ import {
   type RenderQueue,
 } from '../../core/commands';
 import { instanceAtlasBoundBytes } from '../../core/meshSource';
+import { ReplayEffectIndex } from '../../core/replayEffectIndex';
 import { createProjection3D } from '../../projections/Projection3D';
-import { ColosseumVisualController } from '../controllers/ColosseumVisualController';
+import { colosseumGraphicStyle } from '../../scene/ColosseumSceneCompositor';
+import { type EncounterCueFrame, EncounterCuePlayer } from '../EncounterCuePlayer';
 import { SpotAnimRenderer } from '../SpotAnimRenderer';
 import type { SpotAnimTransform } from '../spotAnimTypes';
 import { writeViewProjection } from '../spotAnimViewRejection';
@@ -22,13 +26,19 @@ import { writeViewProjection } from '../spotAnimViewRejection';
 /**
  * A ripple-sized burst of Sol's real ground effects, drawn frame by frame at 60 fps from emission to
  * expiry, live and in replay with a seek back. Pin every command field, array byte, model matrix,
- * command/array identity and frame state. A separate identity-free visible digest checks that
- * omitting wholly zero-alpha parts changes no remaining draw payload or frame state.
- * Visible digests were measured before omission, on an earlier revision; only the full-sort identity
- * digests change, because their queues lose 6,173 live / 9,125 replay zero-alpha commands.
+ * command/array identity and frame state. A separate visible digest, free of object identity (no
+ * command, array or mesh-source numbering), checks that omitting wholly zero-alpha parts changes no
+ * remaining draw payload or frame state: the full-sort queues lose 6,173 live / 9,125 replay
+ * zero-alpha commands and nothing else. Both digests hash each frame state's actor id,
+ * `spotanim:<instance id>`, and a graphic's instance id is its cue id
+ * (`cue-<eventId>-graphic-<ordinal>`), so renaming cues changes both. A replay seek back rebuilds
+ * the cues, as the scene does on a discontinuity, so each later frame queues its draws in emission
+ * order.
  */
 
 const initialSkipSort = perfFlags.skipTransparentSort;
+/** A live frame's actors when no NPC is shown: no cue's actor life ends. */
+const NO_CUE_ACTORS = { npcs: [], currentTick: 0 } as const;
 afterEach(() => {
   perfFlags.skipTransparentSort = initialSkipSort;
   vi.restoreAllMocks();
@@ -45,21 +55,31 @@ const CAMERA = {
 };
 
 /** 13 × 13 tiles rippling out two cycles per ring, plus Sol's own telegraph and one on the player. */
-function burst(eventId: number, tick: number): ColosseumVisualEvent {
-  const graphics: ColosseumVisualEvent['graphics'][number][] = [];
+function burst(eventId: number, tick: number): EncounterVisualEvent {
+  const graphics: EncounterVisualEvent['graphics'][number][] = [];
   for (let dy = -6; dy <= 6; dy++) {
     for (let dx = -6; dx <= 6; dx++) {
       graphics.push({
         spotAnimId: COLOSSEUM_SPOTANIMS.solMelee[graphics.length % 3],
-        position: [30 + dx, 30 + dy],
+        target: { kind: 'tile', position: [30 + dx, 30 + dy] },
         delayCycles: 2 * Math.max(Math.abs(dx), Math.abs(dy)),
-        ...(dx === 0 && dy === 0 ? { height: 40 } : {}),
+        height: dx === 0 && dy === 0 ? 40 : 0,
       });
     }
   }
-  graphics.push({ spotAnimId: COLOSSEUM_SPOTANIMS.tripleTelegraphShort, actorId: SOL_ACTOR_ID, delayCycles: 3 });
-  graphics.push({ spotAnimId: COLOSSEUM_SPOTANIMS.totemImpact, actorId: 'player', delayCycles: 0, height: 64 });
-  return { type: 'colosseum_visual', eventId, tick, animations: [], graphics } as ColosseumVisualEvent;
+  graphics.push({
+    spotAnimId: COLOSSEUM_SPOTANIMS.tripleTelegraphShort,
+    target: { kind: 'attached', actorId: SOL_ACTOR_ID },
+    delayCycles: 3,
+    height: 0,
+  });
+  graphics.push({
+    spotAnimId: COLOSSEUM_SPOTANIMS.totemImpact,
+    target: { kind: 'attached', actorId: 'player' },
+    delayCycles: 0,
+    height: 64,
+  });
+  return { type: 'encounter_visual', eventId, tick, animations: [], projectiles: [], graphics };
 }
 
 /**
@@ -83,6 +103,11 @@ function actorAt(cycle: number) {
 const terrainHeights = Array.from({ length: 64 }, (_, x) =>
   Int32Array.from({ length: 64 }, (_, y) => -((x * 37 + y * 11) % 90)),
 );
+
+/** The frame Sol's scene hands its cue player once every actor is drawn. */
+function cueFrame(cycle: number): EncounterCueFrame {
+  return { cycle, resolveActor: () => null, resolveAttachment: actorAt(cycle), terrainHeights };
+}
 
 class Digest {
   private readonly hash = createHash('sha256');
@@ -198,10 +223,10 @@ async function setUp() {
     COLOSSEUM_SPOTANIMS.totemImpact,
   ]);
   renderer.setSorterProjection(CAMERA);
-  return { renderer, loader, controller: new ColosseumVisualController(renderer) };
+  return { renderer, loader, controller: new EncounterCuePlayer(renderer, colosseumGraphicStyle) };
 }
 
-/** Draws one 60 fps frame at `cycle`, as the compositor does: controller, then expiry, then the queue. */
+/** Draws one 60 fps frame at `cycle`, as the compositor does: cue player, then expiry, then the queue. */
 function drawFrame(renderer: SpotAnimRenderer, digest: Digest, cycle: number): void {
   renderer.tick(Math.floor(cycle / 30), cycle / 30);
   const queue: RenderQueue = { replayPresentationReady: true, commands: [] };
@@ -241,33 +266,33 @@ describe.skipIf(skipWithoutRealCache('pinned'))('a ripple-sized spotanim burst',
   );
 
   it.each([
-    { skipSort: true, digest: '4ba2781185210bd6', visible: '4b33bf392540a82b' },
-    { skipSort: false, digest: 'f96c8be213a02044', visible: '70f49409ddb3e71f' },
+    { skipSort: true, digest: 'e5a48c315365c4c8', visible: '2729bfc275131081' },
+    { skipSort: false, digest: 'e9f2571888cde18c', visible: 'e6b4f386aa210e58' },
   ])(
     'queues the pinned commands live, skip-sort $skipSort',
     async ({ skipSort, digest: expected, visible }) => {
       perfFlags.skipTransparentSort = skipSort;
       const { renderer, controller } = await setUp();
       const digest = new Digest();
-      controller.consume([burst(7, 1)]);
+      controller.consumeEvents([burst(7, 1)], NO_CUE_ACTORS);
       const onPlayer = new Map<number, string>();
       for (const cycle of CYCLES) {
         controller.takeAnimations(cycle);
-        controller.render(cycle, terrainHeights, actorAt(cycle));
+        controller.update(cueFrame(cycle));
         drawFrame(renderer, digest, cycle);
         for (const eventId of [7, 8]) {
-          const shown = renderer['activeInstances'].has(`colosseum-${eventId}-170`);
+          const shown = renderer['activeInstances'].has(`cue-${eventId}-graphic-170`);
           if (onPlayer.get(eventId)?.slice(-1) !== (shown ? '+' : '-'))
             onPlayer.set(eventId, `${onPlayer.get(eventId) ?? ''}${shown ? '+' : '-'}`);
         }
         // A second burst lands mid-ripple, on the same tiles, under new ids.
-        if (cycle === 50) controller.consume([burst(8, 2)]);
+        if (cycle === 50) controller.consumeEvents([burst(8, 2)], NO_CUE_ACTORS);
       }
       expect(digest.commands).toBeGreaterThan(169 * 40);
       // Each graphic on the player shows, detaches, shows again where they came back, then expires.
       expect(Object.fromEntries(onPlayer)).toEqual({ 7: '-+-+-', 8: '-+-+-' });
       // Everything but Sol's longer telegraph has expired.
-      expect([...renderer['activeInstances'].keys()]).toEqual(['colosseum-7-169', 'colosseum-8-169']);
+      expect([...renderer['activeInstances'].keys()]).toEqual(['cue-7-graphic-169', 'cue-8-graphic-169']);
       // Before omission: 21,088 skip-sort draws, or 27,261 full-sort draws including 6,173
       // wholly zero-alpha parts. The camera already rejected those parts on the skip path.
       expect(digest.commands).toBe(21088);
@@ -279,31 +304,33 @@ describe.skipIf(skipWithoutRealCache('pinned'))('a ripple-sized spotanim burst',
   );
 
   it.each([
-    { skipSort: true, digest: 'dc193b82d2e1ea43', visible: 'c66cbff68c90d1fc' },
-    { skipSort: false, digest: '398b4bb57dc0a0c2', visible: '3ab5db32e7e2262e' },
+    { skipSort: true, digest: 'efa6d619519d76da', visible: '0f66aa0285a02351' },
+    { skipSort: false, digest: '9067a76d5985847e', visible: 'd8c034ce8f0a349a' },
   ])(
     'queues the pinned commands in replay, through a seek back, skip-sort $skipSort',
     async ({ skipSort, digest: expected, visible }) => {
       perfFlags.skipTransparentSort = skipSort;
       const { renderer, controller } = await setUp();
       const digest = new Digest();
-      const state = {} as ReplayDisplayFrame['state'];
+      const state = new SimulationEngine({ encounter: new SolHereditEncounter(7), combatSeed: 1 }).getState();
       const frames: ReplayDisplayFrame[] = [0, 1, 2, 3, 4, 5].map((tick) => ({
-        state,
+        state: { ...state, currentTick: tick },
         events: tick === 1 ? [burst(7, 1)] : tick === 2 ? [burst(8, 2)] : [],
       }));
+      const index = new ReplayEffectIndex(frames);
       const cycles = [...CYCLES.slice(0, 60), ...CYCLES.slice(20, 40), ...CYCLES.slice(40)];
+      let previous: number | undefined;
       for (const cycle of cycles) {
-        const history = { frames, throughFrameIndex: Math.min(5, Math.floor(cycle / 30)) };
-        // The compositor reconstructs, then plays the frame's triggers: two renders per frame.
-        controller.syncReplay(history, cycle);
-        controller.render(cycle, terrainHeights, actorAt(cycle));
-        controller.render(cycle, terrainHeights, actorAt(cycle));
+        const destination = { cycle, throughFrameIndex: Math.min(5, Math.floor(cycle / 30)) };
+        // The compositor takes what the history owes, rebuilding on the seek back, then places it.
+        controller.syncReplay(index, destination, previous === undefined || cycle < previous);
+        previous = cycle;
+        controller.update(cueFrame(cycle));
         drawFrame(renderer, digest, cycle);
       }
       expect(digest.commands).toBeGreaterThan(169 * 40);
       // Before omission: 26,672 skip-sort draws, or 35,797 full-sort draws including 9,125
-      // wholly zero-alpha parts. The identity-free visible digest is pinned to that baseline.
+      // wholly zero-alpha parts.
       expect(digest.commands).toBe(26672);
       expect(digest.zeroAlphaCommands).toBe(0);
       expect(digest.visibleDigest()).toBe(visible);
@@ -359,14 +386,14 @@ describe.skipIf(skipWithoutRealCache('pinned'))('a ripple-sized spotanim burst',
           Array.from(command.modelMatrix),
           isResidentMesh3DCommand(command) ? command.meshSourcePart : (command as NpcMesh3DCommand).positions.length,
         ]);
-      full.controller.consume([burst(7, 1)]);
-      culled.controller.consume([burst(7, 1)]);
+      full.controller.consumeEvents([burst(7, 1)], NO_CUE_ACTORS);
+      culled.controller.consumeEvents([burst(7, 1)], NO_CUE_ACTORS);
       let kept = 0;
       let leftOut = 0;
       for (const cycle of CYCLES) {
         const queues = [full, culled].map(({ renderer, controller }) => {
           controller.takeAnimations(cycle);
-          controller.render(cycle, terrainHeights, actorAt(cycle));
+          controller.update(cueFrame(cycle));
           renderer.tick(Math.floor(cycle / 30), cycle / 30);
           renderer.setViewRejection(renderer === culled.renderer ? camera : null);
           const queue: RenderQueue = { replayPresentationReady: true, commands: [] };
@@ -406,14 +433,14 @@ describe.skipIf(skipWithoutRealCache('pinned'))('a ripple-sized spotanim burst',
       const { renderer, controller } = await setUp();
       renderer.setBatchableSpotAnimFamilies([COLOSSEUM_SPOTANIMS.solMelee]);
       const digest = new Digest();
-      controller.consume([burst(7, 1)]);
+      controller.consumeEvents([burst(7, 1)], NO_CUE_ACTORS);
       const sources = new Set<object>();
       let atlasParts: ReturnType<NonNullable<Mesh3DCommand['instanceAtlas']>['materialize']> | undefined;
       const checked = new Set<number>();
       let melee = 0;
       for (const cycle of CYCLES) {
         controller.takeAnimations(cycle);
-        controller.render(cycle, terrainHeights, actorAt(cycle));
+        controller.update(cueFrame(cycle));
         renderer.tick(Math.floor(cycle / 30), cycle / 30);
         const queue: RenderQueue = { replayPresentationReady: true, commands: [] };
         renderer.render(queue);
@@ -439,7 +466,7 @@ describe.skipIf(skipWithoutRealCache('pinned'))('a ripple-sized spotanim burst',
           expect(part?.perVertexFaceBias).toEqual(own?.perVertexFaceBias);
         }
         // As the pinned run: a second burst lands mid-ripple.
-        if (cycle === 50) controller.consume([burst(8, 2)]);
+        if (cycle === 50) controller.consumeEvents([burst(8, 2)], NO_CUE_ACTORS);
       }
       // One atlas for the whole burst: 3 variants × 10 frames, one part each, every one drawn.
       expect(sources.size).toBe(1);
@@ -448,15 +475,15 @@ describe.skipIf(skipWithoutRealCache('pinned'))('a ripple-sized spotanim burst',
       expect(melee).toBeGreaterThan(169 * 40);
       // The commands are the pinned skip-sort ones: the atlas is carried beside them, not instead.
       expect(digest.commands).toBe(21088);
-      expect(digest.visibleDigest()).toBe('4b33bf392540a82b');
-      expect(digest.digest()).toBe('4ba2781185210bd6');
+      expect(digest.visibleDigest()).toBe('2729bfc275131081');
+      expect(digest.digest()).toBe('e5a48c315365c4c8');
 
       // Opting out again drops it from the next frame's draws, and retires it.
       renderer.setBatchableSpotAnimFamilies([]);
       for (const source of sources) expect((source as { retired: boolean }).retired).toBe(true);
       const queue: RenderQueue = { replayPresentationReady: true, commands: [] };
-      controller.consume([burst(9, 10)]);
-      controller.render(300, terrainHeights, actorAt(300));
+      controller.consumeEvents([burst(9, 10)], NO_CUE_ACTORS);
+      controller.update(cueFrame(300));
       renderer.tick(10, 10);
       renderer.render(queue);
       expect(queue.commands.length).toBeGreaterThan(0);

@@ -34,9 +34,9 @@ normal per-frame update from snapshots, never inside a reset.
 
 Base participants clear encounter visuals (including `NpcInstanceManager` death fades,
 attack-trigger dedup and each instance's `NpcAnimationController`, plus `NpcVisualTracker.snap()`),
-event audio and the primary NPC's death spotanim. Yama registers `yama-effects` (wave, attack,
-fireball, void-flare instances), `yama-overlays` and `yama-frame-audio`; Inferno registers
-`inferno-visual-events` and `inferno-frame-audio`. The Yama overlay reset exists because replay
+event and frame audio, the encounter cues and NPC animation clock, and the primary NPC's death
+spotanim. Yama registers `yama-effects` (wave, attack, fireball, void-flare instances) and
+`yama-overlays`; the Inferno and Sol Heredit scenes need nothing beyond the base. The Yama overlay reset exists because replay
 frames share one cumulative damage log: a `DamageHistoryEntry` keeps object identity across frames,
 so a reference-keyed fade set would wrongly suppress an overlay that must reappear after seeking back.
 
@@ -96,51 +96,64 @@ layout coverage hides the menu rather than showing stale state.
 Reset first, then rebuild from snapshots and indexed history. Reconstruction never advances the
 simulation or dispatches historical events to audio; frame-sound trackers silently synchronize
 (including on late readiness). Unavailable cache assets retry on held frames without changing the
-recorded origin. Two encounter-specific paths exist: `ReplayEffectIndex` (player plus Yama)
-and Inferno's history-backed path (Zuk); each is described below.
+recorded origin. `ReplayEffectIndex` is the one history index: player effects and primaries, the
+encounter cues every scene's cue player restores, and, in the same append pass, a scene's own
+`ReplayFrameReader` if it keeps one (Yama's `YamaReplayIndex`); each is described below.
 
 - Player tile position and effect state carried in the snapshot (e.g. Yama waves and fireballs) are
   snapshot/tick-derived.
 - [`ReplayEffectIndex`](../../src/render/core/replayEffectIndex.ts) restores player projectiles,
-  impacts and graphics and Yama cast/impact effects from their original event clocks, with
+  impacts and graphics, and Yama's index his cast/impact effects, from their original event clocks, with
   historical targets from `ReplayActorHistory`. Repeated seeks use binary/lifetime-window lookups,
   not prefix scans.
 - NPC despawn-timer bars (currently the Yama void flare) derive from the snapshot's
   `targetableFromTick`, `despawnTick` and `despawnTimerLeadTicks` (`npcDespawnTimerRatio`); recent
   indexed explosion/destruction events restore explosions.
 
-**Player and Yama primaries.** `ReplayEffectIndex` also indexes player primary cues and Yama body
-triggers in its single append pass; `ReplayPrimaryIndex` resolves them into accepted primaries and
+**Player and Yama primaries.** `ReplayEffectIndex` indexes player primary cues, and Yama's index his
+body triggers, in the single append pass; `ReplayPrimaryIndex` resolves them into accepted primaries and
 binary-searches per destination. A rejected low-priority cue never becomes an origin. Player lookup
 uses the event's weapon and attack kind (the owning frame's equipment as weapon fallback and for
 block). Consume, block and self-cast cues keep event order and the final attack follows them,
 matching the live deferred attack flush; consume restoration keeps the unarmed pose and
 weapon/shield hiding. Yama shares the live trigger descriptor and NPC duration, priority and delay
-rules, including its secondary melee clip. `restorePrimaryAt` restores only primary phase and
+rules, including its secondary melee clip: live, the trigger starts on the NPC clock at its tick;
+in replay, his timeline is restored after the clock reaches the destination. `restorePrimaryAt` restores only primary phase and
 fractional client-cycle remainder; the next render updates the mesh once without advancing it
 again. Timelines invalidate with animation-metadata identity.
 
-**Inferno.** `ReplayRecorder.getDisplayFrames()` exposes the frame array as a readonly state/events
-projection; `ReplayFrameStore` keeps that identity across playhead updates, and
+**Encounter cues.** `ReplayRecorder.getDisplayFrames()` exposes the frame array as a readonly
+state/events projection; `ReplayFrameStore` keeps that identity across playhead updates, and
 `RenderContext.replayHistory` supplies it with the inclusive displayed index (future frames are
-never inputs). Inferno clears transient presentation on the first history-backed display, a changed
-history identity, or a discontinuity; history-identity changes run the full base registry before
-event cursors are consumed, so same-tick replacements also clear player graphics, projectiles and
-overlays. `ProjectileFlight.updateReplay` steps only an active flight's horizon from
+never inputs). `ReplayEffectIndex.cues` (`EncounterCueIndex`) indexes every `encounter_visual` batch
+in the same append pass, and the scene's `EncounterCuePlayer` takes from it what a destination owes:
+flights through their exclusive end, graphics still playing or pending, and clips not yet started,
+which a restored presentation hands to live play. The scene rebuilds the cues on the first
+history-backed display, a changed history identity, or a discontinuity; history-identity changes run
+the full base registry before event cursors are consumed, so same-tick replacements also clear
+player graphics, projectiles and overlays. Recordings in older encounter shapes are converted as
+`ReplayRecorder.load` reads them, so the index only sees today's. `ProjectileFlight.updateReplay` steps only an active flight's horizon from
 `ReplayActorHistory`, keeping integer-cycle state and sampling the final fractional step without
 committing it, so coarse and fine presentation share one trajectory. Historical NPC positions mirror
 `NpcInstanceManager` (exact tick boundary uses current position; positive fractions interpolate
 previous to current); player positions follow the snapshot's previous position and path.
 
-Each actor's `ReplayDeferredPrimaryIndex` checkpoints accepted state plus a bounded pending tail at
-source-frame boundaries. Delayed cues may start out of emission order, so sorting all cues and
-taking the newest eligible would let future source frames reject earlier delayed cues; checkpoints
-keep source eligibility and same-time chronological order. `restoreDeferredReplayAnimation`
+Every scene presents its NPCs on one clock, the displayed client cycle. Each actor's
+`ReplayDeferredPrimaryIndex` admits cues through the displayed frame and cycle, processes due cues
+in start order, and rebuilds its sweep when seeking backward. A queued cue is checked again when it
+becomes due. `restoreDeferredReplayAnimation`
 restores primary and canonical base phase without updating historical meshes, excludes cues before
 spawn, holds destination movement constant, and starts a walking clip at the earlier of the first
-due cue or 50 client cycles after spawn. Corpses restore from their local `despawnTick` without
-stepping death animations. Reconstruction waits until every declared Inferno spot animation and
-preloaded NPC type reports `isLoaded` (not proof of usable geometry), retrying without latching.
+due cue or 50 client cycles after spawn. On a 3D replay frame, snapshot corpses are posed at the
+destination, at their exact age from their local `despawnTick`, so continuous playback ends a corpse
+on the cycle a seek would. After a rebuild or a history-backed 2D display, the still-visible pruned
+corpses are restored on the first 3D frame whose cues are synced, before NPC meshes are queued. In
+3D, every encounter's replay presentation waits until each
+NPC type its render config declares and each effect (its `spotAnimIds` and the primary NPC's death
+effect) has settled (`SceneCompositor.encounterAssetState`: loaded or failed, which is not proof of
+usable geometry), retrying without latching; a 2D view never
+waits. While it waits the cue player holds nothing and the frame sounds sync silently; corpses and an
+encounter's own timelines, which need no cue assets, are still posed.
 
 **Limits.** These are canonical tick-origin reconstructions, not recordings of the render loop:
 original RAF arrival offsets, free-running idle/movement phase, full player locomotion backlog and

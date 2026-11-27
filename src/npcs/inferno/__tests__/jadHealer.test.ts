@@ -4,6 +4,7 @@ import { isNpcInMeleeRange } from '../../../core/combat/npcAttackRequest';
 import { processPlayerAutoAttack } from '../../../core/combat/player/PlayerAutoAttackSystem';
 import { notifyNpcOfPlayerAttack, processNpcRetaliations } from '../../../core/combat/retaliation';
 import { setArenaConfig, setDefaultArenaConfig } from '../../../core/constants';
+import { isEncounterVisualEvent } from '../../../core/events/encounterVisual';
 import { TickEvents } from '../../../core/events/TickEvents';
 import { npcFootprintsOverlap } from '../../../core/npcOccupancy';
 import type { NpcDefinitionContext } from '../../../core/npcs';
@@ -16,7 +17,6 @@ import type { Coordinate } from '../../../types/simulation';
 import { createInfernoActor } from '../actors';
 import { isZukAttackEvent } from '../events';
 import { createJadHealer, jadHealerDefinition } from '../jadHealer';
-import { isInfernoVisualEvent } from '../visualEvents';
 
 afterEach(() => {
   setDefaultArenaConfig({ bounds: null, walkableTiles: null, collisionMap: null });
@@ -75,7 +75,7 @@ describe('Jad healer independent support and engagement', () => {
     expect(parent.vitals.hp).toBe(parentHp);
     const events = context.tickEvents.flush();
     expect(events.filter(isZukAttackEvent)).toEqual([]);
-    expect(events.filter(isInfernoVisualEvent).flatMap((event) => event.animations)).toEqual([]);
+    expect(events.filter(isEncounterVisualEvent).flatMap((event) => event.animations)).toEqual([]);
   });
 
   it('starts configured melee from valid adjacency while tagged healing stays suppressed', () => {
@@ -271,7 +271,7 @@ describe('Jad healer independent support and engagement', () => {
 
     expect(parent.vitals.hp).toBe(hp + 7);
     expect(presentHeal).toHaveBeenCalledExactlyOnceWith(parent, context);
-    expect(context.tickEvents.flush().filter(isInfernoVisualEvent)).toMatchObject([
+    expect(context.tickEvents.flush().filter(isEncounterVisualEvent)).toMatchObject([
       { animations: [{ actorId: first.id, clipId: 'heal' }], projectiles: [], graphics: [] },
     ]);
   });
@@ -457,7 +457,7 @@ describe('Jad healer independent support and engagement', () => {
 
     for (let tick = 0; tick <= 4; tick++) {
       for (const actor of [first, second]) registration.tick(actor, { ...context, tick });
-      for (const event of context.tickEvents.flush().filter(isInfernoVisualEvent))
+      for (const event of context.tickEvents.flush().filter(isEncounterVisualEvent))
         for (const cue of event.animations) actions.push([cue.actorId, cue.clipId, tick]);
     }
 
@@ -509,7 +509,7 @@ describe('Jad healer independent support and engagement', () => {
         tick,
         amount: parent.vitals.hp - before,
         animations: events
-          .filter(isInfernoVisualEvent)
+          .filter(isEncounterVisualEvent)
           .flatMap((event) => event.animations)
           .filter((cue) => cue.actorId === first.id)
           .map((cue) => cue.clipId),
@@ -576,7 +576,7 @@ describe('Jad healer independent support and engagement', () => {
         if (position) first.position = position;
       }
       registration.tick(first, { ...context, tick });
-      for (const event of context.tickEvents.flush().filter(isInfernoVisualEvent))
+      for (const event of context.tickEvents.flush().filter(isEncounterVisualEvent))
         if (event.animations.some((cue) => cue.clipId === 'melee')) attacks.push(tick);
     }
 
@@ -599,7 +599,7 @@ describe('Jad healer independent support and engagement', () => {
         if (position) first.position = position;
       }
       registration.tick(first, { ...context, tick });
-      for (const event of context.tickEvents.flush().filter(isInfernoVisualEvent))
+      for (const event of context.tickEvents.flush().filter(isEncounterVisualEvent))
         if (event.animations.some((cue) => cue.clipId === 'melee')) attacks.push(tick);
     }
 
@@ -1040,7 +1040,7 @@ describe('Jad healer independent support and engagement', () => {
         if (position) first.position = position;
       }
       registration.tick(first, { ...context, tick });
-      for (const event of context.tickEvents.flush().filter(isInfernoVisualEvent))
+      for (const event of context.tickEvents.flush().filter(isEncounterVisualEvent))
         if (event.animations.some((cue) => cue.actorId === first.id && cue.clipId === 'heal')) heals.push(tick);
     }
 
@@ -1066,7 +1066,7 @@ describe('Jad healer independent support and engagement', () => {
       world.tick = tick;
       processNpcRetaliations(world);
       registration.tick(first, { ...context, tick });
-      for (const event of context.tickEvents.flush().filter(isInfernoVisualEvent))
+      for (const event of context.tickEvents.flush().filter(isEncounterVisualEvent))
         if (event.animations.some((cue) => cue.actorId === first.id && cue.clipId === 'melee')) attacks.push(tick);
     }
     expect(attacks).toEqual([4803]);

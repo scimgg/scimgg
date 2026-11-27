@@ -1,12 +1,12 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { canInitiateAttackOnNpc, isNpcTargetable } from '../../../core/actors/NpcActor';
 import { setArenaConfig, setDefaultArenaConfig } from '../../../core/constants';
+import { isEncounterVisualEvent } from '../../../core/events/encounterVisual';
 import type { GameEvent } from '../../../core/events/types';
 import { createNpcStepOccupancyPredicate } from '../../../core/npcOccupancy';
 import type { Coordinate } from '../../../types/simulation';
 import { createInfernoActor } from '../actors';
 import { createMeleer, meleerResurfacePosition } from '../meleer';
-import { isInfernoVisualEvent } from '../visualEvents';
 import { createInfernoWaveNpc } from '../waveNpcs';
 import { createWaveEngine } from './waveFixture';
 
@@ -17,7 +17,7 @@ afterEach(() => {
 
 function clipTicks(events: readonly GameEvent[], actorId: string, clipId: string): number[] {
   return events
-    .filter(isInfernoVisualEvent)
+    .filter(isEncounterVisualEvent)
     .filter((event) =>
       event.animations.some((animation) => animation.actorId === actorId && animation.clipId === clipId),
     )

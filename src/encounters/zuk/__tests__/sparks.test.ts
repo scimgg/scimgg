@@ -1,9 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { EncounterContext } from '../../../core/encounters/types';
+import { isEncounterVisualEvent } from '../../../core/events/encounterVisual';
 import { TickEvents } from '../../../core/events/TickEvents';
 import { mulberry32 } from '../../../core/rng';
 import { WorldState } from '../../../core/WorldState';
-import { isInfernoVisualEvent } from '../../../npcs/inferno/visualEvents';
 import type { Coordinate } from '../../../types/simulation';
 import { ZukSparkVolleyCommandSchema } from '../commands';
 import { generateSparkVolley, ZukSparkLandings } from '../sparks';
@@ -235,7 +235,7 @@ describe('generated spark landings', () => {
     expect(
       context.tickEvents
         .flush()
-        .filter(isInfernoVisualEvent)
+        .filter(isEncounterVisualEvent)
         .flatMap((event) => event.graphics),
     ).toHaveLength(3);
   });

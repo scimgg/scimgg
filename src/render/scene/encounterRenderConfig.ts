@@ -1,11 +1,13 @@
-import { encounterPresentationModuleForKind } from '../../encounters/presentationModules';
+import { resolveEncounterMapFootprint } from '../../core/encounters/mapFootprint';
+import { baseEncounterKind } from '../../encounters/catalog';
+import { encounterRegistry } from '../../encounters/registry';
+import { ENCOUNTER_RENDER_CONFIGS } from '../../encounters/renderConfigs';
 import type { MapSquareOffsets } from '../../rs/map/mapSquareBlock';
 import type { Coordinate, SimulationState } from '../../types/simulation';
 import type { LocRenderOptions } from '../environment/locRenderOptions';
 import type { SceneObjectLocData } from '../graphics/SceneObjectRenderer';
 import type { SceneObjectController } from '../graphics/sceneObjectTypes';
 import type { AnimPlayMode } from '../npc/animationTypes';
-import { withDescriptorMapBlock } from './encounterMapBlock';
 
 export interface NpcRenderConfig {
   actorId: string;
@@ -73,15 +75,14 @@ export interface EncounterRenderConfig {
   primaryNpc?: NpcRenderConfig;
   preloadNpcTypes?: EncounterNpcTypeRenderConfig[];
   /**
-   * Spot animations (projectiles and graphics) the encounter's events draw, preloaded with the
-   * scene and required before a replay frame counts as presented. Read by the base compositor's
-   * spot-anim hooks; compositors that override those hooks with their own list ignore it.
+   * Declare the projectile and graphic spot animations here. The base scene preloads them and waits
+   * for them to settle before presenting a 3D replay frame.
    */
   spotAnimIds?: readonly number[];
   /**
    * The origin map square (`map[x]_[y]` in the OSRS cache) the terrain mesh is built around.
    * Copied from the core descriptor by {@link getEncounterRenderConfig} so SceneCompositor stays
-   * registry-agnostic; an encounter's presentation module never declares it.
+   * registry-agnostic; an authored config never declares it.
    */
   terrainMapSquare?: { x: number; y: number };
   /** Every square the scene draws (the descriptor footprint's scene block). Omitted: the origin alone. */
@@ -105,26 +106,39 @@ export interface EncounterRenderConfig {
   createSceneObjectController?: EncounterSceneObjectControllerFactory;
 }
 
-/** A presentation module's render config: the map footprint is the core descriptor's alone. */
+/** An encounter's authored render config (`ENCOUNTER_RENDER_CONFIGS`): the map footprint is the core descriptor's alone. */
 export type AuthoredEncounterRenderConfig = Omit<
   EncounterRenderConfig,
   'terrainMapSquare' | 'mapSquareOffsets' | 'arenaMapSquareOffsets'
 >;
 
 /**
- * Render config per encounter kind, taken from the presentation manifest and merged with the
- * core descriptor's map-square block so `SceneCompositor` stays registry-agnostic.
+ * Render config per registered encounter kind: the authored config `ENCOUNTER_RENDER_CONFIGS` holds
+ * for its base kind (a variant's parent), with the map squares of the kind's core descriptor (none
+ * added for a kind without one), so `SceneCompositor` stays registry-agnostic. Undefined for a kind
+ * the registry does not run.
  *
- * Built lazily and memoized: `withDescriptorMapBlock` reads the encounter registry, populated
- * at the composition root's own module load (`src/encounters/registry.ts`), so no import order
- * can observe it empty.
+ * Built lazily and memoized: it reads the encounter registry, populated at the composition root's
+ * own module load (`src/encounters/registry.ts`), so no import order can observe it empty.
  */
 const RESOLVED_BY_KIND = new Map<string, EncounterRenderConfig | undefined>();
 
 export function getEncounterRenderConfig(encounterKind: string): EncounterRenderConfig | undefined {
   if (RESOLVED_BY_KIND.has(encounterKind)) return RESOLVED_BY_KIND.get(encounterKind);
-  const base = encounterPresentationModuleForKind(encounterKind)?.renderConfig;
-  const resolved = base ? withDescriptorMapBlock(base, encounterKind) : undefined;
+  const authored = encounterRegistry.hasKind(encounterKind)
+    ? ENCOUNTER_RENDER_CONFIGS.get(baseEncounterKind(encounterKind))
+    : undefined;
+  const descriptor = authored && encounterRegistry.getDescriptorForKind(encounterKind);
+  let resolved: EncounterRenderConfig | undefined = authored;
+  if (authored && descriptor) {
+    const footprint = resolveEncounterMapFootprint(descriptor);
+    resolved = {
+      ...authored,
+      terrainMapSquare: footprint.origin,
+      mapSquareOffsets: footprint.sceneOffsets,
+      arenaMapSquareOffsets: footprint.arenaOffsets,
+    };
+  }
   RESOLVED_BY_KIND.set(encounterKind, resolved);
   return resolved;
 }

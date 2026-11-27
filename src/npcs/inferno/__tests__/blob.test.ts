@@ -1,11 +1,11 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { setArenaConfig, setDefaultArenaConfig } from '../../../core/constants';
+import { isEncounterVisualEvent } from '../../../core/events/encounterVisual';
 import type { GameEvent } from '../../../core/events/types';
 import { CollisionFlag } from '../../../rs/collision/CollisionFlag';
 import { enqueueEnginePendingHit } from '../../../test/helpers/pendingHits';
 import { type Coordinate, PrayerType } from '../../../types/simulation';
 import { createBlob, createSplitBlob, SPLIT_BLOB_OFFSETS, splitBlobSpawns } from '../blob';
-import { isInfernoVisualEvent } from '../visualEvents';
 import { createInfernoWaveNpc } from '../waveNpcs';
 import { createWaveEngine } from './waveFixture';
 
@@ -18,7 +18,7 @@ const ATTACK_CLIPS = new Set(['magic', 'range', 'melee']);
 
 function attacksBy(events: readonly GameEvent[], actorId: string) {
   return events
-    .filter(isInfernoVisualEvent)
+    .filter(isEncounterVisualEvent)
     .flatMap((event) =>
       event.animations
         .filter((animation) => animation.actorId === actorId && ATTACK_CLIPS.has(animation.clipId))
@@ -200,7 +200,7 @@ describe('Jal-Ak read and release', () => {
     advanceTo(8);
     // Read at 1, release due at 4; the death sequence starts the tick after the kill.
     expect(blob.deathAnimationTick).toBe(killTick + 1);
-    const released = events.filter(isInfernoVisualEvent).filter((event) => event.projectiles.length > 0);
+    const released = events.filter(isEncounterVisualEvent).filter((event) => event.projectiles.length > 0);
     // Magic (draw 0.5, no prayer), D 9: endtime 28 + 72 = 100 -> lands floor(100 / 30) = 3 ticks later.
     expect(released).toMatchObject(fires ? [{ tick: 4, animations: [], projectiles: [{ spotAnimId: 1380 }] }] : []);
     expect(attacksBy(events, 'blob')).toEqual([]);

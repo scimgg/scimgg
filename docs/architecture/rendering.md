@@ -1,9 +1,11 @@
 # Rendering
 
 [`SceneCompositor`](../../src/render/scene/SceneCompositor.ts) orchestrates each frame and owns the
-shared renderers, animation clocks, event cursor and timeline-reset registry. Encounter compositors
-(`YamaSceneCompositor`, `InfernoSceneCompositor` for Zuk) extend it, add their controllers and
-route encounter events through `onEncounterEvents()`. Effect controllers live in
+shared renderers, the NPC clock, the encounter cue player, the event cursor and the timeline-reset
+registry. It is a complete encounter scene by itself; encounter compositors (`YamaSceneCompositor`,
+`InfernoSceneCompositor`, `ColosseumSceneCompositor`) extend it only for their own presentation.
+One that also draws from its own semantic events routes them through `onEncounterEvents()` (Yama
+does; the Inferno and Sol need not). Effect controllers live in
 [`src/render/effects/controllers/`](../../src/render/effects/controllers/); encounter-owned animated
 LOCs go through [runtime scene objects](scene-objects.md); projectile kinematics are in
 [projectile motion](projectile-motion.md).
@@ -15,22 +17,27 @@ LOCs go through [runtime scene objects](scene-objects.md); projectile kinematics
 1. **Discontinuity check** first: on a rewind, forward jump or timeline change, run the transient
    reset registry *before* any event is consumed
    ([Replay timeline discontinuity](replay-timeline-discontinuity.md)).
-2. **Event ingestion** via `getUnprocessedEvents()` (`lastProcessedEventId`).
-3. **State update**: animation clocks and visual trackers advance (frozen while `replayPaused`).
-4. **Delegation**: new events go to controllers, `onEncounterEvents()` and `EventAudioPlayer`;
-   renderers emit commands into the `RenderQueue`, sorted by optional `zIndex`.
+2. **Event ingestion**: live visuals take new events via `getUnprocessedEvents()`
+   (`lastProcessedEventId`) and hand them to the cue player, controllers and `onEncounterEvents()`;
+   history-backed cues come from the replay index. Event audio takes the displayed frame through
+   its own `lastPlayedAudioEventId` while unpaused.
+3. **NPC poses**: instances sync, NPCs turn and the NPC clock advances to the displayed cycle
+   (frozen while `replayPaused`); replay restores poses and corpses.
+4. **Draw**: renderers emit commands into the `RenderQueue`, sorted by optional `zIndex`; NPC meshes
+   are queued only after their final pose.
+5. **Frame audio** syncs to the final poses (silently on a paused or rebuilt frame).
 
 ## Spotanim playback and flight
 
 [`spotAnimPlayback.ts`](../../src/render/effects/spotAnimPlayback.ts) is the stateless playback path
-for Yama casts/impacts, player graphics, player projectile impacts and Inferno graphics. It schedules
+for Yama casts/impacts, player graphics, player projectile impacts and encounter cue graphics. It schedules
 start and expiry in native client cycles, avoiding fractional-tick boundary drift; only the
 renderer's `oneShot` request converts to game ticks. Controllers supply stable instance ids, asset
 ids, original start cycles (including delays), transforms, style and height policy; the helper
 returns `pending | active | unloaded | expired` and removes stale draws. Loading and retention stay
-adapter-owned: Yama drops unloaded effects, player graphics/impacts retain them, Inferno retains only
-future unloaded graphics. Inferno uses a zero-duration cache-length fallback (also for history
-pruning); the other adapters use three ticks.
+adapter-owned: Yama drops unloaded effects, player graphics/impacts retain them, the cue player
+retains only future unloaded graphics. The cue player uses a zero-duration cache-length fallback
+(also for history pruning); the other adapters use three ticks.
 
 On Apple touch devices, the Sol scene enables conservative off-screen rejection for its three
 ground melee puff graphics. `SpotAnimRenderer` may omit their commands only when their all-frame
@@ -64,7 +71,7 @@ scheduling, asset loading or replay-history selection.
   occluders on RTX 3090/D24/MSAA. One pixel still differed from a selected-face depth-disabled
   diagnostic reference; exact raster parity and other GPU/device behavior remain unverified.
 - Flight instances merge the `spotAnimRenderPolicy` default (`cullFace: 'back'`,
-  `requireTransparentSort: true`) beneath caller styles, for player and Inferno projectiles alike,
+  `requireTransparentSort: true`) beneath caller styles, for player and encounter cue projectiles alike,
   independent of graphic id. Cached spotanim models (baked and skeletal, opaque and transparent)
   default to back-face culling, matching the player, NPC, LOC and projectile policy.
   Transparent faces also back-cull in the CPU sorter; without a camera projection the unsorted

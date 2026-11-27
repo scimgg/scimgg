@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { getArenaAllowUnboundedFallback, getArenaConfig, setArenaConfig } from '../../../core/constants';
 import type { EncounterModifierSelection } from '../../../core/encounters/encounterFactory';
+import { isEncounterVisualEvent } from '../../../core/events/encounterVisual';
 import { SimulationEngine } from '../../../core/SimulationEngine';
 import { SOL_ACTOR_ID } from '../../../npcs/colosseum/constants';
-import { isColosseumVisualEvent } from '../../../npcs/colosseum/visualEvents';
 import { interpolateNpcPosition } from '../../../render/npc/npcRenderPosition';
 import { type Coordinate, PrayerType } from '../../../types/simulation';
 import { SOL_SOLARFLARE_ACTOR_PREFIX } from '../constants';
@@ -270,7 +270,7 @@ describe('modifier damage in the engine', () => {
     expect(
       engine
         .getLastTickEvents()
-        .filter(isColosseumVisualEvent)
+        .filter(isEncounterVisualEvent)
         .flatMap((event) => event.graphics),
     ).toHaveLength(50);
   });
@@ -303,8 +303,13 @@ describe('Volatility capture conformance and lifecycle', () => {
       advance();
       const emitted = engine
         .getLastTickEvents()
-        .filter(isColosseumVisualEvent)
-        .flatMap((event) => event.graphics);
+        .filter(isEncounterVisualEvent)
+        .flatMap((event) => event.graphics)
+        .map(({ spotAnimId, target, delayCycles }) => ({
+          spotAnimId,
+          position: target.kind === 'tile' ? target.position : undefined,
+          delayCycles,
+        }));
       if (tick < 9) expect(emitted).toEqual([]);
       else {
         const sorted = (cues: readonly unknown[]) =>
@@ -330,7 +335,7 @@ describe('Volatility capture conformance and lifecycle', () => {
     expect(snapshot().solarflareTiles).toHaveLength(4); // D+11 is deliberately not pulled forward.
     const blast = engine
       .getLastTickEvents()
-      .filter(isColosseumVisualEvent)
+      .filter(isEncounterVisualEvent)
       .flatMap((event) => event.graphics);
     expect(blast.filter((cue) => cue.spotAnimId === 131)).toHaveLength(81);
     expect(snapshot().sandTiles).toEqual([]); // No tier-III pool.
@@ -344,7 +349,7 @@ describe('Volatility capture conformance and lifecycle', () => {
     engine.reset(undefined, engine.getRunConfig());
     for (let tick = 0; tick < 18; tick++) {
       advance();
-      expect(engine.getLastTickEvents().filter(isColosseumVisualEvent)).toEqual([]);
+      expect(engine.getLastTickEvents().filter(isEncounterVisualEvent)).toEqual([]);
     }
     expect(snapshot().solarflareTiles).toHaveLength(4);
   });

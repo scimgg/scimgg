@@ -654,10 +654,7 @@ describe('SceneCompositor replay delayed cues', () => {
     vi.spyOn(engine, 'play').mockImplementation(() => {});
     scene = new SceneCompositor();
     scene.setEventAudioPlayer(
-      new EventAudioPlayer(engine, {
-        name: 'delayed',
-        rules: { actor_died: { resolve: { id: 10313, delayCycles: 21 } } },
-      }),
+      new EventAudioPlayer(engine, { actor_died: { resolve: { id: 10313, delayCycles: 21 } } }),
     );
     const state = new SimulationEngine({ encounter: new LobbyEncounter(), combatSeed: 1 }).getState();
     context = {
@@ -1349,7 +1346,8 @@ describe('SceneCompositor replay delayed cues', () => {
 
   /**
    * A Yama scene with one 2x2 npc of type 14179 replayed from `frames`; `at(cycle)` draws the frame
-   * whose tick the cycle falls in, advancing npc animations 20 ms per draw as playback would.
+   * whose tick the cycle falls in at that displayed cycle, so the NPC clock moves as far as playback
+   * does: one cycle (20 ms) per consecutive call.
    */
   function flareReplayScene(
     buildAnimations: (clip: (id: string, seqId: number, frameLengths: number[]) => FrameClipRef) => NpcAnimationSet,
@@ -1362,7 +1360,6 @@ describe('SceneCompositor replay delayed cues', () => {
     yama.setEncounterRenderConfig({
       primaryNpc: { actorId: 'boss', npcTypeId: 1, basePosition: [0, 0], size: 1, deathSeqId: -1 },
     });
-    vi.spyOn(yama as unknown as { getNpcVisualDeltaMs(): number }, 'getNpcVisualDeltaMs').mockReturnValue(20);
     const manager = yama['npcInstanceManager'];
     manager['animSystem'] = new AnimationSystem();
     const clip = (id: string, seqId: number, frameLengths: number[]): FrameClipRef => {
@@ -1729,10 +1726,7 @@ describe('SceneCompositor replay delayed cues', () => {
 
   it('uses unclamped replay time for an audio cue beyond the final clamped pose', () => {
     scene.setEventAudioPlayer(
-      new EventAudioPlayer(engine, {
-        name: 'tail',
-        rules: { actor_died: { resolve: { id: 10313, delayCycles: 60 } } },
-      }),
+      new EventAudioPlayer(engine, { actor_died: { resolve: { id: 10313, delayCycles: 60 } } }),
     );
     draw(6000);
 

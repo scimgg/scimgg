@@ -1,9 +1,58 @@
-import { type MutableRefObject, useEffect, useRef } from 'react';
+import { type MutableRefObject, useEffect, useLayoutEffect, useRef } from 'react';
 import { AudioEngine, coreAudioRules, EventAudioPlayer, FrameSoundTracker } from '../audio';
 import { cacheSoundBufferLoader, type SoundEffectCache } from '../audio/cacheSoundBuffers';
-import { encounterAudioLayers } from '../encounters/presentationModules';
+import type { SoundRules } from '../audio/EventAudioPlayer';
+import { encounterAudioRules, encounterPresentationModuleForKind } from '../encounters/presentationModules';
 import { tickBus } from '../tutorial/runtime/tickBus';
 import { getPageActivity, subscribePageActivity } from './pageActivity';
+
+/**
+ * The app's event-audio player: every encounter's rules in manifest order, then the engine's own core
+ * rules, so preloading covers every sound. Which of them dispatch is the displayed encounter's choice
+ * ({@link eventAudioRulesFor}).
+ */
+export function createEventAudioPlayer(engine: AudioEngine): EventAudioPlayer {
+  return new EventAudioPlayer(engine, ...encounterAudioRules(), coreAudioRules);
+}
+
+/**
+ * The rules that dispatch while `encounterKind` is displayed: its presentation module's (a variant
+ * kind resolves to its parent's), then core, so an encounter's rule overrides a core one. Another
+ * encounter's rules never answer its events: a rule that answers `silent` for an event it does not
+ * recognize would otherwise swallow the sound.
+ */
+export function eventAudioRulesFor(encounterKind: string): readonly SoundRules[] {
+  const rules = encounterPresentationModuleForKind(encounterKind)?.audioRules;
+  return rules === undefined ? [coreAudioRules] : [rules, coreAudioRules];
+}
+
+/**
+ * Scopes event audio to the displayed scene, identified as Grid identifies it: the kind that chooses
+ * its scene builder plus its load id, which a fresh entry into the same kind also advances. Applied
+ * before paint, so no frame of the new scene dispatches through the old scope.
+ *
+ * Replacing the scene silences the old one: its queued replay sounds and every voice the engine already
+ * owns, including delayed live sounds and ones still loading. A pause stays with whoever owns it.
+ *
+ * Separate from {@link useAudioManager} because the player must exist before the cache bootstrap, which
+ * comes before the encounter state that names the displayed scene.
+ */
+export function useEventAudioScope(
+  eventAudioPlayerRef: MutableRefObject<EventAudioPlayer>,
+  audioEngine: AudioEngine,
+  displayedEncounterKind: string,
+  sceneLoadId: number,
+): void {
+  // biome-ignore lint/correctness/useExhaustiveDependencies: sceneLoadId is half of the scene's identity; a new load replaces the scene.
+  useLayoutEffect(() => {
+    const player = eventAudioPlayerRef.current;
+    player.setDispatchRules(eventAudioRulesFor(displayedEncounterKind));
+    return () => {
+      player.reset();
+      audioEngine.discardSounds();
+    };
+  }, [eventAudioPlayerRef, audioEngine, displayedEncounterKind, sceneLoadId]);
+}
 
 let audioEngineSingleton: AudioEngine | null = null;
 
@@ -49,14 +98,7 @@ export function useAudioManager({
   soundEffectCache,
 }: UseAudioManagerParams): UseAudioManagerReturn {
   const audioEngine = sharedAudioEngine(soundEffectCache);
-  const eventAudioPlayerRef = useRef(
-    // Per-encounter layers first, in manifest order, then the engine's own layer last: the
-    // player stops at the first non-`pass` rule, so an encounter can override a core sound.
-    new EventAudioPlayer(audioEngine, ...encounterAudioLayers(), {
-      name: 'core',
-      rules: coreAudioRules,
-    }),
-  );
+  const eventAudioPlayerRef = useRef(createEventAudioPlayer(audioEngine));
   const frameSoundTrackerRef = useRef(new FrameSoundTracker(audioEngine));
 
   useEffect(() => {

@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { getArenaAllowUnboundedFallback, getArenaConfig, setArenaConfig } from '../../../core/constants';
+import { isEncounterVisualEvent } from '../../../core/events/encounterVisual';
 import { SimulationEngine } from '../../../core/SimulationEngine';
 import { ordinaryPoisonDamage } from '../../../core/timers';
 import { SOL_ACTOR_ID } from '../../../npcs/colosseum/constants';
-import { isColosseumVisualEvent } from '../../../npcs/colosseum/visualEvents';
 import { PrayerType } from '../../../types/simulation';
 import { beesDefinition } from '../../colosseum/modifiers/bees';
 import { SOL_BEES_SPAWN_TICK } from '../constants';
@@ -54,7 +54,7 @@ describe('Sol Bees! integration', () => {
     expect(
       engine
         .getLastTickEvents()
-        .filter(isColosseumVisualEvent)
+        .filter(isEncounterVisualEvent)
         .flatMap((event) => event.animations),
     ).toEqual(bees().map((actor) => ({ actorId: actor.id, clipId: 'spawn', delayCycles: 0 })));
   });

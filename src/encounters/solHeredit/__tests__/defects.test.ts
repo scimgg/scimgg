@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { EncounterContext, EquipmentClickSlot } from '../../../core/encounters/types';
+import { isEncounterVisualEvent } from '../../../core/events/encounterVisual';
 import { CHAT_HIGHLIGHT_COLORS } from '../../../core/events/gameMessages';
 import { TickEvents } from '../../../core/events/TickEvents';
 import { isCoreEvent } from '../../../core/events/types';
@@ -21,7 +22,6 @@ import {
   grappleWarningMessage,
 } from '../../../npcs/colosseum/grapple';
 import { launchSolIfReady, solDefinition } from '../../../npcs/colosseum/sol';
-import { isColosseumVisualEvent } from '../../../npcs/colosseum/visualEvents';
 import { createEncounterActorOps } from '../../../test/helpers/encounterActorOps';
 import { runEncounterNpcActions } from '../../../test/helpers/encounterNpcBand';
 import { type Coordinate, PrayerType } from '../../../types/simulation';
@@ -121,7 +121,7 @@ describe('Sol launch presentation', () => {
         overheadTextSegments: [{ text: before }, { text: part, color: '#ffffff' }, { text: after }],
       }),
     );
-    expect(events.filter(isColosseumVisualEvent)).toEqual([
+    expect(events.filter(isEncounterVisualEvent)).toEqual([
       expect.objectContaining({
         tick: start,
         animations: [{ actorId: SOL_ACTOR_ID, clipId: 'grapple', delayCycles: 30 }],
@@ -134,7 +134,7 @@ describe('Sol launch presentation', () => {
     expect(sol.state.grapple.pending).toBe(pending);
     for (let tick = start + 1; tick <= start + 6; tick++) {
       engine.advanceTick(player.position);
-      expect(engine.getLastTickEvents().filter(isColosseumVisualEvent)).toEqual([]);
+      expect(engine.getLastTickEvents().filter(isEncounterVisualEvent)).toEqual([]);
       if (tick < start + 4) expect(sol.state.grapple.pending).toBe(pending);
       else expect(sol.state.grapple.pending).toBeNull();
     }
@@ -172,7 +172,7 @@ describe('Sol launch presentation', () => {
     );
 
     expect(taunt).toBeTruthy();
-    expect(context.tickEvents.flush().filter(isColosseumVisualEvent)[0]?.animations).toEqual([
+    expect(context.tickEvents.flush().filter(isEncounterVisualEvent)[0]?.animations).toEqual([
       { actorId: sol.id, clipId: 'grapple', delayCycles: 30 },
     ]);
   });
@@ -191,9 +191,9 @@ describe('Sol launch presentation', () => {
     const random = [0.01, 0.9];
     launchSolIfReady(sol, { ...context, tick: 20 }, { phase, random: () => random.shift() ?? 0.5, enabled: true });
 
-    expect(context.tickEvents.flush().filter(isColosseumVisualEvent)[0]).toMatchObject({
+    expect(context.tickEvents.flush().filter(isEncounterVisualEvent)[0]).toMatchObject({
       animations: [{ actorId: sol.id, clipId, delayCycles: 0 }],
-      graphics: [{ spotAnimId, actorId: sol.id, delayCycles: 0 }],
+      graphics: [{ spotAnimId, target: { kind: 'attached', actorId: sol.id }, delayCycles: 0, height: 0 }],
     });
   });
 });
@@ -259,7 +259,7 @@ describe('molten sand after Sol dies', () => {
     const deathTick = 5;
     context.tickEvents.flush();
     encounter.onNpcDefeated({ npcId: sol.id, tick: deathTick }, { ...context, tick: deathTick }, 'encounter-owned');
-    const despawns = context.tickEvents.flush().filter(isColosseumVisualEvent);
+    const despawns = context.tickEvents.flush().filter(isEncounterVisualEvent);
     expect(despawns.flatMap((event) => event.animations)).toEqual(
       ids.map((actorId) => ({ actorId, clipId: 'despawn', delayCycles: 0 })),
     );
@@ -428,7 +428,7 @@ describe('beam crystals when the mechanic is toggled off', () => {
       engine.advanceTick(engine.getState().playerPosition);
       for (const event of engine.getLastTickEvents()) {
         if (event.type === SOL_BEAM_PREPARED_EVENT) log.push(`warn@${tick}`);
-        if (!isColosseumVisualEvent(event)) continue;
+        if (!isEncounterVisualEvent(event)) continue;
         for (const { clipId } of event.animations)
           if (clipId === 'charge' || clipId === 'attack') log.push(`${clipId}@${tick}`);
       }
@@ -791,7 +791,7 @@ describe('enraged sand drip', () => {
       engine.advanceTick([32, 34]);
       const struck = engine
         .getLastTickEvents()
-        .filter(isColosseumVisualEvent)
+        .filter(isEncounterVisualEvent)
         .some((event) => event.graphics.some((cue) => cue.spotAnimId === COLOSSEUM_SPOTANIMS.sunfireLightning));
       if (struck) strikes.push(engine.getState().currentTick);
     }
@@ -854,7 +854,7 @@ describe('phase transitions wait for the attack slot', () => {
       engine.advanceTick(inReach);
       const events = engine.getLastTickEvents();
       if (events.some((event) => event.type === 'overhead_text')) taunts.push(tick);
-      for (const event of events.filter(isColosseumVisualEvent)) {
+      for (const event of events.filter(isEncounterVisualEvent)) {
         if (event.graphics.some((cue) => COLOSSEUM_SPOTANIMS.solMelee.includes(cue.spotAnimId as never)))
           landed.push(tick);
         if (event.graphics.some((cue) => cue.spotAnimId === COLOSSEUM_SPOTANIMS.sunfireLightning)) sand.push(tick);
@@ -1089,7 +1089,7 @@ describe('practice controls', () => {
   const landedGround = (engine: SimulationEngine) =>
     engine
       .getLastTickEvents()
-      .filter(isColosseumVisualEvent)
+      .filter(isEncounterVisualEvent)
       .some((event) => event.graphics.some((cue) => COLOSSEUM_SPOTANIMS.solMelee.includes(cue.spotAnimId as never)));
   function inReach({ engine, world }: Setup, mechanics: Parameters<SimulationEngine['setMechanicsConfig']>[0]) {
     engine.setMechanicsConfig({ infiniteHealth: true, solHereditBeams: false, solHereditSand: false, ...mechanics });
@@ -1227,7 +1227,7 @@ describe('practice controls', () => {
         engine.advanceTick(engine.getState().playerPosition);
         const struck = engine
           .getLastTickEvents()
-          .filter(isColosseumVisualEvent)
+          .filter(isEncounterVisualEvent)
           .some((event) => event.graphics.some((cue) => cue.spotAnimId === COLOSSEUM_SPOTANIMS.sunfireLightning));
         if (struck) strikes.push(tick);
         const snapshot = engine.getState().encounter;
@@ -1271,7 +1271,7 @@ describe('practice controls', () => {
           engine.advanceTick([32, 34]);
           const struck = engine
             .getLastTickEvents()
-            .filter(isColosseumVisualEvent)
+            .filter(isEncounterVisualEvent)
             .some((event) => event.graphics.some((cue) => cue.spotAnimId === COLOSSEUM_SPOTANIMS.sunfireLightning));
           if (struck) strikes.push(engine.getState().currentTick);
         }

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { discoverCacheUsage } from '../../../scripts/discoverCacheUsage';
 import { SOL_BEAM_GRAPHIC_TICKS } from './__tests__/fixtures/solBeamGraphicsCapture';
 import type { CardinalDirection } from './solAttacks';
-import { COLOSSEUM_SPOT_ANIM_IDS, colosseumBeamGraphics, isColosseumVisualEvent } from './visualEvents';
+import { COLOSSEUM_SPOT_ANIM_IDS, colosseumBeamGraphics } from './visualEvents';
 
 const DIRECTIONS: readonly CardinalDirection[] = ['south', 'west', 'north', 'east'];
 
@@ -15,28 +15,6 @@ it('preloads and discovers the modifier and warband projectile cache dependencie
   expect(usage.spotAnimIds.has(131)).toBe(true);
   expect(usage.spotAnimIds.has(9)).toBe(true);
   expect(usage.spotAnimIds.has(130)).toBe(true);
-});
-
-describe('Colosseum graphic anchors', () => {
-  it.each([
-    { anchor: { actorId: 'sol_heredit' }, accepted: true },
-    { anchor: { position: [30, 30] }, accepted: true },
-    { anchor: { actorId: '' }, accepted: false },
-    { anchor: {}, accepted: false },
-    { anchor: { actorId: 'sol_heredit', position: [30, 30] }, accepted: false },
-  ])('validates one unambiguous anchor: $anchor', ({ anchor, accepted }) => {
-    const event = {
-      type: 'colosseum_visual',
-      tick: 0,
-      eventId: 1,
-      animations: [],
-      graphics: [{ spotAnimId: 2668, delayCycles: 0, ...anchor }],
-    };
-
-    const result = isColosseumVisualEvent(event);
-
-    expect(result).toBe(accepted);
-  });
 });
 
 describe('directional Colosseum beam graphics', () => {
@@ -66,13 +44,19 @@ describe('directional Colosseum beam graphics', () => {
         );
 
         expect(predicted.filter((cue) => cue.spotAnimId !== 2697)).toEqual(
-          graphics.map((cue) => ({ spotAnimId: id, ...cue })),
+          graphics.map(({ position, delayCycles, height }) => ({
+            spotAnimId: id,
+            target: { kind: 'tile', position },
+            delayCycles,
+            height,
+          })),
         );
         if (stage === 'fire') {
           const impact = predicted.find((cue) => cue.spotAnimId === 2697);
           expect(impact).toBeDefined();
           if (!impact) throw new Error('Expected terminal beam impact');
-          const [x, y] = impact.position;
+          if (impact.target.kind !== 'tile') throw new Error('Expected a tile impact');
+          const [x, y] = impact.target.position;
           expect(impacts).toContainEqual([x, y, 39, 128]);
         }
         checkedDirections.add(direction);

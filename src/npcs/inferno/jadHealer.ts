@@ -9,6 +9,7 @@ import {
 import { applyNpcHealing } from '../../core/combat/npcHealing';
 import { createNpcRetaliation } from '../../core/combat/retaliation';
 import { contextAttackDecisions } from '../../core/decisionRandom';
+import { emitEncounterVisual } from '../../core/events/encounterVisual';
 import { standardNpcCombatMove } from '../../core/npcCombatMovement';
 import { canNpcActThisTurn, canReceiveHealing, isNpcLiving } from '../../core/npcDeath';
 import { npcFootprintsOverlap } from '../../core/npcOccupancy';
@@ -18,7 +19,6 @@ import { createInfernoActor, type InfernoVariant } from './actors';
 import { faceInfernoAction } from './demonstrations';
 import { emitZukAttack } from './events';
 import { type ParentHealPresentation, presentInfernoDamage } from './presentation';
-import { emitInfernoVisual } from './visualEvents';
 
 // Inferno JalTok-Jad healers must be untagged and adjacent to heal (TzTok-Jad article,
 // JalTok-Jad practice note); Fight Caves healers instead keep healing while tagged in range
@@ -106,7 +106,7 @@ export const jadHealerDefinition = createNpcDefinition<JadHealerState, JadHealer
       isNpcInMeleeRange(actor, target)
     ) {
       actor.state.nextHealTick = context.tick + SUPPORT_PERIOD;
-      emitInfernoVisual(context.tickEvents, {
+      emitEncounterVisual(context.tickEvents, {
         animations: [{ actorId: actor.id, clipId: 'heal', delayCycles: 0 }],
         projectiles: [],
         graphics: [],
@@ -130,7 +130,7 @@ export const jadHealerDefinition = createNpcDefinition<JadHealerState, JadHealer
         labelled: contextAttackDecisions(context),
       });
     if (attack === null) throw new TypeError(`Missing formula stats for ${actor.id}`);
-    emitInfernoVisual(context.tickEvents, {
+    emitEncounterVisual(context.tickEvents, {
       animations: [{ actorId: actor.id, clipId: 'melee', delayCycles: 0 }],
       projectiles: [],
       graphics: [],

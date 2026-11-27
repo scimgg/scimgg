@@ -23,9 +23,13 @@ import { SPELL_VISUALS } from '../src/data/spellVisuals';
 import { PLAYER_ANIMATION_SEQ_IDS } from '../src/data/weaponAnimations';
 import { getMeleeSweep, HANDWRITTEN_WEAPON_COMBAT_VISUALS } from '../src/data/weaponCombatVisuals';
 import { WEAPON_ANIMATION_SETS, WEAPON_COMBAT_VISUALS } from '../src/data/weaponCombatVisuals.generated';
-import { collectDeclaredNpcSeqIds, ENCOUNTER_RENDER_CONFIGS } from '../src/encounters/declaredNpcSeqIds';
 import { LOBBY_BOSS_NPCS, LOBBY_PORTALS } from '../src/encounters/lobby/metadata';
 import { ENCOUNTER_CORE_MODULES } from '../src/encounters/modules';
+import {
+  collectDeclaredNpcSeqIds,
+  collectDeclaredSpotAnimIds,
+  ENCOUNTER_RENDER_CONFIGS,
+} from '../src/encounters/renderConfigs';
 import { LOBBY_MAP_X, LOBBY_MAP_Y } from '../src/render/scene/lobby/lobbyConstants';
 import { SpotAnimID } from '../src/rs/config/spotanimtype/SpotAnimID';
 import { getTerrainContextLoadOffsets, type MapSquareOffsets } from '../src/rs/map/mapSquareBlock';
@@ -150,19 +154,13 @@ export function collectCacheRoots(usage?: CacheUsage): CacheRoots {
   // Encounters and the lobby.
   for (const [kind, config] of ENCOUNTER_RENDER_CONFIGS) {
     const primary = config.primaryNpc;
-    if (primary) {
-      add(roots.npcs, primary.npcTypeId, `${kind} render config primaryNpc`);
-      add(roots.spotAnims, primary.deathSpotAnimId, `${kind} render config primaryNpc.deathSpotAnimId`);
-    }
+    if (primary) add(roots.npcs, primary.npcTypeId, `${kind} render config primaryNpc`);
     for (const npc of config.preloadNpcTypes ?? []) {
       add(roots.npcs, npc.npcTypeId, `${kind} render config preloadNpcTypes`);
-      add(roots.seqs, npc.walkSeqId, `${kind} render config npc ${npc.npcTypeId} walkSeqId`);
-    }
-    for (const id of config.spotAnimIds ?? []) {
-      add(roots.spotAnims, id, `${kind} render config spotAnimIds`);
     }
   }
   for (const [seqId, label] of collectDeclaredNpcSeqIds()) add(roots.seqs, seqId, label);
+  for (const [spotAnimId, label] of collectDeclaredSpotAnimIds()) add(roots.spotAnims, spotAnimId, label);
   for (const module of ENCOUNTER_CORE_MODULES) {
     const { mapSquare, mapSquareOffsets } = module.descriptor;
     addMapSquares(roots, mapSquare, mapSquareOffsets, `${module.kind} descriptor mapSquare`);

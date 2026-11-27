@@ -48,7 +48,7 @@ export const INFERNO_WAVE_NPC_IDS = {
 
 /**
  * Attack, defend and death sequences from the facts spec (NPCs table); idle/walk from the cache
- * NpcType records. Keys are the `clipId`s these definitions emit in `inferno_visual`.
+ * NpcType records. Keys are the `clipId`s these definitions emit in `encounter_visual`.
  * Ranger/mager/Jad/Yt-HurKot share `ZUK_SEQS`.
  */
 export const INFERNO_WAVE_SEQS = {
@@ -69,3 +69,6 @@ export const INFERNO_WAVE_SEQS = {
 export const INFERNO_WAVE_SPOT_ANIM_IDS = [
   1378, 1379, 1380, 1381, 1382, 1376, 1377, 131, 444, 448, 449, 450, 451,
 ] as const;
+
+/** Every projectile and graphic wave 69 (TzKal-Zuk and his set) emits. */
+export const INFERNO_SPOT_ANIM_IDS = [1375, 1376, 1377, 131, 448, 449, 450, 660, 659, 444, 451] as const;

@@ -1,14 +1,18 @@
+import type { ActorCueLife } from './actorCueLife';
 import type { ReplayEffectDestination } from './replayEffectIndex';
 import { canReplacePrimary, type PrimarySample, type PrimarySpec, primaryPhase } from './replayPrimaryIndex';
 
-type DeferredCue = { readonly cycle: number; readonly clipId: string };
+/** A clip due on the actor at `cycle`, for the actor's `life` when it was emitted for one. */
+type DeferredCue = { readonly cycle: number; readonly clipId: string; readonly life?: ActorCueLife };
 type Source = { readonly frameIndex: number; readonly tick: number; readonly cues: readonly DeferredCue[] };
-type Timed<Clip> = { readonly cycle: number; readonly spec: PrimarySpec<Clip> };
+type Timed<Clip> = { readonly cycle: number; readonly spec: PrimarySpec<Clip>; readonly life?: ActorCueLife };
 type Sweep<Clip> = {
   readonly cues: Timed<Clip>[];
   sourceCursor: number;
   dueCursor: number;
   current: Timed<Clip> | undefined;
+  /** The earliest cue that has become due on a life still lasting: the base pose's origin. */
+  first: Timed<Clip> | undefined;
   cycle: number;
   throughFrameIndex: number;
 };
@@ -25,6 +29,7 @@ const createSweep = <Clip>(): Sweep<Clip> => ({
   sourceCursor: 0,
   dueCursor: 0,
   current: undefined,
+  first: undefined,
   cycle: -Infinity,
   throughFrameIndex: -1,
 });
@@ -59,7 +64,14 @@ export class ReplayDeferredPrimaryIndex<Clip> {
       life = { metadata, sweep: createSweep(), clips: new Map(), pending: false };
       this.lives.set(destination.spawnTick, life);
     }
-    if (destination.cycle < life.sweep.cycle || destination.throughFrameIndex < life.sweep.throughFrameIndex) {
+    if (
+      destination.cycle < life.sweep.cycle ||
+      destination.throughFrameIndex < life.sweep.throughFrameIndex ||
+      // A clip taken from a life that has ended since (an id reused with no spawn tick to tell the
+      // lives apart) goes with it: the sweep is rebuilt without it.
+      life.sweep.current?.life?.isEndedBy(destination) ||
+      life.sweep.first?.life?.isEndedBy(destination)
+    ) {
       life.sweep = createSweep();
     }
     const sweep = life.sweep;
@@ -70,7 +82,7 @@ export class ReplayDeferredPrimaryIndex<Clip> {
       if (source.frameIndex > destination.throughFrameIndex || source.tick * 30 > destination.cycle) break;
       const incoming: Timed<Clip>[] = [];
       for (const cue of source.cues) {
-        if (cue.cycle < destination.spawnTick * 30) continue;
+        if (cue.cycle < destination.spawnTick * 30 || cue.life?.isEndedBy(destination)) continue;
         let spec = life.clips.get(cue.clipId);
         if (spec === undefined) {
           spec = resolve(cue.clipId);
@@ -80,13 +92,14 @@ export class ReplayDeferredPrimaryIndex<Clip> {
           life.pending = true;
           break;
         }
-        if (spec) incoming.push({ cycle: cue.cycle, spec });
+        if (spec) incoming.push({ cycle: cue.cycle, spec, life: cue.life });
       }
       if (life.pending) break;
       for (const cue of incoming) {
         if (cue.cycle <= sweep.cycle) {
           sweep.dueCursor = 0;
           sweep.current = undefined;
+          sweep.first = undefined;
         }
         sweep.cues.push(cue);
       }
@@ -95,15 +108,17 @@ export class ReplayDeferredPrimaryIndex<Clip> {
     for (; sweep.dueCursor < sweep.cues.length; sweep.dueCursor++) {
       const cue = sweep.cues[sweep.dueCursor];
       if (cue.cycle > destination.cycle) break;
+      // Queued while its life lasted, due once it has ended: it never plays.
+      if (cue.life?.isEndedBy(destination)) continue;
+      sweep.first ??= cue;
       const current = sweep.current && sampleTimed(sweep.current, cue.cycle) ? sweep.current.spec : undefined;
       if (cue.spec.replaces || canReplacePrimary(current?.priority, cue.spec.priority)) sweep.current = cue;
     }
     sweep.cycle = destination.cycle;
     sweep.throughFrameIndex = destination.throughFrameIndex;
-    const firstCycle = sweep.cues[0]?.cycle;
     return {
       primary: sweep.current ? sampleTimed(sweep.current, destination.cycle) : null,
-      firstCycle: firstCycle !== undefined && firstCycle <= destination.cycle ? firstCycle : undefined,
+      firstCycle: sweep.first?.cycle,
       rebuilt,
       pending: life.pending,
     };

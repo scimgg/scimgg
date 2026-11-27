@@ -7,6 +7,15 @@ import type { ReplayCaptureTrack } from '../../replay/format/capture';
 import { MAX_REPLAY_FRAME_TIMING_MS } from '../../replay/format/limits';
 import { ReplayPresentationStateSchema } from '../../replay/format/presentationFormat';
 import { yamaSnapshot } from '../../test/helpers/encounterSnapshot';
+import {
+  LEGACY_INFERNO_EVENTS,
+  LEGACY_SOL_EVENTS,
+  LEGACY_YAMA,
+  LEGACY_YAMA_EVENTS,
+  legacyInfernoRecording,
+  legacySolRecording,
+  legacyYamaRecording,
+} from '../../test/helpers/legacyEncounterRecordings';
 import { compactReplayCursorSamples } from '../../test/helpers/replayCursorCompaction';
 import { validPresentationSample } from '../../test/helpers/replayFixtures';
 import { createEmptyCombatSupplies } from '../../types/encounterLoadout';
@@ -28,7 +37,10 @@ import {
 import { BackgroundClock } from '../../util/BackgroundClock';
 import type { GameFrameRect } from '../../util/viewportBounds';
 import type { ActorId } from '../actors/types';
+import { isYamaSnapshot } from '../encounters/snapshot';
+import { isActorPresentationsRemovedEvent, isEncounterVisualEvent } from '../events/encounterVisual';
 import type { GameEvent } from '../events/types';
+import { LegacyReplayEventError } from '../legacyReplayEvents';
 import {
   DEFAULT_REPLAY_UI_STATE,
   modifierMaskAt,
@@ -2668,5 +2680,212 @@ describe('ReplayRecorder finalizeUnadvancedStart', () => {
     for (const recorder of [advanced, forked, loaded, withRunConfig]) {
       expect(recorder.getFrame(0)?.state.playerPosition).toEqual(START);
     }
+  });
+});
+
+/**
+ * The intake of recordings in the old encounter visual-event shapes (`inferno_visual`,
+ * `colosseum_visual`): every batch keeps its identity, tick and frame, Yama's semantic events are
+ * untouched, and the caller's data is never rewritten.
+ */
+describe('ReplayRecorder legacy encounter recordings', () => {
+  const identities = (frames: readonly { readonly events: readonly GameEvent[] }[]) =>
+    frames.map(({ events }) => events.map(({ eventId, tick }) => [eventId, tick]));
+
+  it.each([
+    ['Inferno', legacyInfernoRecording],
+    ['Sol Heredit', legacySolRecording],
+    ['Yama', legacyYamaRecording],
+  ] as const)('publishes every %s batch on its own frame with its id and tick', (_, record) => {
+    const { data, frames } = record();
+    const written = structuredClone(data.frames.map(({ events }) => events));
+
+    expect(frames).toHaveLength(data.frames.length);
+    expect(frames.map(({ state }) => state.currentTick)).toEqual(data.frames.map(({ tick }) => tick));
+    expect(identities(frames)).toEqual(identities(data.frames));
+    expect(data.frames.map(({ events }) => events)).toEqual(written);
+  });
+
+  it('publishes the old inferno_visual and colosseum_visual batches where they were written', () => {
+    expect(identities(legacyInfernoRecording().frames).flat()).toEqual([
+      [LEGACY_INFERNO_EVENTS.delayedClip.eventId, 1],
+      [LEGACY_INFERNO_EVENTS.zukRise.eventId, 2],
+      [LEGACY_INFERNO_EVENTS.barrage.eventId, 2],
+      [LEGACY_INFERNO_EVENTS.clearMinions.eventId, 8],
+    ]);
+    expect(identities(legacySolRecording().frames).flat()).toEqual([
+      [LEGACY_SOL_EVENTS.telegraph.eventId, 1],
+      [LEGACY_SOL_EVENTS.attached.eventId, 2],
+      [LEGACY_SOL_EVENTS.beams.eventId, 3],
+    ]);
+  });
+
+  // Read-time conversion may change what `exportData` writes, but a second load must change nothing.
+  it.each([
+    ['Inferno', legacyInfernoRecording],
+    ['Sol Heredit', legacySolRecording],
+    ['Yama', legacyYamaRecording],
+  ] as const)('publishes the same %s frames when its loaded recording is exported and loaded again', (_, record) => {
+    const first = new ReplayRecorder();
+    first.load(record().data);
+    const exported = first.exportData();
+    const again = new ReplayRecorder();
+    again.load(structuredClone(exported));
+
+    expect(again.getDisplayFrames()).toEqual(first.getDisplayFrames());
+    expect(again.exportData().frames).toEqual(exported.frames);
+  });
+
+  it("leaves Yama's semantic events and attack snapshot exactly as recorded", () => {
+    const { frames } = legacyYamaRecording();
+
+    expect(frames[LEGACY_YAMA.magicTick]?.events).toEqual([LEGACY_YAMA_EVENTS.magic, LEGACY_YAMA_EVENTS.fireballs]);
+    expect(frames[LEGACY_YAMA.magicTick + 1]?.events).toEqual([LEGACY_YAMA_EVENTS.wave]);
+    const melee = frames[LEGACY_YAMA.meleeTick]?.state.encounter;
+    if (!melee || !isYamaSnapshot(melee)) expect.fail('Expected a Yama snapshot');
+    expect([melee.state.lastAttackTick, melee.state.lastAttackKind]).toEqual([LEGACY_YAMA.meleeTick, 'melee_crush']);
+  });
+});
+
+describe('ReplayRecorder reading older encounter event shapes', () => {
+  it('reads each inferno_visual batch as the same encounter_visual batch, and a type clear as a presentation removal', () => {
+    const { data, frames } = legacyInfernoRecording();
+    const renamed: Record<string, string> = {
+      inferno_visual: 'encounter_visual',
+      inferno_clear_minions: 'actor_presentations_removed',
+    };
+
+    // Frame by frame and in order: ids, ticks, ordinals, delays and heights all as written.
+    expect(frames.map(({ events }) => events)).toEqual(
+      data.frames.map(({ events }) => events.map((event) => ({ ...event, type: renamed[event.type] }))),
+    );
+    const read = frames.flatMap(({ events }) => events);
+    expect(read.filter(isEncounterVisualEvent).map(({ eventId }) => eventId)).toEqual([
+      LEGACY_INFERNO_EVENTS.delayedClip.eventId,
+      LEGACY_INFERNO_EVENTS.zukRise.eventId,
+      LEGACY_INFERNO_EVENTS.barrage.eventId,
+    ]);
+    expect(read.filter(isActorPresentationsRemovedEvent)).toEqual([
+      { type: 'actor_presentations_removed', eventId: 81, tick: 8, npcTypeIds: [7701] },
+    ]);
+  });
+
+  it('reads each colosseum_visual batch as an encounter_visual batch, anchoring each graphic as written', () => {
+    const { frames } = legacySolRecording();
+    const read = frames.flatMap(({ events }) => events);
+    const tile = (position: readonly [number, number]) => ({ kind: 'tile', position });
+    const attached = (actorId: string) => ({ kind: 'attached', actorId });
+
+    expect(read).toEqual([
+      {
+        ...LEGACY_SOL_EVENTS.telegraph,
+        type: 'encounter_visual',
+        projectiles: [],
+        graphics: [
+          { spotAnimId: 2698, target: tile([28, 30]), delayCycles: 0, height: 0 },
+          { spotAnimId: 2698, target: tile([29, 30]), delayCycles: 2, height: 0 },
+          { spotAnimId: 2698, target: tile([30, 30]), delayCycles: 4, height: 0 },
+        ],
+      },
+      {
+        ...LEGACY_SOL_EVENTS.attached,
+        type: 'encounter_visual',
+        graphics: [
+          { spotAnimId: 2668, target: attached('sol_heredit'), delayCycles: 6, height: 64 },
+          { spotAnimId: 2667, target: attached('absent'), delayCycles: 6, height: 0 },
+          { spotAnimId: 131, target: attached('player'), delayCycles: 30, height: 124 },
+        ],
+      },
+      {
+        ...LEGACY_SOL_EVENTS.beams,
+        type: 'encounter_visual',
+        projectiles: [],
+        graphics: LEGACY_SOL_EVENTS.beams.graphics.map(({ spotAnimId, position, delayCycles, height }) => ({
+          spotAnimId,
+          target: tile(position),
+          delayCycles,
+          height,
+        })),
+      },
+    ]);
+    expect(read.every(isEncounterVisualEvent)).toBe(true);
+  });
+
+  it('passes events of every other shape through as written', () => {
+    const { data, frames } = legacyYamaRecording();
+    expect(frames.map(({ events }) => events)).toEqual(data.frames.map(({ events }) => events));
+  });
+
+  it.each([
+    [
+      'inferno_visual graphic without a height',
+      (event: GameEvent): GameEvent =>
+        event.type === 'inferno_visual' && Array.isArray(event.graphics) && event.graphics.length > 0
+          ? { ...event, graphics: [{ ...event.graphics[0], height: undefined }] }
+          : event,
+    ],
+    [
+      'inferno_visual flight that lands before it launches',
+      (event: GameEvent): GameEvent =>
+        event.type === 'inferno_visual' && Array.isArray(event.projectiles) && event.projectiles.length > 0
+          ? { ...event, projectiles: [{ ...event.projectiles[0], startDelayCycles: 80 }] }
+          : event,
+    ],
+    [
+      'inferno_clear_minions with a non-integer type',
+      (event: GameEvent): GameEvent =>
+        event.type === 'inferno_clear_minions' ? { ...event, npcTypeIds: [7701, '7702'] } : event,
+    ],
+    [
+      'colosseum_visual graphic with both a tile and an actor',
+      (event: GameEvent): GameEvent =>
+        event.type === 'colosseum_visual' &&
+        event.eventId === LEGACY_SOL_EVENTS.attached.eventId &&
+        Array.isArray(event.graphics)
+          ? { ...event, graphics: [{ ...event.graphics[0], position: [30, 30] }] }
+          : event,
+    ],
+    [
+      'colosseum_visual graphic with neither a tile nor an actor',
+      (event: GameEvent): GameEvent =>
+        event.type === 'colosseum_visual' && event.eventId === LEGACY_SOL_EVENTS.telegraph.eventId
+          ? { ...event, graphics: [{ spotAnimId: 2698, delayCycles: 0 }] }
+          : event,
+    ],
+    [
+      'colosseum_visual graphic attached to an empty actor id',
+      (event: GameEvent): GameEvent =>
+        event.type === 'colosseum_visual' &&
+        event.eventId === LEGACY_SOL_EVENTS.attached.eventId &&
+        Array.isArray(event.graphics)
+          ? { ...event, graphics: [{ spotAnimId: 2668, actorId: '', delayCycles: 6 }] }
+          : event,
+    ],
+    [
+      'colosseum_visual flight that lands before it launches',
+      (event: GameEvent): GameEvent =>
+        event.type === 'colosseum_visual' &&
+        event.eventId === LEGACY_SOL_EVENTS.attached.eventId &&
+        Array.isArray(event.graphics)
+          ? { ...event, projectiles: [{ ...LEGACY_SOL_EVENTS.attached.projectiles[0], startDelayCycles: 80 }] }
+          : event,
+    ],
+  ] as const)('refuses a recording with a malformed %s, installing none of it', (label, corrupt) => {
+    const recorder = new ReplayRecorder();
+    recorder.load(legacyYamaRecording().data);
+    const installed = recorder.getDisplayFrames();
+    const { data } = label.startsWith('colosseum_visual') ? legacySolRecording() : legacyInfernoRecording();
+    const malformed = {
+      ...data,
+      frames: data.frames.map((frame) => ({
+        ...frame,
+        events: frame.events.map(corrupt),
+      })),
+    };
+    const written = structuredClone(malformed);
+
+    expect(() => recorder.load(malformed)).toThrow(LegacyReplayEventError);
+    expect(recorder.getDisplayFrames()).toEqual(installed);
+    expect(malformed).toEqual(written);
   });
 });

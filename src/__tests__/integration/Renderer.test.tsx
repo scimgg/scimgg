@@ -5,7 +5,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { CacheManager } from '../../cache/CacheManager';
 import { Canvas2DRenderer } from '../../render/backends/canvas2d/Canvas2DRenderer';
 import { RenderViewport } from '../../render/components/RenderViewport';
-import { createYamaSceneBuilder } from '../../render/scene/yamaSceneBuilder';
+import { YamaSceneCompositor } from '../../render/scene/YamaSceneCompositor';
+import { encounterScene } from '../../test/helpers/encounterScene';
 import { yamaSnapshot } from '../../test/helpers/encounterSnapshot';
 import { createMockWebGL2Context } from '../../test/mocks/webgl-mock';
 import { createEmptyCombatSupplies } from '../../types/encounterLoadout';
@@ -91,7 +92,7 @@ describe('Renderer Integration Tests', () => {
   describe('Full Pipeline: Cache → Parse → Load → Render', () => {
     it('completes full rendering pipeline without errors', async () => {
       const renderer = new Canvas2DRenderer();
-      const sceneBuilder = createYamaSceneBuilder();
+      const sceneBuilder = encounterScene('yama_p3', YamaSceneCompositor);
 
       const { container } = render(
         <RenderViewport
@@ -115,7 +116,7 @@ describe('Renderer Integration Tests', () => {
 
     it('renders with coordinate display enabled', async () => {
       const renderer = new Canvas2DRenderer();
-      const sceneBuilder = createYamaSceneBuilder();
+      const sceneBuilder = encounterScene('yama_p3', YamaSceneCompositor);
 
       const { container } = render(
         <RenderViewport
@@ -139,7 +140,7 @@ describe('Renderer Integration Tests', () => {
   describe('Renderer Switching: WebGL ↔ Canvas2D', () => {
     it('switches from Canvas2D to Canvas2D (same renderer)', async () => {
       const renderer1 = new Canvas2DRenderer();
-      const sceneBuilder = createYamaSceneBuilder();
+      const sceneBuilder = encounterScene('yama_p3', YamaSceneCompositor);
 
       const { container, rerender } = render(
         <RenderViewport
@@ -172,7 +173,7 @@ describe('Renderer Integration Tests', () => {
 
     it('preserves simulation state when switching renderers', async () => {
       const renderer1 = new Canvas2DRenderer();
-      const sceneBuilder = createYamaSceneBuilder();
+      const sceneBuilder = encounterScene('yama_p3', YamaSceneCompositor);
 
       const { container, rerender } = render(
         <RenderViewport
@@ -212,7 +213,7 @@ describe('Renderer Integration Tests', () => {
 
     it('handles renderer disposal correctly', async () => {
       const renderer = new Canvas2DRenderer();
-      const sceneBuilder = createYamaSceneBuilder();
+      const sceneBuilder = encounterScene('yama_p3', YamaSceneCompositor);
 
       const { unmount } = render(
         <RenderViewport
@@ -237,7 +238,7 @@ describe('Renderer Integration Tests', () => {
       vi.spyOn(mockCacheManager, 'ensureCache').mockRejectedValue(new Error('Network error: Failed to download cache'));
 
       const renderer = new Canvas2DRenderer();
-      const sceneBuilder = createYamaSceneBuilder();
+      const sceneBuilder = encounterScene('yama_p3', YamaSceneCompositor);
 
       const { container } = render(
         <RenderViewport
@@ -279,7 +280,7 @@ describe('Renderer Integration Tests', () => {
   describe('Error Recovery: WebGL Failure', () => {
     it('falls back to Canvas2D when WebGL context creation fails', async () => {
       const renderer = new Canvas2DRenderer();
-      const sceneBuilder = createYamaSceneBuilder();
+      const sceneBuilder = encounterScene('yama_p3', YamaSceneCompositor);
 
       const { container } = render(
         <RenderViewport
@@ -328,7 +329,7 @@ describe('Renderer Integration Tests', () => {
   describe('Renderer State Management', () => {
     it('initializes renderer only once', async () => {
       const renderer = new Canvas2DRenderer();
-      const sceneBuilder = createYamaSceneBuilder();
+      const sceneBuilder = encounterScene('yama_p3', YamaSceneCompositor);
       const initSpy = vi.spyOn(renderer, 'init');
 
       const { rerender } = render(
@@ -356,7 +357,7 @@ describe('Renderer Integration Tests', () => {
 
     it('handles viewport resize correctly', async () => {
       const renderer = new Canvas2DRenderer();
-      const sceneBuilder = createYamaSceneBuilder();
+      const sceneBuilder = encounterScene('yama_p3', YamaSceneCompositor);
       const resizeSpy = vi.spyOn(renderer, 'resize');
 
       render(
@@ -376,7 +377,7 @@ describe('Renderer Integration Tests', () => {
 
     it('cleans up animation frame on unmount', async () => {
       const renderer = new Canvas2DRenderer();
-      const sceneBuilder = createYamaSceneBuilder();
+      const sceneBuilder = encounterScene('yama_p3', YamaSceneCompositor);
       const cancelAnimationFrameSpy = vi.spyOn(window, 'cancelAnimationFrame');
 
       const { unmount } = render(
@@ -398,7 +399,7 @@ describe('Renderer Integration Tests', () => {
   describe('Interaction Handling', () => {
     it('handles tile click events', async () => {
       const renderer = new Canvas2DRenderer();
-      const sceneBuilder = createYamaSceneBuilder();
+      const sceneBuilder = encounterScene('yama_p3', YamaSceneCompositor);
 
       const { container } = render(
         <RenderViewport
@@ -422,7 +423,7 @@ describe('Renderer Integration Tests', () => {
 
     it('renders target tile highlight', async () => {
       const renderer = new Canvas2DRenderer();
-      const sceneBuilder = createYamaSceneBuilder();
+      const sceneBuilder = encounterScene('yama_p3', YamaSceneCompositor);
       const targetTile: Coordinate = [15, 15];
 
       const { container } = render(
@@ -448,7 +449,7 @@ describe('Renderer Integration Tests', () => {
   describe('Performance and Optimization', () => {
     it('renders multiple frames without memory leaks', async () => {
       const renderer = new Canvas2DRenderer();
-      const sceneBuilder = createYamaSceneBuilder();
+      const sceneBuilder = encounterScene('yama_p3', YamaSceneCompositor);
 
       const { rerender } = render(
         <RenderViewport
@@ -477,7 +478,7 @@ describe('Renderer Integration Tests', () => {
 
     it('handles rapid state updates efficiently', async () => {
       const renderer = new Canvas2DRenderer();
-      const sceneBuilder = createYamaSceneBuilder();
+      const sceneBuilder = encounterScene('yama_p3', YamaSceneCompositor);
 
       const { rerender } = render(
         <RenderViewport

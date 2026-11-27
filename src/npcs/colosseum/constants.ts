@@ -1,4 +1,4 @@
-import type { NpcProjectileCue } from '../projectileCue';
+import type { NpcProjectileCue } from '../../core/events/encounterVisual';
 
 /**
  * Fortis Colosseum actor identities, cache ids, and the parameters of Sol's and the crystals' own

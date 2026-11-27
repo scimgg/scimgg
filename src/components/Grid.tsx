@@ -90,7 +90,7 @@ import { pickGroundItemsAtScreen } from '../render/scene/groundItemPick';
 import { type PickedNpc, pickNpcsAtScreen } from '../render/scene/npcPick';
 import { isNpcModelHidden } from '../render/scene/npcPluginVisibility';
 import { PLAYER_ACTOR_ID } from '../render/scene/SceneCompositor';
-import { sceneBuilderRegistry } from '../render/scene/sceneBuilderFactory';
+import { createSceneBuilderForKind } from '../render/scene/sceneBuilderFactory';
 import { getTerrainHeightInterpolated } from '../render/shared/renderUtils';
 import { replayCaptureNotice } from '../replay/capturePresentation';
 import { PANEL } from '../resourcePack';
@@ -1904,10 +1904,7 @@ export const Grid: React.FC<Partial<GridProps>> = (props) => {
       0,
       sceneBuilderLifecycleKey.lastIndexOf(SCENE_BUILDER_LIFECYCLE_DELIMITER),
     );
-    if (!sceneBuilderRegistry.hasKind(builderEncounterKind)) {
-      throw new Error(`No scene builder registered for encounter kind: '${builderEncounterKind}'`);
-    }
-    return sceneBuilderRegistry.create(builderEncounterKind, {
+    return createSceneBuilderForKind(builderEncounterKind, {
       cacheManager,
       eventAudioPlayer,
       frameSoundTracker,
@@ -2802,7 +2799,6 @@ export const Grid: React.FC<Partial<GridProps>> = (props) => {
                         animationSystem={animationSystem}
                         mapLocs={mapLocs}
                         encounterRequiresLocs={encounterRequiresLocs}
-                        encounterRenderConfig={encounterRenderConfig}
                         projection3D={projection3DRef.current}
                         cameraKeybinds={cameraKeybinds}
                         width={fixedSceneRect ? fixedSceneRect.width : size.width}

@@ -1,11 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 import { notifyNpcOfPlayerAttack, processNpcRetaliations } from '../../../core/combat/retaliation';
+import { isEncounterVisualEvent } from '../../../core/events/encounterVisual';
 import { TickEvents } from '../../../core/events/TickEvents';
 import type { NpcDefinitionContext } from '../../../core/npcs';
 import { WorldState } from '../../../core/WorldState';
 import { createInfernoActor } from '../actors';
 import { createHealer, type HealerConfig, healerDefinition } from '../healer';
-import { isInfernoVisualEvent } from '../visualEvents';
 
 function fixture() {
   const world = new WorldState();
@@ -136,7 +136,7 @@ describe('enrage healer supplied support', () => {
       registration.resolveLocalEffects(actor, { ...context, tick: 18 });
     }
 
-    const casts = context.tickEvents.flush().filter(isInfernoVisualEvent);
+    const casts = context.tickEvents.flush().filter(isEncounterVisualEvent);
     expect(casts).toHaveLength(4);
     expect(casts.flatMap((cue) => cue.animations)).toHaveLength(4);
     expect(casts.flatMap((cue) => cue.projectiles)).toHaveLength(4);
@@ -152,7 +152,7 @@ describe('enrage healer supplied support', () => {
 
     for (let tick = 11; tick <= 14; tick++) registration.tick(first, { ...context, tick });
 
-    expect(context.tickEvents.flush().filter(isInfernoVisualEvent)).toHaveLength(1);
+    expect(context.tickEvents.flush().filter(isEncounterVisualEvent)).toHaveLength(1);
   });
 
   it('casts independently from spawn plus four every three ticks without default HP effects', () => {
@@ -167,7 +167,7 @@ describe('enrage healer supplied support', () => {
         registration.resolveLocalEffects(actor, { ...context, tick });
         registration.tick(actor, { ...context, tick });
       }
-      for (const event of context.tickEvents.flush().filter(isInfernoVisualEvent))
+      for (const event of context.tickEvents.flush().filter(isEncounterVisualEvent))
         for (const cue of event.animations) casts.push([cue.actorId, tick]);
     }
 
@@ -223,7 +223,7 @@ describe('enrage healer supplied support', () => {
       world.tick = tick;
       processNpcRetaliations(world);
       registration.tick(first, { ...context, tick });
-      for (const event of context.tickEvents.flush().filter(isInfernoVisualEvent)) {
+      for (const event of context.tickEvents.flush().filter(isEncounterVisualEvent)) {
         if (event.animations.some((cue) => cue.clipId === 'attack')) reactions.push(tick);
         expect(event.projectiles).toEqual([]);
       }

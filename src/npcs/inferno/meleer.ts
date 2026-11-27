@@ -3,6 +3,7 @@ import { isNpcActionReady, scheduleNpcAction } from '../../core/combat/npcAction
 import { type AttackPlan, canNpcAttack, resolveAttackRequest } from '../../core/combat/npcAttackRequest';
 import { createNpcRetaliation } from '../../core/combat/retaliation';
 import { contextAttackDecisions, contextDecisions } from '../../core/decisionRandom';
+import { emitEncounterVisual } from '../../core/events/encounterVisual';
 import { standardNpcCombatMove } from '../../core/npcCombatMovement';
 import { canNpcActThisTurn } from '../../core/npcDeath';
 import { createNpcDefinition, type NpcDefinitionContext } from '../../core/npcs';
@@ -11,7 +12,6 @@ import { createInfernoActor } from './actors';
 import { emitInfernoAbility, emitZukDeath } from './events';
 import { presentInfernoDamage } from './presentation';
 import { resolveReadyTarget } from './targetResolution';
-import { emitInfernoVisual } from './visualEvents';
 import { emitInfernoWaveAttack, isInfernoFootprintLegal } from './waveCombat';
 
 const MELEER_SIZE = 4;
@@ -109,7 +109,7 @@ function rollDigInterval(actor: NpcActor, tick: number, context: NpcDefinitionCo
 }
 
 function emitClip(actor: NpcActor, clipId: string, context: NpcDefinitionContext): void {
-  emitInfernoVisual(context.tickEvents, {
+  emitEncounterVisual(context.tickEvents, {
     animations: [{ actorId: actor.id, clipId, delayCycles: 0 }],
     projectiles: [],
     graphics: [],

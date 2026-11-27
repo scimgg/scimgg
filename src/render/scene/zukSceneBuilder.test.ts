@@ -3,16 +3,19 @@ import { AudioEngine } from '../../audio/AudioEngine';
 import { EventAudioPlayer } from '../../audio/EventAudioPlayer';
 import { FrameSoundTracker } from '../../audio/FrameSoundTracker';
 import { setArenaConfig, setDefaultArenaConfig } from '../../core/constants';
+import { type EncounterVisualEvent, isEncounterVisualEvent } from '../../core/events/encounterVisual';
 import type { GameEvent } from '../../core/events/types';
-import type { ReplayDisplayFrame } from '../../core/ReplayRecorder';
+import { type ReplayDisplayFrame, ReplayRecorder, type ReplayRecorderData } from '../../core/ReplayRecorder';
 import { ReplayFrameStore } from '../../core/replayFrameStore';
 import { MAX_REPLAY_PROJECTILE_STEPS, ReplaySafetyError } from '../../core/replaySafety';
 import { SimulationEngine } from '../../core/SimulationEngine';
 import { INFERNO_RENDER_CONFIG } from '../../encounters/inferno/renderConfig';
+import { reconstructReplayPrefix } from '../../encounters/simulationEngineFactory';
 import { YAMA_ENCOUNTER_RENDER_CONFIG } from '../../encounters/yamaP3/renderConfig';
 import { ZUK_INTRO_RISE_CLIP, ZUK_MAP_SQUARE, ZUK_MAP_SQUARE_OFFSETS } from '../../encounters/zuk/constants';
 import { ZUK_WAVE_NPC_TYPES } from '../../encounters/zuk/renderConfig';
 import {
+  INFERNO_SPOT_ANIM_IDS,
   INFERNO_WAVE_NPC_IDS,
   INFERNO_WAVE_SEQS,
   INFERNO_WAVE_SPOT_ANIM_IDS,
@@ -21,27 +24,40 @@ import {
   ZUK_SEQS,
   ZUK_SHIELD_NPC_ID,
 } from '../../npcs/inferno/constants';
-import { INFERNO_SPOT_ANIM_IDS, type InfernoVisualEvent, isInfernoVisualEvent } from '../../npcs/inferno/visualEvents';
 import { NpcType } from '../../rs/config/npctype/NpcType';
 import { SeqType } from '../../rs/config/seqtype/SeqType';
 import { ModelData } from '../../rs/model/ModelData';
 import { NpcModelLoader } from '../../rs/model/NpcModelLoader';
 import { rgbToHsl } from '../../rs/util/ColorUtil';
+import { encounterScene } from '../../test/helpers/encounterScene';
 import { zukSnapshot } from '../../test/helpers/encounterSnapshot';
+import { LEGACY_INFERNO, legacyInfernoRecording } from '../../test/helpers/legacyEncounterRecordings';
+import {
+  activeWindows,
+  IDENTITY_PROJECTION,
+  installSyntheticSpotAnims,
+  observeScene,
+  replayContextAt,
+  SCENE_OPTIONS,
+  type SceneObservation,
+  SYNTHETIC_CLIP_FRAME_CYCLES,
+  syntheticNpcAssets,
+  VIEWPORT,
+} from '../../test/helpers/sceneObservation';
 import { createZukWaveEncounter } from '../../test/helpers/zukWave';
 import type { RestoredPresentation } from '../../types/restoredPresentation';
 import type { NpcSnapshot, NpcState, SimulationState } from '../../types/simulation';
 import { AnimationSystem } from '../backends/picogl/AnimationSystem';
 import type { Projection2D } from '../core/camera';
 import type { RenderQueue } from '../core/commands';
-import { InfernoVisualController } from '../effects/controllers/InfernoVisualController';
+import { EncounterCuePlayer } from '../effects/EncounterCuePlayer';
 import { advanceProjectileMotion } from '../effects/projectileMotion';
 import { makeSnapshot } from '../npc/__tests__/npcFacingTestHarness';
 import { NpcAnimationController } from '../npc/NpcAnimationController';
 import { PRIMARY_NPC_ACTOR_ID } from '../npc/NpcInstanceManager';
 import { type EncounterRenderConfig, getEncounterRenderConfig } from './encounterRenderConfig';
 import { InfernoSceneCompositor } from './InfernoSceneCompositor';
-import { Z_LAYERS } from './SceneCompositor';
+import { SceneCompositor, Z_LAYERS } from './SceneCompositor';
 import type { RenderContext } from './types';
 import { createZukSceneBuilder } from './zukSceneBuilder';
 
@@ -78,14 +94,28 @@ const ZUK_PRIMARY_RENDER_CONFIG: EncounterRenderConfig = {
 class SceneProbe extends InfernoSceneCompositor {
   readonly manager = this.npcInstanceManager;
   readonly effects = this.spotAnimRenderer;
-  events(events: InfernoVisualEvent[]): void {
-    this['visuals'].consumeEvents(events);
+  /** Shows `events` on one live build of `state`'s tick, as a viewport frame would. */
+  events(events: EncounterVisualEvent[], state: Pick<SimulationState, 'npcs' | 'currentTick'>): void {
+    const base = new SimulationEngine({ encounter: createZukWaveEncounter(1), combatSeed: 1 }).getState();
+    this.build(
+      {
+        simulationState: { ...base, ...state },
+        events,
+        options: SCENE_OPTIONS,
+        interaction: { hoveredTile: null, targetTile: null },
+        interpolatedTick: state.currentTick,
+        speedMultiplier: 1,
+      },
+      IDENTITY_PROJECTION,
+      VIEWPORT,
+    );
   }
   sync(npcs: NpcSnapshot[]): void {
     this.syncNpcInstances(npcs, false);
   }
+  /** The Inferno's clips play from the tick and NPCs alone; it derives no triggers from the rest. */
   animate(state: Pick<SimulationState, 'currentTick' | 'npcs'>, tick: number): void {
-    this.getEncounterAttackTriggers(state, tick);
+    this['advanceNpcAnimationsToTick'](state as SimulationState, tick);
   }
 }
 
@@ -179,7 +209,7 @@ async function frameAudio() {
         timeline: { timelineKey: 'live', paused: false },
         events: [
           {
-            type: 'inferno_visual',
+            type: 'encounter_visual',
             eventId: 1,
             tick: 0,
             projectiles: [],
@@ -328,7 +358,7 @@ it.each([
 
 it('passes the build allowance through both Inferno and player controller updates', () => {
   const { scene, state, draw } = safeScene('3d');
-  vi.spyOn(scene['visuals'], 'update').mockImplementation((_frame, work) => {
+  vi.spyOn(scene['cues'], 'update').mockImplementation((_frame, work) => {
     if (!work) expect.fail('Missing explicit Inferno projectile allowance');
     work.charge(1);
   });
@@ -988,12 +1018,12 @@ describe('Zuk scene builder', () => {
       const { engine } = restored;
       engine.reset([40, 46]);
       engine.setMechanicsConfig({ zukSets: false, infiniteHealth: true });
-      let emitted: InfernoVisualEvent | undefined;
+      let emitted: EncounterVisualEvent | undefined;
       for (let tick = 0; tick < 40 && !emitted; tick++) {
         engine.advanceTick([40, 46]);
         emitted = engine
           .getLastTickEvents()
-          .filter(isInfernoVisualEvent)
+          .filter(isEncounterVisualEvent)
           .find((event) => event.projectiles.some((cue) => cue.spotAnimId === 1375));
       }
       const cue = emitted?.projectiles.find((cue) => cue.spotAnimId === 1375);
@@ -1014,12 +1044,12 @@ describe('Zuk scene builder', () => {
         events: [],
         restoredPresentation: restoration,
       });
-      expect(restored.scene['visuals']['replay']).toBeDefined();
-      const clear = vi.spyOn(restored.scene['visuals'], 'clear');
+      expect(restored.scene['cues']['replay']).toBeDefined();
+      const clear = vi.spyOn(restored.scene['cues'], 'clear');
       if (emptyLiveFrame) {
         restored.draw(base, { simulationState: state, events: [], restoredPresentation: restoration });
         expect(clear).not.toHaveBeenCalled();
-        expect(restored.scene['visuals']['replay']).toBeUndefined();
+        expect(restored.scene['cues']['replay']).toBeUndefined();
       }
       const effects = (queue: RenderQueue) =>
         queue.commands.flatMap((command) =>
@@ -1028,7 +1058,7 @@ describe('Zuk scene builder', () => {
       restored.draw(base, { simulationState: state, events: [emitted], restoredPresentation: restoration });
       live.draw(base, { simulationState: state, events: [emitted] });
       expect(clear).not.toHaveBeenCalled();
-      expect(restored.scene['visuals']['replay']).toBeUndefined();
+      expect(restored.scene['cues']['replay']).toBeUndefined();
       const start = base + cue.startDelayCycles;
       for (const cycle of [base + 30, start, start + 1]) {
         const context = { simulationState: { ...state, currentTick: Math.floor(cycle / 30) }, events: [] };
@@ -1036,7 +1066,7 @@ describe('Zuk scene builder', () => {
         expect(meshes).toEqual(effects(live.draw(cycle, context)));
         if (cycle >= start) expect(meshes).toHaveLength(1);
       }
-      const motion = [...restored.scene['visuals']['flights']['flights'].values()][0]?.runtime['motion'];
+      const motion = [...restored.scene['cues']['flights']['flights'].values()][0]?.runtime['motion'];
       if (!motion) expect.fail('Expected airborne Zuk ball');
       expect(motion.velocity.x).toBeGreaterThan(0);
       const arrival = advanceProjectileMotion(motion, base + cue.endDelayCycles - (start + 1));
@@ -1052,8 +1082,8 @@ describe('Zuk scene builder', () => {
     const { engine, scene, draw, state } = await frameAudio();
     try {
       const manager = scene['npcInstanceManager'];
-      const event: InfernoVisualEvent = {
-        type: 'inferno_visual',
+      const event: EncounterVisualEvent = {
+        type: 'encounter_visual',
         eventId: 1,
         tick: 0,
         graphics: [],
@@ -1100,8 +1130,8 @@ describe('Zuk scene builder', () => {
       const tick = 1;
       // Emitted on tick T+1 and due one tick later, so the late-initialized history has no started
       // animation to restore Zuk from: only the clock's own start sets his cycle phase.
-      const attack: InfernoVisualEvent = {
-        type: 'inferno_visual',
+      const attack: EncounterVisualEvent = {
+        type: 'encounter_visual',
         eventId: 5,
         tick: tick + 1,
         graphics: [],
@@ -1163,13 +1193,13 @@ describe('Zuk scene builder', () => {
         reads++;
         return [
           {
-            type: 'inferno_visual',
+            type: 'encounter_visual',
             tick,
             eventId: tick + 1,
             projectiles: [],
             graphics: [],
             animations: [{ actorId: ZUK_ACTOR_ID, clipId: 'attack', delayCycles: 2 }],
-          } satisfies InfernoVisualEvent,
+          } satisfies EncounterVisualEvent,
         ];
       },
     });
@@ -1203,8 +1233,8 @@ describe('Zuk scene builder', () => {
   ])('uses scene elevation for live and replay flight while leaving graphics unchanged: replay=%s', async (replay) => {
     const { scene, draw, state } = await frameAudio();
     const source = [20, 20] as const;
-    const emitted: InfernoVisualEvent = {
-      type: 'inferno_visual',
+    const emitted: EncounterVisualEvent = {
+      type: 'encounter_visual',
       eventId: 10,
       tick: 0,
       animations: [],
@@ -1262,7 +1292,7 @@ describe('Zuk scene builder', () => {
         state,
         events: [
           {
-            type: 'inferno_visual',
+            type: 'encounter_visual',
             eventId: 1,
             tick: 0,
             projectiles: [],
@@ -1273,7 +1303,7 @@ describe('Zuk scene builder', () => {
               { actorId: 'late-active', clipId: 'attack', delayCycles: 300 },
               { actorId: ZUK_ACTOR_ID, clipId: 'attack', delayCycles: 300 },
             ],
-          } satisfies InfernoVisualEvent,
+          } satisfies EncounterVisualEvent,
         ],
       },
       { state: destination, events: [] },
@@ -1372,8 +1402,8 @@ describe('Zuk scene builder', () => {
       const graphic = renderer['meshCache'].get(444);
       if (!graphic) expect.fail('Missing loaded effect fixture');
       renderer['meshCache'].delete(444);
-      const event: InfernoVisualEvent = {
-        type: 'inferno_visual',
+      const event: EncounterVisualEvent = {
+        type: 'encounter_visual',
         tick: 0,
         eventId: 1,
         projectiles: [],
@@ -1395,7 +1425,7 @@ describe('Zuk scene builder', () => {
           frameDeltaMs: 0,
           timeline: { timelineKey: 'restored-inferno', paused: true, timeMs: 600 },
         });
-      expect(renderer['activeInstances'].has('inferno-1-graphic-0')).toBe(false);
+      expect(renderer['activeInstances'].has('cue-1-graphic-0')).toBe(false);
       // The effect finishes loading as the countdown ends; the first live frame must still restore it.
       renderer['meshCache'].set(444, graphic);
       const live = { ...state, currentTick: 1 };
@@ -1407,7 +1437,7 @@ describe('Zuk scene builder', () => {
         frameDeltaMs: 100,
         timeline: { timelineKey: 'restored-inferno', paused: false, timeMs: 700 },
       });
-      expect(renderer['activeInstances'].get('inferno-1-graphic-0')?.lifecycle).toMatchObject({ startTick: 0 });
+      expect(renderer['activeInstances'].get('cue-1-graphic-0')?.lifecycle).toMatchObject({ startTick: 0 });
       draw(40, {
         simulationState: live,
         events: [],
@@ -1415,8 +1445,8 @@ describe('Zuk scene builder', () => {
         frameDeltaMs: 100,
         timeline: { timelineKey: 'restored-inferno', paused: false, timeMs: 800 },
       });
-      expect(scene['visuals']['replay']).toBeUndefined();
-      expect(renderer['activeInstances'].get('inferno-1-graphic-0')?.lifecycle).toMatchObject({ startTick: 0 });
+      expect(scene['cues']['replay']).toBeUndefined();
+      expect(renderer['activeInstances'].get('cue-1-graphic-0')?.lifecycle).toMatchObject({ startTick: 0 });
     } finally {
       scene.dispose();
     }
@@ -1492,13 +1522,13 @@ describe('Zuk scene builder', () => {
         state,
         events: [
           {
-            type: 'inferno_visual',
+            type: 'encounter_visual',
             tick: 0,
             eventId: 1,
             projectiles: [],
             graphics: [{ spotAnimId: 444, target: { kind: 'tile', position: [25, 25] }, delayCycles: 0, height: 0 }],
             animations: [{ actorId: ZUK_ACTOR_ID, clipId: 'attack', delayCycles: 0 }],
-          } satisfies InfernoVisualEvent,
+          } satisfies EncounterVisualEvent,
         ],
       },
     ];
@@ -1506,7 +1536,7 @@ describe('Zuk scene builder', () => {
     draw(3, context);
     renderer['meshCache'].set(444, graphic);
     draw(3, context);
-    expect(scene['replayHistory']).toBeUndefined();
+    expect(scene['cueHistory']).toBeUndefined();
     manager['typeRegistry'].set(7705, npcType);
 
     const queue = draw(3, context);
@@ -1514,7 +1544,7 @@ describe('Zuk scene builder', () => {
     expect(queue.commands.some((command) => command.kind === 'mesh3d' && command.meshId === 'effect-444-frame-1')).toBe(
       true,
     );
-    expect(renderer['activeInstances'].get('inferno-1-graphic-0')?.lifecycle).toMatchObject({ startTick: 0 });
+    expect(renderer['activeInstances'].get('cue-1-graphic-0')?.lifecycle).toMatchObject({ startTick: 0 });
     expect(
       manager
         .getInstanceFrameStates()
@@ -1593,7 +1623,9 @@ describe('Zuk scene builder', () => {
     manager.updateAnimations(0, 1, [{ actorId: selected.id, trigger: 'attack', tick: 1 }]);
 
     draw(3, {
-      events: [{ type: 'inferno_clear_minions', npcTypeIds: [7703, 7702, 7704, 7705, 7708], tick: 0, eventId: 10 }],
+      events: [
+        { type: 'actor_presentations_removed', npcTypeIds: [7703, 7702, 7704, 7705, 7708], tick: 0, eventId: 10 },
+      ],
       simulationState: { ...state, npcs: [{ ...selected, id: 'replacement' }] },
     });
 
@@ -1609,7 +1641,7 @@ describe('Zuk scene builder', () => {
     { npcTypeIds: '7705' },
     { npcTypeIds: [7705, '7702'] },
     { npcTypeIds: [Number.NaN] },
-  ])('ignores malformed clear payload %j without removing corpses', async ({ npcTypeIds }) => {
+  ])('ignores malformed presentation removal %j without removing corpses', async ({ npcTypeIds }) => {
     const { scene, draw, state } = await frameAudio();
     const selected = {
       ...makeSnapshot({ id: 'healer', npcTypeId: 7705, position: [20, 20], size: 1 }),
@@ -1619,7 +1651,7 @@ describe('Zuk scene builder', () => {
     draw(1, { events: [], simulationState: { ...state, npcs: [{ ...selected, alive: false }] } });
 
     draw(2, {
-      events: [{ type: 'inferno_clear_minions', npcTypeIds, tick: 0, eventId: 10 }],
+      events: [{ type: 'actor_presentations_removed', npcTypeIds, tick: 0, eventId: 10 }],
       simulationState: { ...state, npcs: [] },
     });
 
@@ -1637,7 +1669,7 @@ describe('Zuk scene builder', () => {
         state,
         events: [
           { type: 'actor_despawned', actorId: ZUK_ACTOR_ID, tick: 0, eventId: 10 },
-          { type: 'inferno_clear_minions', npcTypeIds: [ZUK_NPC_ID], tick: 0, eventId: 11 },
+          { type: 'actor_presentations_removed', npcTypeIds: [ZUK_NPC_ID], tick: 0, eventId: 11 },
         ],
       },
     ];
@@ -1652,7 +1684,7 @@ describe('Zuk scene builder', () => {
 
   it.each([
     'actor_despawned',
-    'inferno_clear_minions',
+    'actor_presentations_removed',
   ])('preserves launched flights and pending landings when the source is removed by %s', async (type) => {
     const { scene, draw, state } = await frameAudio();
     loadEffectFixtures(scene);
@@ -1660,8 +1692,8 @@ describe('Zuk scene builder', () => {
       ...makeSnapshot({ id: 'source', npcTypeId: 7705, position: [20, 20], size: 1 }),
       history: new Map(),
     };
-    const emitted: InfernoVisualEvent = {
-      type: 'inferno_visual',
+    const emitted: EncounterVisualEvent = {
+      type: 'encounter_visual',
       tick: 0,
       eventId: 1,
       animations: [],
@@ -1705,8 +1737,8 @@ describe('Zuk scene builder', () => {
   ])('reconstructs emitted effects on a fresh or discontinuous seek: %j', async ({ destination, prior }) => {
     const { scene, draw, state } = await frameAudio();
     loadEffectFixtures(scene);
-    const emitted: InfernoVisualEvent = {
-      type: 'inferno_visual',
+    const emitted: EncounterVisualEvent = {
+      type: 'encounter_visual',
       tick: 0,
       eventId: 10,
       animations: [],
@@ -1742,7 +1774,8 @@ describe('Zuk scene builder', () => {
 
   it('reconstructs historical animation age silently on first history display and consumes only new frames thereafter', async () => {
     const { scene, draw, state, play, silentSync } = await frameAudio();
-    const reconstruct = vi.spyOn(InfernoVisualController.prototype, 'reconstruct');
+    const syncReplay = vi.spyOn(EncounterCuePlayer.prototype, 'syncReplay');
+    const rebuilds = () => syncReplay.mock.calls.filter(([, , rebuild]) => rebuild).length;
     const audioEvents = new EventAudioPlayer(new AudioEngine());
     const onEvents = vi.spyOn(audioEvents, 'onEvents');
     scene.setEventAudioPlayer(audioEvents);
@@ -1751,13 +1784,13 @@ describe('Zuk scene builder', () => {
         state,
         events: [
           {
-            type: 'inferno_visual',
+            type: 'encounter_visual',
             tick: 0,
             eventId: 1,
             projectiles: [],
             graphics: [],
             animations: [{ actorId: ZUK_ACTOR_ID, clipId: 'attack', delayCycles: 0 }],
-          } satisfies InfernoVisualEvent,
+          } satisfies EncounterVisualEvent,
         ],
       },
     ];
@@ -1773,20 +1806,21 @@ describe('Zuk scene builder', () => {
     draw(3, context);
     draw(5, context);
     draw(30, context);
-    expect(reconstruct).toHaveBeenCalledOnce();
+    expect(rebuilds()).toBe(1);
     expect(play).toHaveBeenCalledWith(9002, { channel: 'sfx' }, expect.any(String));
     scene.dispose();
   });
 
   it('reconstructs a replacement history even when the displayed tick is unchanged', async () => {
     const { scene, draw, state } = await frameAudio();
-    const reconstruct = vi.spyOn(InfernoVisualController.prototype, 'reconstruct');
+    const syncReplay = vi.spyOn(EncounterCuePlayer.prototype, 'syncReplay');
+    const rebuilds = () => syncReplay.mock.calls.filter(([, , rebuild]) => rebuild).length;
     const frames: ReplayDisplayFrame[] = [{ state, events: [] }];
     draw(0, { events: [], replayHistory: { frames, throughFrameIndex: 0 } });
 
     draw(0, { events: [], replayHistory: { frames: [...frames], throughFrameIndex: 0 } });
 
-    expect(reconstruct).toHaveBeenCalledTimes(2);
+    expect(rebuilds()).toBe(2);
     scene.dispose();
   });
 
@@ -1806,7 +1840,7 @@ describe('Zuk scene builder', () => {
     const setEventAudioPlayer = vi.spyOn(InfernoSceneCompositor.prototype, 'setEventAudioPlayer');
     const setFrameSoundTracker = vi.spyOn(InfernoSceneCompositor.prototype, 'setFrameSoundTracker');
 
-    createZukSceneBuilder(options);
+    encounterScene('inferno', InfernoSceneCompositor, options);
 
     expect(setEventAudioPlayer).toHaveBeenCalledExactlyOnceWith(null);
     expect(setFrameSoundTracker).toHaveBeenCalledExactlyOnceWith(null);
@@ -1892,7 +1926,7 @@ describe('Zuk scene builder', () => {
   });
 
   it('returns the compositor with the complete scene interface before assets load', () => {
-    const builder = createZukSceneBuilder();
+    const builder = encounterScene('inferno', InfernoSceneCompositor);
 
     expect(builder).toBeInstanceOf(InfernoSceneCompositor);
     expect(builder.isNpcLoaded()).toBe(false);
@@ -2199,16 +2233,19 @@ describe('Zuk scene builder', () => {
       ],
     };
     scene.sync(state.npcs);
-    scene.events([
-      {
-        type: 'inferno_visual',
-        tick: 0,
-        eventId: 1,
-        projectiles: [],
-        graphics: [],
-        animations: [{ actorId: ZUK_ACTOR_ID, clipId: 'attack', delayCycles: 5 }],
-      },
-    ]);
+    scene.events(
+      [
+        {
+          type: 'encounter_visual',
+          tick: 0,
+          eventId: 1,
+          projectiles: [],
+          graphics: [],
+          animations: [{ actorId: ZUK_ACTOR_ID, clipId: 'attack', delayCycles: 5 }],
+        },
+      ],
+      state,
+    );
     scene.animate(state, 0);
     scene.animate(state, 4 / 30);
     const before = scene.manager.getInstanceFrameStates()[0]?.animController?.getFrameState();
@@ -2225,16 +2262,19 @@ describe('Zuk scene builder', () => {
     scene.animate(state, 15 / 30);
     expect(scene.manager.getInstanceFrameStates()[0]?.animController?.getFrameState()?.seqId).toBe(ZUK_SEQS.zuk.idle);
     scene.resetIntroState();
-    scene.events([
-      {
-        type: 'inferno_visual',
-        tick: 0,
-        eventId: 1,
-        projectiles: [],
-        graphics: [],
-        animations: [{ actorId: ZUK_ACTOR_ID, clipId: 'attack', delayCycles: 0 }],
-      },
-    ]);
+    scene.events(
+      [
+        {
+          type: 'encounter_visual',
+          tick: 0,
+          eventId: 1,
+          projectiles: [],
+          graphics: [],
+          animations: [{ actorId: ZUK_ACTOR_ID, clipId: 'attack', delayCycles: 0 }],
+        },
+      ],
+      state,
+    );
     scene.animate(state, 0);
     expect(scene.manager.getInstanceFrameStates()[0]?.animController?.getFrameState()?.seqId).toBe(ZUK_SEQS.zuk.attack);
     scene.dispose();
@@ -2389,8 +2429,8 @@ describe('Inferno scene (no primary NPC)', () => {
     expect(manager['instanceRegistry'].get('bat')?.currentModelMatrix[12]).toBeCloseTo(24.5 + 0.5);
     expect(manager['instanceRegistry'].get('nib')?.currentModelMatrix[12]).toBeCloseTo(20.5);
 
-    const cue: InfernoVisualEvent = {
-      type: 'inferno_visual',
+    const cue: EncounterVisualEvent = {
+      type: 'encounter_visual',
       eventId: 1,
       tick: 2,
       projectiles: [],
@@ -2410,8 +2450,8 @@ describe('Inferno scene (no primary NPC)', () => {
     const C = 40;
     const ADD = C - 8;
     const zuk = npc(ZUK_ACTOR_ID, ZUK_NPC_ID, { position: [28, 52], size: 7, spawnTick: C });
-    const rise: InfernoVisualEvent = {
-      type: 'inferno_visual',
+    const rise: EncounterVisualEvent = {
+      type: 'encounter_visual',
       eventId: 1,
       tick: ADD,
       projectiles: [],
@@ -2591,5 +2631,519 @@ describe('Inferno scene (no primary NPC)', () => {
     expect(waves['isEncounterSpotAnimsLoaded']()).toBe(true);
     waves.dispose();
     zuk.dispose();
+  });
+});
+
+/**
+ * Characterization of a recording in the old `inferno_visual` wire shape (`legacyInfernoRecording`),
+ * drawn by the shipped Inferno scene and observed only through the render queue and NPC poses:
+ * continuous playback and a direct seek must agree with each other and with these values.
+ *
+ * Free-running idle phase is not compared; a seek does not restore it
+ * (docs/architecture/replay-timeline-discontinuity.md, Limits).
+ */
+describe('legacy inferno_visual recording: continuous playback versus direct seek', () => {
+  // Built inside the tests: constructing the engine sets the global arena, which `afterEach` resets.
+  let recorded: readonly ReplayDisplayFrame[] | undefined;
+  const legacyFrames = () => {
+    recorded ??= legacyInfernoRecording().frames;
+    return recorded;
+  };
+  const idleSeqIds = new Set(INFERNO_RENDER_CONFIG.preloadNpcTypes?.flatMap(({ idleSeqId }) => idleSeqId ?? []));
+  const sizes = new Map<number, number>(
+    [LEGACY_INFERNO.nibbler, LEGACY_INFERNO.mager, LEGACY_INFERNO.healer, LEGACY_INFERNO.zuk].map(
+      ({ npcTypeId, size }) => [npcTypeId, size],
+    ),
+  );
+  const scenes: SceneCompositor[] = [];
+  afterEach(() => {
+    for (const scene of scenes.splice(0)) scene.dispose();
+  });
+
+  async function legacyScene() {
+    const scene = createZukSceneBuilder({ encounterRenderConfig: INFERNO_RENDER_CONFIG });
+    if (!(scene instanceof SceneCompositor)) expect.fail('Expected a scene compositor');
+    scenes.push(scene);
+    const { loader, animation } = syntheticNpcAssets((id) => sizes.get(id) ?? 1);
+    await scene.loadNpc(loader, animation);
+    installSyntheticSpotAnims(scene, INFERNO_RENDER_CONFIG.spotAnimIds ?? []);
+    const context = {
+      speedMultiplier: 1,
+      interaction: { hoveredTile: null, targetTile: null },
+      options: SCENE_OPTIONS,
+    };
+    const at = (cycle: number, paused = false) =>
+      observeScene(
+        scene,
+        scene.build({ ...context, ...replayContextAt(legacyFrames(), cycle, paused) }, IDENTITY_PROJECTION, VIEWPORT),
+      );
+    return { scene, context, at };
+  }
+
+  /** Plays from cycle 0 in `step`-cycle frames, landing exactly on `cycle`. */
+  async function continuous(cycle: number, step = 5): Promise<SceneObservation> {
+    const { at } = await legacyScene();
+    for (let shown = 0; shown < cycle; shown += step) at(shown);
+    return at(cycle);
+  }
+
+  async function seek(cycle: number): Promise<SceneObservation> {
+    return (await legacyScene()).at(cycle, true);
+  }
+
+  const cued = ({ poses }: SceneObservation) =>
+    Object.fromEntries(Object.entries(poses).filter(([, pose]) => !idleSeqIds.has(pose.seqId)));
+
+  const effect = (spotAnimId: number, frame: number, at: [number, number, number]) => ({ spotAnimId, frame, at });
+  const standing = ['healer', 'healer-2', 'mager', 'nib'];
+
+  it.each([
+    // Before the nibbler's delayed swing (cycle 50).
+    { cycle: 45, poses: {}, effects: [], drawn: standing },
+    // Its clip four cycles in: the second of its 2/3/5-cycle frames.
+    { cycle: 54, poses: { nib: { seqId: 7574, frame: 1 } }, effects: [], drawn: standing },
+    {
+      // C-8: Zuk rises although his spawn tick is 10. The homing flight left at cycle 60.
+      cycle: 64,
+      poses: { mager: { seqId: 7610, frame: 1 }, zuk: { seqId: 7563, frame: 1 } },
+      effects: [effect(659, 0, [25.5, 25.5, 0]), effect(1375, 0, [31.2333, 31.2333, 0.7792])],
+      drawn: [...standing, 'zuk'],
+    },
+    {
+      // The tracked graphic sits on the nibbler's rendered center, not its recorded [18, 18]. The
+      // pruned healer's corpse plays its death clip; both flights keep their own phase.
+      cycle: 100,
+      poses: { healer: { seqId: 2638, frame: 2 } },
+      effects: [
+        effect(444, 0, [20.5, 20.5, 1.1719]),
+        effect(659, 1, [25.5, 25.5, 0]),
+        effect(660, 1, [26.0245, 29.1421, 1.6784]),
+        effect(1375, 2, [24.3333, 24.3333, 0.5729]),
+      ],
+      drawn: [...standing, 'zuk'],
+    },
+    {
+      // The tile flight's last cycle before its exclusive end at 130.
+      cycle: 129,
+      poses: { healer: { seqId: 2638, frame: 2 } },
+      effects: [effect(444, 1, [20.5, 20.5, 1.1719]), effect(660, 2, [20.6841, 26.5881, 0.1012])],
+      drawn: [...standing, 'zuk'],
+    },
+    {
+      // The never-rendered tracked actor's graphic stands on its recorded fallback's center.
+      cycle: 185,
+      poses: { 'healer-2': { seqId: 2638, frame: 2 } },
+      effects: [effect(448, 0, [23, 27, 2])],
+      drawn: ['healer-2', 'mager', 'nib', 'zuk'],
+    },
+    // The type clear on tick 8 removed the pruned corpse before its clip ended.
+    { cycle: 255, poses: {}, effects: [], drawn: ['mager', 'nib', 'zuk'] },
+  ])('shows the same cues at cycle $cycle whether played or sought', async ({ cycle, poses, effects, drawn }) => {
+    for (const observation of [await continuous(cycle), await seek(cycle)]) {
+      expect(cued(observation)).toEqual(poses);
+      expect(observation.effects).toEqual(effects);
+      expect(observation.drawnNpcs).toEqual(drawn);
+    }
+  });
+
+  it('starts and ends every flight, graphic and cued clip on the same cycles whether played or sought', async () => {
+    const { at } = await legacyScene();
+    const played = activeWindows((cycle) => at(cycle), 0, 270, idleSeqIds);
+    const effects = { 1375: [60, 119], 659: [63, 122], 660: [70, 129], 444: [90, 149], 448: [180, 239] };
+    // Zuk's rise plays from the intro's add at C-8 (tick 2), although his spawn tick is C.
+    const clips = { 'nib:7574': [50, 59], 'mager:7610': [60, 69], 'zuk:7563': [60, 69] };
+    expect(played.effects).toEqual(effects);
+    expect(played.clips).toMatchObject(clips);
+    const sought = async (cycle: number) => {
+      const observation = await seek(cycle);
+      return [
+        ...observation.effects.map(({ spotAnimId }) => String(spotAnimId)),
+        ...Object.entries(cued(observation)).map(([actorId, { seqId }]) => `${actorId}:${seqId}`),
+      ];
+    };
+    for (const [key, [first, last]] of Object.entries({ ...effects, ...clips })) {
+      expect(await sought(first - 1), `${key} before ${first}`).not.toContain(key);
+      expect(await sought(first), `${key} at ${first}`).toContain(key);
+      expect(await sought(last), `${key} at ${last}`).toContain(key);
+      expect(await sought(last + 1), `${key} after ${last}`).not.toContain(key);
+    }
+  });
+
+  it('keeps a pruned corpse to the end of its death clip on a seek, and drops it at a type clear', async () => {
+    const shows = async (cycle: number, actorId: string) => (await seek(cycle)).poses[actorId]?.seqId === 2638;
+    // `healer` dies on tick 3 (cycle 90) and is pruned on tick 4; its corpse lasts 90 cycles.
+    expect(await Promise.all([89, 90, 179, 180].map((cycle) => shows(cycle, 'healer')))).toEqual([
+      false,
+      true,
+      true,
+      false,
+    ]);
+    // `healer-2` dies on tick 6, is pruned on tick 7, and its type is cleared on tick 8.
+    expect(await Promise.all([179, 180, 239, 240].map((cycle) => shows(cycle, 'healer-2')))).toEqual([
+      false,
+      true,
+      true,
+      false,
+    ]);
+    const { at } = await legacyScene();
+    expect(activeWindows((cycle) => at(cycle), 0, 270, idleSeqIds).clips['healer-2:2638']).toEqual([180, 239]);
+
+    // A frame draws the pose it ends on: `healer`'s corpse is posed and drawn together until its clip
+    // ends at 180, mid-cycle included, played, sought or drawn again on a held frame.
+    const healer = ({ poses, drawnNpcs }: SceneObservation) => ({
+      seqId: poses.healer?.seqId ?? null,
+      drawn: drawnNpcs.includes('healer'),
+    });
+    const held = async (cycle: number) => {
+      const scene = await legacyScene();
+      scene.at(cycle, true);
+      return scene.at(cycle, true);
+    };
+    for (const [cycle, expected] of [
+      [179.75, { seqId: 2638, drawn: true }],
+      [180, { seqId: null, drawn: false }],
+    ] as const) {
+      expect(healer(await continuous(cycle)), `played to ${cycle}`).toEqual(expected);
+      expect(healer(await seek(cycle)), `sought to ${cycle}`).toEqual(expected);
+      expect(healer(await held(cycle)), `held at ${cycle}`).toEqual(expected);
+    }
+  });
+
+  it('restores a pruned corpse in 3D on a paused frame first shown in 2D, as a direct 3D seek does', async () => {
+    // `healer` was pruned on tick 4; at cycle 150 its corpse is 60 cycles into its 90-cycle clip.
+    const cycle = 150;
+    const draw = ({ scene, context }: Awaited<ReturnType<typeof legacyScene>>, renderMode: '2d' | '3d') => {
+      const queue = scene.build(
+        { ...context, options: { ...SCENE_OPTIONS, renderMode }, ...replayContextAt(legacyFrames(), cycle, true) },
+        IDENTITY_PROJECTION,
+        VIEWPORT,
+      );
+      return {
+        meshes: queue.commands
+          .flatMap((command) => (command.kind === 'mesh3d' && /^npc-.*-healer$/.test(command.meshId) ? [command] : []))
+          .map(({ meshId, modelMatrix }) => ({ meshId, modelMatrix: [...modelMatrix] }))
+          .sort((left, right) => left.meshId.localeCompare(right.meshId)),
+        pose: observeScene(scene, queue).poses.healer ?? null,
+      };
+    };
+    const switched = await legacyScene();
+    draw(switched, '2d');
+    const expected = draw(await legacyScene(), '3d');
+
+    expect(expected.meshes.map(({ meshId }) => meshId)).toEqual(
+      expect.arrayContaining([expect.stringMatching(/opaque/), expect.stringMatching(/transparent/)]),
+    );
+    expect(expected.pose).toMatchObject({ seqId: 2638 });
+    expect(draw(switched, '3d')).toEqual(expected);
+  });
+
+  // Played one cycle per frame, the corpse must end on the cycle a seek ends it (179): replay poses
+  // each snapshot corpse at its exact age every frame, before it is pruned, never crediting its death
+  // timer a frame's delta from before the death.
+  it('ends a pruned corpse on the same cycle whether played or sought', async () => {
+    const { at } = await legacyScene();
+    expect(activeWindows((cycle) => at(cycle), 0, 270, idleSeqIds).clips['healer:2638']).toEqual([90, 179]);
+  });
+
+  it('hands in-flight and not-yet-started cues to live play at a takeover exactly as replay shows them', async () => {
+    // Restored from tick 2's end (cycle 90): both flights are airborne, the tile spark is landing, the
+    // tracked graphic starts this cycle and the fallback graphic is still 90 cycles away.
+    const tick = 2;
+    const engine = new SimulationEngine({ encounter: createZukWaveEncounter(1), combatSeed: 1 });
+    const restoration: RestoredPresentation = {
+      engine,
+      tick,
+      timeMs: (tick + 1) * 600,
+      history: { frames: legacyFrames().slice(0, tick + 1), throughFrameIndex: tick },
+    };
+    const restored = await legacyScene();
+    const replay = await legacyScene();
+    const restoredAt = (cycle: number, paused: boolean) => {
+      const frame = legacyFrames()[Math.floor(cycle / 30)];
+      if (!frame) expect.fail(`No frame for cycle ${cycle}`);
+      return observeScene(
+        restored.scene,
+        restored.scene.build(
+          {
+            ...restored.context,
+            simulationState: frame.state,
+            events: frame.events,
+            interpolatedTick: cycle / 30,
+            restoredPresentation: restoration,
+            frameDeltaMs: paused ? 0 : 20,
+            timeline: { timelineKey: 'restored-inferno', paused, timeMs: cycle * 20 },
+          },
+          IDENTITY_PROJECTION,
+          VIEWPORT,
+        ),
+      );
+    };
+    const frame = legacyFrames()[tick];
+    if (!frame) expect.fail('Missing the restored frame');
+    for (let held = 0; held < 3; held++)
+      observeScene(
+        restored.scene,
+        restored.scene.build(
+          {
+            ...restored.context,
+            simulationState: frame.state,
+            events: frame.events,
+            interpolatedTick: tick + 1,
+            restoredPresentation: restoration,
+            frameDeltaMs: 0,
+            timeline: { timelineKey: 'restored-inferno', paused: true, timeMs: restoration.timeMs },
+          },
+          IDENTITY_PROJECTION,
+          VIEWPORT,
+        ),
+      );
+    for (let cycle = 0; cycle <= 90; cycle++) replay.at(cycle);
+    let sawPending = false;
+    for (let cycle = 91; cycle <= 270; cycle++) {
+      const live = restoredAt(cycle, false);
+      expect(live.effects, `cycle ${cycle}`).toEqual(replay.at(cycle).effects);
+      sawPending ||= live.effects.some(({ spotAnimId }) => spotAnimId === 448);
+    }
+    expect(sawPending).toBe(true);
+  });
+});
+
+/**
+ * The shared cue pipeline end to end on the shipped Inferno scene: the cue player and the effect
+ * index's cue index, observed only through the render queue, NPC poses and frame sounds.
+ */
+describe('the shared encounter cue pipeline', () => {
+  let recorded: readonly ReplayDisplayFrame[] | undefined;
+  const legacyFrames = () => {
+    recorded ??= legacyInfernoRecording().frames;
+    return recorded;
+  };
+  const idleSeqIds = new Set(INFERNO_RENDER_CONFIG.preloadNpcTypes?.flatMap(({ idleSeqId }) => idleSeqId ?? []));
+  const cued = ({ poses }: SceneObservation) =>
+    Object.fromEntries(Object.entries(poses).filter(([, pose]) => !idleSeqIds.has(pose.seqId)));
+  const scenes: SceneCompositor[] = [];
+  afterEach(() => {
+    for (const scene of scenes.splice(0)) scene.dispose();
+  });
+
+  /** The Inferno scene over `frames`; `priorities` sets a clip sequence's forced priority (default 5). */
+  async function infernoScene(
+    frames: readonly ReplayDisplayFrame[],
+    priorities: Readonly<Record<number, number>> = {},
+  ) {
+    const scene = createZukSceneBuilder({ encounterRenderConfig: INFERNO_RENDER_CONFIG });
+    if (!(scene instanceof SceneCompositor)) expect.fail('Expected a scene compositor');
+    scenes.push(scene);
+    const { loader, animation } = syntheticNpcAssets();
+    vi.spyOn(animation, 'loadSeqType').mockImplementation((id) => {
+      const sequence = new SeqType(id, cacheInfo);
+      sequence.frameIds = [10, 11, 12];
+      sequence.frameLengths = [...SYNTHETIC_CLIP_FRAME_CYCLES];
+      sequence.forcedPriority = priorities[id] ?? 5;
+      return sequence;
+    });
+    await scene.loadNpc(loader, animation);
+    installSyntheticSpotAnims(scene, INFERNO_RENDER_CONFIG.spotAnimIds ?? []);
+    return (cycle: number, paused = false) =>
+      observeScene(
+        scene,
+        scene.build(
+          {
+            speedMultiplier: 1,
+            interaction: { hoveredTile: null, targetTile: null },
+            options: SCENE_OPTIONS,
+            ...replayContextAt(frames, cycle, paused),
+          },
+          IDENTITY_PROJECTION,
+          VIEWPORT,
+        ),
+      );
+  }
+
+  type SameCycleClips = {
+    readonly order: readonly ('attack' | 'defend')[];
+    readonly priorities: Readonly<Record<number, number>>;
+    readonly shown: 'attack' | 'defend';
+  };
+  const higherAttack = { [INFERNO_WAVE_SEQS.nibbler.attack]: 8 };
+  it.each<SameCycleClips>([
+    { order: ['attack', 'defend'], priorities: higherAttack, shown: 'attack' },
+    { order: ['defend', 'attack'], priorities: higherAttack, shown: 'attack' },
+    { order: ['attack', 'defend'], priorities: {}, shown: 'defend' },
+    { order: ['defend', 'attack'], priorities: {}, shown: 'attack' },
+  ])('shows the same winner of clips $order starting on one cycle whether played or sought, with priorities $priorities', async ({
+    order,
+    priorities,
+    shown,
+  }) => {
+    // The nibbler's clips both start at cycle 50: the higher priority wins, and on a tie the later one.
+    const frames = legacyFrames().map((frame, tick) =>
+      tick === 1
+        ? {
+            ...frame,
+            events: [
+              {
+                type: 'encounter_visual',
+                eventId: 11,
+                tick: 1,
+                animations: order.map((clipId) => ({ actorId: 'nib', clipId, delayCycles: 20 })),
+                projectiles: [],
+                graphics: [],
+              } satisfies EncounterVisualEvent,
+            ],
+          }
+        : frame,
+    );
+    const played = await infernoScene(frames, priorities);
+    for (let cycle = 0; cycle < 53; cycle++) played(cycle);
+    const sought = await infernoScene(frames, priorities);
+
+    const playedPoses = cued(played(53));
+    expect(playedPoses.nib?.seqId).toBe(INFERNO_WAVE_SEQS.nibbler[shown]);
+    expect(cued(sought(53, true))).toEqual(playedPoses);
+  });
+
+  it('holds a restore silently while an encounter NPC type loads, then plays the cue on from its original clock', async () => {
+    const { scene, draw, state, engine, play, update } = await frameAudio();
+    const reference = await frameAudio();
+    try {
+      const manager = scene['npcInstanceManager'];
+      // The attack's frames start at cycles 25, 27 and 30, each with its own sound (9000 + frame).
+      const event: EncounterVisualEvent = {
+        type: 'encounter_visual',
+        eventId: 1,
+        tick: 0,
+        graphics: [],
+        projectiles: [],
+        animations: [{ actorId: ZUK_ACTOR_ID, clipId: 'attack', delayCycles: 25 }],
+      };
+      const frames: ReplayDisplayFrame[] = [{ state, events: [event] }];
+      const restoration: RestoredPresentation = {
+        engine,
+        tick: 0,
+        timeMs: 26 * 20,
+        history: { frames, throughFrameIndex: 0 },
+      };
+      const pose = (target: InfernoSceneCompositor) =>
+        target['npcInstanceManager']
+          .getInstanceFrameStates()
+          .find((entry) => entry.actorId === PRIMARY_NPC_ACTOR_ID)
+          ?.animController?.getFrameState();
+      const restored = (cycle: number, live = false) =>
+        draw(cycle, {
+          simulationState: { ...state, currentTick: Math.floor(cycle / 30) },
+          events: live ? [] : [event],
+          restoredPresentation: restoration,
+          frameDeltaMs: 20,
+          timeline: { timelineKey: 'restored-inferno', paused: false, timeMs: cycle * 20 },
+        });
+      const npcType = manager['typeRegistry'].get(7705);
+      if (!npcType) expect.fail('Missing loaded NPC type');
+      manager['typeRegistry'].delete(7705);
+
+      // Held across the attack's second frame and its sound, without claiming the frame was drawn.
+      const held = [26, 27, 28].map((cycle) => restored(cycle).replayPresentationReady);
+      expect(held).toEqual([false, false, false]);
+      expect(update).not.toHaveBeenCalled();
+      manager['typeRegistry'].set(7705, npcType);
+      expect(restored(29).replayPresentationReady).toBe(true);
+      const restoredPose = pose(scene);
+      expect(update).not.toHaveBeenCalled();
+      restored(30, true);
+      restored(31, true);
+
+      for (let cycle = 0; cycle <= 29; cycle++)
+        reference.draw(cycle, { events: [], replayHistory: { frames, throughFrameIndex: 0 } });
+      expect(restoredPose).toMatchObject({ seqId: ZUK_SEQS.zuk.attack, currentFrameIndex: 1 });
+      expect(restoredPose).toEqual(pose(reference.scene));
+      // Only the frame first shown live sounds.
+      expect(play.mock.calls.map(([id]) => id)).toEqual([9002]);
+    } finally {
+      scene.dispose();
+      reference.scene.dispose();
+    }
+  });
+
+  /** A real Zuk fight, recorded through the recorder as the app records one. */
+  function recordZukFight(ticks: number) {
+    const input: [number, number] = [40, 46];
+    const engine = new SimulationEngine({ encounter: createZukWaveEncounter(1), combatSeed: 1, startPos: input });
+    engine.setMechanicsConfig({ zukSets: false, infiniteHealth: true });
+    const config = engine.getRunConfig();
+    const recorder = new ReplayRecorder();
+    recorder.startRun(config);
+    recorder.recordFrame(0, input, engine.getState(), []);
+    for (let tick = 1; tick <= ticks; tick++) {
+      engine.advanceTick(input);
+      recorder.recordFrame(tick, input, engine.getState(), engine.getLastTickEvents());
+    }
+    return { config, data: recorder.exportData() };
+  }
+
+  /** `data` as the build before the encounter visual batch would have written it. */
+  function inOldShapes(data: ReplayRecorderData): ReplayRecorderData {
+    const old: Record<string, string> = {
+      encounter_visual: 'inferno_visual',
+      actor_presentations_removed: 'inferno_clear_minions',
+    };
+    return {
+      ...data,
+      frames: data.frames.map((frame) => ({
+        ...frame,
+        events: frame.events.map((event) => (old[event.type] ? { ...event, type: old[event.type] } : event)),
+      })),
+    };
+  }
+
+  it('plays a branch taken over from a loaded old-shape recording exactly as the same fight recorded today', async () => {
+    const { config, data } = recordZukFight(45);
+    const today = new ReplayRecorder();
+    today.load(data);
+    const loaded = new ReplayRecorder();
+    loaded.load(inOldShapes(data));
+    expect(loaded.getDisplayFrames().map(({ events }) => events)).toEqual(
+      today.getDisplayFrames().map(({ events }) => events),
+    );
+    // Take over just after the first Zuk ball launches, so it is airborne across the handoff.
+    const takeover = loaded
+      .getDisplayFrames()
+      .findIndex(({ events }) =>
+        events.some(
+          (event) => isEncounterVisualEvent(event) && event.projectiles.some((cue) => cue.spotAnimId === 1375),
+        ),
+      );
+    expect(takeover).toBeGreaterThan(0);
+    const resumed = reconstructReplayPrefix(config, loaded.getReconstructionFrames(), takeover, null);
+    if (!resumed) expect.fail('Expected the takeover engine');
+    const suffix: ReplayDisplayFrame[] = data.frames.slice(takeover + 1).map((frame) => {
+      resumed.advanceTick(frame.input);
+      return { state: resumed.getState(), events: resumed.getLastTickEvents() };
+    });
+    const branch = [...loaded.getDisplayFrames().slice(0, takeover + 1), ...suffix];
+    const batches = (frames: readonly ReplayDisplayFrame[]) =>
+      frames.map(({ events }) => events.filter(isEncounterVisualEvent).map(({ eventId: _id, ...batch }) => batch));
+    const prefixIds = branch.slice(0, takeover + 1).flatMap(({ events }) => events.map(({ eventId }) => eventId));
+    const suffixIds = suffix.flatMap(({ events }) => events.map(({ eventId }) => eventId));
+
+    // The branch's own batches, in today's shape, continue the prefix's ids and the same fight.
+    expect(Math.min(...suffixIds)).toBe(Math.max(...prefixIds) + 1);
+    expect(batches(suffix).flat().length).toBeGreaterThan(0);
+    expect(batches(suffix)).toEqual(batches(today.getDisplayFrames().slice(takeover + 1)));
+    const playBranch = await infernoScene(branch);
+    const playToday = await infernoScene(today.getDisplayFrames());
+    const lastCycle = (branch.length - 1) * 30;
+    let effectsAfterTakeover = 0;
+    const todayEffects: SceneObservation['effects'][] = [];
+    for (let cycle = 0; cycle <= lastCycle; cycle++) {
+      const shown = playBranch(cycle);
+      const expected = playToday(cycle);
+      todayEffects.push(expected.effects);
+      expect(shown.effects, `cycle ${cycle}`).toEqual(expected.effects);
+      expect(cued(shown), `cycle ${cycle}`).toEqual(cued(expected));
+      if (cycle > (takeover + 1) * 30) effectsAfterTakeover += shown.effects.length;
+    }
+    expect(effectsAfterTakeover).toBeGreaterThan(0);
+    for (const cycle of [(takeover + 1) * 30 + 7, lastCycle - 11])
+      expect((await infernoScene(branch))(cycle, true).effects).toEqual(todayEffects[cycle]);
   });
 });

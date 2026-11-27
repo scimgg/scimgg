@@ -213,8 +213,8 @@ export async function loadSpotAnimPipeline(root: string, cachePath: string): Pro
     { SpotAnimModelLoader },
     { AnimationSystem },
     { perfFlags },
-    { createSolHereditSceneBuilder },
-    { createZukSceneBuilder },
+    { createSceneBuilderForKind },
+    { UNBOOTSTRAPPED_CACHE_MANAGER },
     { YamaSceneCompositor },
     { YAMA_ENCOUNTER_RENDER_CONFIG },
     { LobbySceneCompositor },
@@ -227,8 +227,8 @@ export async function loadSpotAnimPipeline(root: string, cachePath: string): Pro
     from('src/rs/model/SpotAnimModelLoader.ts'),
     from('src/render/backends/picogl/AnimationSystem.ts'),
     from('src/util/PerfFlags.ts'),
-    from('src/render/scene/solHereditSceneBuilder.ts'),
-    from('src/render/scene/zukSceneBuilder.ts'),
+    from('src/render/scene/sceneBuilderFactory.ts'),
+    from('src/test/helpers/encounterScene.ts'),
     from('src/render/scene/YamaSceneCompositor.ts'),
     from('src/encounters/yamaP3/renderConfig.ts'),
     from('src/render/scene/lobby/LobbySceneCompositor.ts'),
@@ -254,9 +254,8 @@ export async function loadSpotAnimPipeline(root: string, cachePath: string): Pro
     createScene: (encounter) => {
       switch (encounter) {
         case 'sol_heredit':
-          return createSolHereditSceneBuilder();
         case 'inferno':
-          return createZukSceneBuilder();
+          return createSceneBuilderForKind(encounter, { cacheManager: UNBOOTSTRAPPED_CACHE_MANAGER });
         case 'yama_p3': {
           const scene = new YamaSceneCompositor();
           scene.setEncounterRenderConfig(YAMA_ENCOUNTER_RENDER_CONFIG);

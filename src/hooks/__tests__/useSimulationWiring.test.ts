@@ -288,8 +288,7 @@ describe('useSimulationWiring replay delayed cues', () => {
   beforeEach(() => {
     params = createParams();
     params.eventAudioPlayerRef.current = new EventAudioPlayer(params.audioEngine, {
-      name: 'delayed',
-      rules: { actor_died: { resolve: { id: 10313, delayCycles: 21 } } },
+      actor_died: { resolve: { id: 10313, delayCycles: 21 } },
     });
     vi.spyOn(params.audioEngine, 'play').mockImplementation(() => {});
   });

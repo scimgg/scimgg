@@ -42,7 +42,11 @@ function digestEvents(events: readonly GameEvent[]): unknown[] {
   for (const event of events) {
     const { eventId: _eventId, ...rest } = event as GameEvent & Record<string, unknown>;
     switch (event.type) {
-      case 'inferno_visual':
+      case 'encounter_visual':
+        // The goldens hash this batch under its former name. Drop the alias the next time they are
+        // re-recorded for a deliberate mechanic change.
+        out.push({ ...rest, type: 'inferno_visual' });
+        break;
       case 'hit_applied':
       case 'hitsplat_spawned':
       case 'actor_died':

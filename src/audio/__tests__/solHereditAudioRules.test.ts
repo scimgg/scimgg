@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { EncounterVisualEvent } from '../../core/events/encounterVisual';
 import { SOL_BEAM_PREPARED_EVENT } from '../../encounters/solHeredit/constants';
 import { COLOSSEUM_SPOTANIMS } from '../../npcs/colosseum/constants';
-import type { ColosseumVisualEvent } from '../../npcs/colosseum/visualEvents';
 import { AudioEngine } from '../AudioEngine';
 import { EventAudioPlayer } from '../EventAudioPlayer';
 import { solHereditAudioRules } from '../solHereditAudioRules';
@@ -18,19 +18,30 @@ describe('Sol sand audio capture conformance', () => {
     expect(batches.length).toBeGreaterThanOrEqual(5);
     const audio = new AudioEngine();
     const played = vi.spyOn(audio, 'play').mockImplementation(() => undefined);
-    const player = new EventAudioPlayer(audio, { name: 'solHeredit', rules: solHereditAudioRules });
+    const player = new EventAudioPlayer(audio, solHereditAudioRules);
 
     for (const [eventId, { tick, sounds }] of batches.entries()) {
       played.mockClear();
       expect(sounds).toHaveLength(2);
-      const event: ColosseumVisualEvent = {
-        type: 'colosseum_visual',
+      const event: EncounterVisualEvent = {
+        type: 'encounter_visual',
         eventId,
         tick,
         animations: [],
+        projectiles: [],
         graphics: [
-          { spotAnimId: COLOSSEUM_SPOTANIMS.sunfireLightning, position: [33, 35], delayCycles: 30 },
-          { spotAnimId: COLOSSEUM_SPOTANIMS.sunfireLightning, position: [34, 35], delayCycles: 30 },
+          {
+            spotAnimId: COLOSSEUM_SPOTANIMS.sunfireLightning,
+            target: { kind: 'tile', position: [33, 35] },
+            delayCycles: 30,
+            height: 0,
+          },
+          {
+            spotAnimId: COLOSSEUM_SPOTANIMS.sunfireLightning,
+            target: { kind: 'tile', position: [34, 35] },
+            delayCycles: 30,
+            height: 0,
+          },
         ],
       };
 
@@ -51,7 +62,7 @@ describe('Sol beam warning audio capture conformance', () => {
     const preparations = SOL_BEAM_WARNING_SOUND_TICKS[filename] ?? [];
     const audio = new AudioEngine();
     const played = vi.spyOn(audio, 'play').mockImplementation(() => undefined);
-    const player = new EventAudioPlayer(audio, { name: 'solHeredit', rules: solHereditAudioRules });
+    const player = new EventAudioPlayer(audio, solHereditAudioRules);
 
     let fired = 0;
     for (const [eventId, { tick, fireTick, sounds }] of preparations.entries()) {
@@ -71,16 +82,17 @@ describe('Sol beam warning audio capture conformance', () => {
 it('preserves separate beam impact sounds even when their endpoints share a row', () => {
   const audio = new AudioEngine();
   const played = vi.spyOn(audio, 'play').mockImplementation(() => undefined);
-  const player = new EventAudioPlayer(audio, { name: 'solHeredit', rules: solHereditAudioRules });
-  const event: ColosseumVisualEvent = {
-    type: 'colosseum_visual',
+  const player = new EventAudioPlayer(audio, solHereditAudioRules);
+  const event: EncounterVisualEvent = {
+    type: 'encounter_visual',
     eventId: 1,
     tick: 10,
     animations: [],
+    projectiles: [],
     graphics: [
-      { spotAnimId: 2697, position: [25, 32], delayCycles: 39, height: 128 },
-      { spotAnimId: 2697, position: [40, 32], delayCycles: 39, height: 128 },
-      { spotAnimId: 2697, position: [30, 32], delayCycles: 39, height: 128 },
+      { spotAnimId: 2697, target: { kind: 'tile', position: [25, 32] }, delayCycles: 39, height: 128 },
+      { spotAnimId: 2697, target: { kind: 'tile', position: [40, 32] }, delayCycles: 39, height: 128 },
+      { spotAnimId: 2697, target: { kind: 'tile', position: [30, 32] }, delayCycles: 39, height: 128 },
     ],
   };
 

@@ -2,11 +2,11 @@ import type { NpcActor } from '../../../core/actors/NpcActor';
 import { notifyNpcOfPlayerAttack } from '../../../core/combat/retaliation';
 import { SIMULATION_START_TICK, setResolvedArenaConfig } from '../../../core/constants';
 import type { DecisionKey } from '../../../core/decisionRandom';
+import type { NpcProjectileCue } from '../../../core/events/encounterVisual';
 import type { GameEvent } from '../../../core/events/types';
 import { SimulationEngine } from '../../../core/SimulationEngine';
 import type { WorldState } from '../../../core/WorldState';
 import { INFERNO_WAVE_NPC_IDS, INFERNO_WAVE_SEQS, ZUK_SEQS } from '../../../npcs/inferno/constants';
-import type { NpcProjectileCue } from '../../../npcs/projectileCue';
 import {
   ConstrainedDecisions,
   type DecisionConstraint,
@@ -1296,7 +1296,7 @@ export function openInfernoReplay(window: InfernoWindow): InfernoReplaySession {
         simImpacts.set(key, set);
       }
       for (const event of events) {
-        if (event.type === 'inferno_visual') {
+        if (event.type === 'encounter_visual') {
           const visual = event as GameEvent & {
             animations: readonly { actorId: string; clipId: string }[];
             projectiles: readonly NpcProjectileCue[];

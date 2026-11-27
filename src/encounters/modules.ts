@@ -6,11 +6,10 @@
  * composition root ({@link ./registry}) — so it must stay free of render and UI imports: one
  * scene-builder import here would pull picogl, which needs a browser global, into all of them.
  *
- * Everything presentational (scene builder, render config, camera, audio, picker art) therefore
- * lives in the sibling {@link ./presentationModules} manifest, which is consumed by the render
- * and UI layers and which expands its variant kinds from the list here.
- *
- * A new encounter adds one entry to each file. Keep them in the same order.
+ * Everything presentational therefore lives outside it. Register the simulation here. Register its
+ * render config by base kind in {@link ./renderConfigs}. Add a {@link ./presentationModules} row
+ * only for picker art, camera settings, event-audio rules or a custom scene; that manifest expands
+ * its variant kinds from the list here.
  *
  * Identity (kind, parent/variant, slug, availability) lives in {@link ./catalog}, and
  * `encounterModules.test.ts` pins this manifest, the presentation manifest, the SEO slugs, and

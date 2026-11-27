@@ -2,6 +2,7 @@ import type { NpcActor } from '../../core/actors/NpcActor';
 import type { PlayerActor } from '../../core/actors/PlayerActor';
 import { isNpcActionReady, scheduleNpcAction } from '../../core/combat/npcActionClock';
 import { applyNpcHealing } from '../../core/combat/npcHealing';
+import { emitEncounterVisual } from '../../core/events/encounterVisual';
 import { canNpcActThisTurn, canReceiveHealing, canReceiveNewAttack, isNpcLiving } from '../../core/npcDeath';
 import { createNpcDefinition, type NpcDefinitionContext } from '../../core/npcs';
 import type { Coordinate } from '../../types/simulation';
@@ -9,7 +10,6 @@ import { createInfernoActor } from './actors';
 import { demonstrateHeal } from './demonstrations';
 import { emitZukDeath } from './events';
 import { type ParentHealPresentation, presentInfernoDamage } from './presentation';
-import { emitInfernoVisual } from './visualEvents';
 
 // docs/encounters/zuk-facts-spec.md section 6: cast t1069, visual flight 3, HP t1073; do not collapse flight and application.
 const INITIAL_CAST_DELAY = 4;
@@ -85,7 +85,7 @@ export const healerDefinition = createNpcDefinition<HealerState, HealerConfig | 
         context.world.getPlayers().find((player) => player.id === actor.combat.targetId) ??
         context.world.getNpc(actor.combat.targetId);
       if (!target || !canReceiveNewAttack(target)) return { environmentalDamages: [] };
-      emitInfernoVisual(context.tickEvents, {
+      emitEncounterVisual(context.tickEvents, {
         animations: [{ actorId: actor.id, clipId: 'attack', delayCycles: 0 }],
         projectiles: [],
         graphics: [],
@@ -103,7 +103,7 @@ export const healerDefinition = createNpcDefinition<HealerState, HealerConfig | 
       // A dying healer may still cast at its attacker on its killing tick, but never heals.
       if (!isNpcLiving(actor) || !target || !canReceiveHealing(target)) return { environmentalDamages: [] };
       const { animations, projectiles } = demonstrateHeal([actor], target);
-      emitInfernoVisual(context.tickEvents, { animations, projectiles, graphics: [] });
+      emitEncounterVisual(context.tickEvents, { animations, projectiles, graphics: [] });
       context.tickEvents.emit({
         type: 'zuk_healer_cast',
         sourceId: actor.id,

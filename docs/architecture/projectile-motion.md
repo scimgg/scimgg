@@ -5,17 +5,18 @@ no event adapters, actor-size heuristics, animation policy or projectile profile
 [`ProjectileFlight.ts`](../../src/render/effects/ProjectileFlight.ts) wraps it in one per-flight
 runtime shared by `ProjectileController` and
 [`NpcProjectileFlights`](../../src/render/effects/NpcProjectileFlights.ts), which flies the
-`NpcProjectileCue`s (`src/npcs/projectileCue.ts`) that the Inferno and Colosseum visual events
-carry. It owns cycle scheduling,
+`NpcProjectileCue`s (`src/core/events/encounterVisual.ts`) that encounter visual batches carry.
+It owns cycle scheduling,
 incremental homing, model orientation, cache animation progress and render requests. `sample()`
-advances without drawing (Inferno replay reconstruction); `update()` uses the same sample and gates
+advances without drawing (replay reconstruction of encounter cues); `update()` uses the same sample and gates
 drawing on cache readiness. Motion starts at the first active sample, advances while the mesh is
 unavailable, and never re-aims on a held cycle.
 
 Adapters resolve actor/terrain endpoints and choose animation/render policy; neither calculates
 flight kinematics or orientation. The player adapter keeps independent launch snapshots, flights,
-`ProjectileAim`, scheduled impact graphics and shared asset loading. Inferno keeps cue events,
-overlapping volleys, graphics, NPC clips and historical actor resolution.
+`ProjectileAim`, scheduled impact graphics and shared asset loading. The scene's
+`EncounterCuePlayer` keeps cue events, overlapping volleys, graphics, NPC clips and historical actor
+resolution.
 
 ## Inputs and Lifetime Boundary
 
@@ -56,14 +57,14 @@ mesh readiness (a missing projectile asset cannot delay an impact); new attacks 
 flight or impact; simulation damage timing is unaffected.
 
 Animation: player flights loop the whole sequence (flight duration for an unanimated entry), with
-sequence height offset and zIndex 68. Inferno loops the cache `frameStep` tail after the initial
-sequence (zero progress without animation), with actor height mode.
+sequence height offset and zIndex 68. Encounter cue projectiles loop the cache `frameStep` tail after
+the initial sequence (zero progress without animation), with actor height mode.
 
 ## Scene surface references
 
 `SceneCompositor` owns a [`SceneSurfaceHeightResolver`](../../src/render/scene/SceneSurfaceHeightResolver.ts)
-and a stable `(worldX, worldY) => number` callback shared by player flights and Inferno live/replay
-reconstruction. Both endpoints sample their resolved XY point; actor size picks the visual center and
+and a stable `(worldX, worldY) => number` callback shared by player flights and encounter cue
+projectiles, live and in replay reconstruction. Both endpoints sample their resolved XY point; actor size picks the visual center and
 does not average terrain under the footprint. Moving targets resample at their current visual center
 without changing the homing integration.
 
@@ -81,8 +82,8 @@ without changing the homing integration.
   callback is rebound each 3D build. Before terrain contexts exist, and in standalone controllers,
   the point-based bilinear sampler over `terrainHeights` is used. A resolved zero is a valid height.
 
-Only flight references use this. Player impact graphics keep footprint/model-height anchors; Inferno
-graphics keep point-terrain anchors. Dynamic injected tile meshes and nested moving worldviews are
+Only flight references use this. Player impact graphics keep footprint/model-height anchors; encounter
+cue graphics keep point-terrain anchors. Dynamic injected tile meshes and nested moving worldviews are
 not modeled; flat terrain with zero raise yields the bare terrain height.
 
 ## Mathematical model

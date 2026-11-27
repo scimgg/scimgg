@@ -94,15 +94,24 @@ Every other declaration is a checked projection of the catalog:
 - [`modules.ts`](../../src/encounters/modules.ts): node-safe runtime manifest (factory, descriptor,
   `variantFactories`, controls, intro). It must stay free of render/UI imports: its node consumers
   would otherwise pull picogl, which needs a browser global.
-- [`presentationModules.ts`](../../src/encounters/presentationModules.ts): scene builder, render
-  config, opening camera, audio layer, picker art.
+- [`presentationModules.ts`](../../src/encounters/presentationModules.ts): an optional row per base
+  kind, for picker art, an opening camera, audio rules, or a scene builder of its own.
+- `ENCOUNTER_RENDER_CONFIGS` ([`renderConfigs.ts`](../../src/encounters/renderConfigs.ts)):
+  the one registration of each encounter's render config, keyed by its base kind. It is node-safe,
+  so cache trimming and frame-sound extraction read the same map. `getEncounterRenderConfig`
+  resolves a registered kind, a variant through its base kind, and adds the descriptor's map squares.
+- `createSceneBuilderForKind` ([`sceneBuilderFactory.ts`](../../src/render/scene/sceneBuilderFactory.ts))
+  makes every encounter scene. It rejects a kind the registry does not run (unknown, withheld or
+  retired), resolves the render config unless the caller passes one, and hands it to the base
+  kind's own scene builder, or else to the common `SceneCompositor`, which loads every NPC type and
+  effect the config declares and holds a 3D replay frame until they settle.
 - [`registry.ts`](../../src/encounters/registry.ts): owns the populated `encounterRegistry`, so
   `src/core` keeps only the `EncounterRegistry` class and never imports a concrete encounter.
 - [`slugs.ts`](../../src/encounters/slugs.ts) derives routes; `registered: false` withholds an entry
   from routing.
 
 [`encounterModules.test.ts`](../../src/encounters/__tests__/encounterModules.test.ts) pins catalog,
-registry, presentation, slug and lobby agreement, audio layer precedence, opening cameras, and an
+registry, presentation, slug and lobby agreement, opening cameras, and an
 import boundary: no `src/core` runtime import from `src/encounters` (the pure catalog excepted),
 `src/render` or `src/components`.
 
@@ -125,10 +134,11 @@ The core descriptor owns an encounter's map squares. `mapSquare` is the origin s
 south-west tile is simulation (0, 0), and a tile with y ≥ 64 is simply in the square to the north
 (coordinates are translated by whole squares, never flipped). `mapSquareOffsets` lists every square
 the encounter loads, relative to the origin; omitted, it is the origin alone. Each offset is an
-arena square unless it is marked `sceneryOnly: true`. A presentation module never declares map
-squares: `withDescriptorMapBlock` ([`encounterMapBlock.ts`](../../src/render/scene/encounterMapBlock.ts))
-copies the origin and squares from the descriptor, for `getEncounterRenderConfig` and for a scene
-builder made without a render config.
+arena square unless it is marked `sceneryOnly: true`. An authored render config never declares map
+squares: `getEncounterRenderConfig`
+([`encounterRenderConfig.ts`](../../src/render/scene/encounterRenderConfig.ts)) copies the origin and
+squares from the descriptor, and every scene made by kind receives its config unless its caller
+passes one.
 
 **The origin is the arena's south-west square.** Every arena offset has `dx >= 0` and `dy >= 0`,
 and some arena square sits in the origin's column and some in its row, so the arena's tiles all
@@ -253,10 +263,33 @@ spawn command (reset instead); reviving before the defeat is adjudicated is supp
 5. Add only the projections needed: mechanics keys in
    [`types/simulation.ts`](../../src/types/simulation.ts), commands in
    [`core/encounters/commands.ts`](../../src/core/encounters/commands.ts).
-6. Add one entry each to `modules.ts` and `presentationModules.ts`, then lobby access and tutorials
-   where applicable.
+6. Add an entry to `modules.ts` and register its render config in `ENCOUNTER_RENDER_CONFIGS`. Add a
+   `presentationModules.ts` row only for picker art, an opening camera, audio rules or a scene of
+   its own. Then add lobby access and tutorials where applicable.
 7. Test source-backed behavior, full-engine tick timing, NPC stage enrollment, reset/seed
-   determinism, snapshot cloneability and manifest agreement.
+   determinism, snapshot cloneability and manifest agreement. Give each new kind, variants included,
+   a scenario in `ENCOUNTER_DYNAMIC_COVERAGE` in
+   [`cache-runtime.check.ts`](../../scripts/cache-runtime.check.ts), which fails until one exists.
+
+### Presenting it
+
+The protocol is in [Visual batches](events.md#visual-batches).
+
+1. **Emit** `encounter_visual` where the mechanic decides it, with `emitEncounterVisual`, or
+   `encounterVisual` when returning an unstamped event. Record delays, targets and heights there.
+   Don't also translate a semantic event into the same effect.
+2. **Declare** the NPC types, keyed `attackClips` and `spotAnimIds` in the encounter's
+   `renderConfig.ts`. Register it once under the base kind in `ENCOUNTER_RENDER_CONFIGS`; the
+   descriptor supplies the map squares. Rerun `npx tsx scripts/extract-frame-sounds.ts` for new clips
+   or spot animations. Add newly playable sound ids to `ALL_SOUND_IDS` in
+   [`soundNames.ts`](../../src/audio/soundNames.ts); `SOUND_NAMES` is only for display.
+3. **Stop here for an ordinary encounter.** The default scene plays and seeks those cues. If needed,
+   add a base-kind presentation row for picker art, `defaultCamera`/`setupCameras`, or explicit
+   `audioRules`. None of these needs a scene subclass, and variants inherit the row.
+4. **Use `sceneBuilder`** only for custom drawing or a scripted cutscene, and pass the supplied
+   options to `configureEncounterScene`. Persistent LOCs are [scene objects](scene-objects.md); for
+   behavior replayed from the snapshot rather than from batches, see
+   [`YamaSceneCompositor`](../../src/render/scene/YamaSceneCompositor.ts).
 
 ## Adding or reusing an NPC
 

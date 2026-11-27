@@ -1,8 +1,8 @@
 import type { NpcActor } from '../../core/actors/NpcActor';
 import type { DamageAppliedInfo } from '../../core/combat/CombatSystem';
+import { emitEncounterVisual } from '../../core/events/encounterVisual';
 import type { NpcDefinitionContext } from '../../core/npcs';
 import { emitZukHit, zukNpcKind } from './events';
-import { emitInfernoVisual } from './visualEvents';
 
 export type ParentHealPresentation = (target: NpcActor, context: NpcDefinitionContext) => void;
 
@@ -22,7 +22,7 @@ export function presentInfernoDamage({
   emitZukHit(context, { actorId: actor.id, npcKind, position: actor.position });
   // Neither Jal-Zek nor the Jal-Ak children have a defend sequence (facts spec, NPCs table).
   if (damage.hpAfter <= 0 || npcKind === 'mager' || npcKind === 'blob_child') return;
-  emitInfernoVisual(context.tickEvents, {
+  emitEncounterVisual(context.tickEvents, {
     animations: [{ actorId: actor.id, clipId: 'defend', delayCycles: 0 }],
     projectiles: [],
     graphics: [],

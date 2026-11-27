@@ -644,6 +644,12 @@ export class SpotAnimRenderer {
     return this.meshCache.has(id);
   }
 
+  /** Loaded with something to draw: false while pending and for an effect the cache could not supply. */
+  isUsable(id: number): boolean {
+    const entry = this.meshCache.get(id);
+    return entry !== undefined && (entry.static.length > 0 || entry.frames.length > 0 || this.skeletalPosers.has(id));
+  }
+
   /**
    * This renderer's entry for `id`, current with its loader: when the loader has cleared its caches
    * since the bake, the stale entry (opaque source, transparent parts and bounds alike) is replaced

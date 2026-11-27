@@ -4,6 +4,7 @@ import { CombatSystem, type DamageAppliedInfo } from '../../../core/combat/Comba
 import { npcHitDelayFromEndTime } from '../../../core/combat/hitDelay';
 import { setArenaConfig } from '../../../core/constants';
 import type { EncounterContext, EncounterTickResult } from '../../../core/encounters/types';
+import { isEncounterVisualEvent } from '../../../core/events/encounterVisual';
 import { TickEvents } from '../../../core/events/TickEvents';
 import { type GameEvent, isCoreEvent } from '../../../core/events/types';
 import { recordNpcLethalTransition, recordNpcStep } from '../../../core/npcDeath';
@@ -15,7 +16,6 @@ import { SolHereditEncounter } from '../../../encounters/solHeredit/SolHereditEn
 import { enqueueEnginePendingHit } from '../../../test/helpers/pendingHits';
 import type { Coordinate } from '../../../types/simulation';
 import type { ColosseumRelentlessRank } from '../constants';
-import { isColosseumVisualEvent } from '../visualEvents';
 import { createWarbander, WARBAND_SLOT_OFFSETS, type WarbanderRole, warbanderDefinition } from '../warband';
 
 const SPAWN_TICK = 10;
@@ -268,7 +268,7 @@ describe('Fremennik warbander', () => {
       impactDelayTicks: expected.impactDelayTicks,
       sourceDeathPolicy: expected.sourceDeathPolicy,
     });
-    expect(tickContext.tickEvents.flush().filter(isColosseumVisualEvent)).toMatchObject([
+    expect(tickContext.tickEvents.flush().filter(isEncounterVisualEvent)).toMatchObject([
       { animations: [{ actorId: warbander.id, clipId: 'attack', delayCycles: 0 }] },
     ]);
   });
@@ -370,7 +370,7 @@ describe('Fremennik warbander', () => {
       role: 'seer',
       tick: 14,
       projectile: { spotAnimId: 130, slope: 16, startHeight: 172, endHeight: 124 },
-      impacts: [{ spotAnimId: 131, actorId: 'player', delayCycles: 30, height: 124 }],
+      impacts: [{ spotAnimId: 131, target: { kind: 'attached', actorId: 'player' }, delayCycles: 30, height: 124 }],
     },
   ] as const)('launches the $role projectile with its captured fields, landing on the hit tick', ({
     role,
@@ -382,11 +382,11 @@ describe('Fremennik warbander', () => {
     const tickContext = context(tick);
 
     const [attack] = registration.tick(warbander, tickContext).npcAttacks ?? [];
-    const [visual] = tickContext.tickEvents.flush().filter(isColosseumVisualEvent);
+    const [visual] = tickContext.tickEvents.flush().filter(isEncounterVisualEvent);
 
     expect(visual?.graphics).toEqual(impacts);
     if (!projectile) {
-      expect(visual?.projectiles).toBeUndefined();
+      expect(visual?.projectiles).toEqual([]);
       return;
     }
     expect(visual?.projectiles).toEqual([
@@ -502,7 +502,7 @@ describe('Fremennik warbander', () => {
     warbander.previousPosition = [20, 21];
     const tickContext = context(14);
     expect(registration.tick(warbander, tickContext).npcAttacks).toHaveLength(1);
-    const [visual] = tickContext.tickEvents.flush().filter(isColosseumVisualEvent);
+    const [visual] = tickContext.tickEvents.flush().filter(isEncounterVisualEvent);
     expect(visual?.projectiles?.[0]?.sourcePosition).toEqual([20.5, 21.5]);
   });
 
@@ -526,7 +526,7 @@ describe('Fremennik warbander', () => {
     expect(
       survive.tickEvents
         .flush()
-        .filter(isColosseumVisualEvent)
+        .filter(isEncounterVisualEvent)
         .flatMap((event) => event.animations),
     ).toEqual([{ actorId: warbander.id, clipId: 'defend', delayCycles: 0 }]);
     const killed = context(13);

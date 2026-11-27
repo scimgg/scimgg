@@ -94,9 +94,7 @@ describe('discoverCacheUsage', () => {
     expect([...report.spotAnimIds]).toEqual([100, 101, 102]);
   });
   it('discovers restored Inferno models and melee frames from the actual declarations', async () => {
-    for (const name of ['visualEvents.ts', 'constants.ts']) {
-      writeSrc(`npcs/inferno/${name}`, readFileSync(`src/npcs/inferno/${name}`, 'utf8'));
-    }
+    writeSrc('npcs/inferno/constants.ts', readFileSync('src/npcs/inferno/constants.ts', 'utf8'));
 
     const report = await discoverCacheUsage(root);
 
@@ -105,7 +103,7 @@ describe('discoverCacheUsage', () => {
   });
   it('discovers explicit Inferno visual-event assets when only the preload array declares them', async () => {
     writeSrc(
-      'npcs/inferno/visualEvents.ts',
+      'npcs/inferno/constants.ts',
       'export const INFERNO_SPOT_ANIM_IDS = [1375, 1376, 448, 449, 450, 660, 444, 451] as const;',
     );
 

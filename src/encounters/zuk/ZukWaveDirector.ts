@@ -13,6 +13,12 @@ import type {
   EnvironmentalDamage,
   NpcMovementRequest,
 } from '../../core/encounters/types';
+import {
+  actorPresentationsRemoved,
+  type EncounterVisualBatch,
+  emitEncounterVisual,
+  encounterVisual,
+} from '../../core/events/encounterVisual';
 import { markNpcDead } from '../../core/npcDeath';
 import type { NpcDefinitionCollection, NpcDefinitionContext, NpcDefinitionRegistration } from '../../core/npcs';
 import { calculateLinearPatrolMove, type LinearPatrolRoute } from '../../core/npcs/linearPatrol';
@@ -26,7 +32,6 @@ import { createJad, jadDefinition, removeJadIfDue } from '../../npcs/inferno/jad
 import { createJadHealer } from '../../npcs/inferno/jadHealer';
 import type { ParentHealPresentation } from '../../npcs/inferno/presentation';
 import { createMager, createRanger } from '../../npcs/inferno/setMonsters';
-import { emitInfernoVisual, type InfernoVisualCue } from '../../npcs/inferno/visualEvents';
 import { createZuk, zukCastTickSyncedToShield, zukDefinition } from '../../npcs/inferno/zuk';
 import type { Coordinate, MechanicsConfig } from '../../types/simulation';
 import type { ZukEncounterCommand } from './commands';
@@ -324,7 +329,7 @@ export class ZukWaveDirector {
   executeCommand(command: ZukEncounterCommand, ctx: EncounterCommandContext): EncounterCommandResult {
     const boss = this.boss;
     if (!boss?.alive) return {};
-    let cue: InfernoVisualCue | undefined;
+    let cue: EncounterVisualBatch | undefined;
     switch (command.type) {
       case 'emit-spark-volley':
         cue = this.sparks.emit(command, ctx.tick);
@@ -335,7 +340,7 @@ export class ZukWaveDirector {
       case 'replace-set':
         this.clearMinions(ctx, [7703, 7702]);
         this.spawnSet(ctx);
-        return { gameEvents: [{ type: 'inferno_clear_minions', npcTypeIds: [7703, 7702] }] };
+        return { gameEvents: [actorPresentationsRemoved([7703, 7702])] };
       case 'spawn-mager':
         this.spawnSetMonster('mager', ctx);
         break;
@@ -378,7 +383,7 @@ export class ZukWaveDirector {
       }
       case 'clear-spawns':
         this.clearMinions(ctx);
-        return { gameEvents: [{ type: 'inferno_clear_minions', npcTypeIds: [7703, 7702, 7704, 7705, 7708] }] };
+        return { gameEvents: [actorPresentationsRemoved([7703, 7702, 7704, 7705, 7708])] };
       case 'demonstrate-jad': {
         const player = ctx.world.getPlayer();
         if (player) cue = demonstrateJad(this.spawnDemoActor('jad', [30, 35], ctx), player, command.style);
@@ -412,7 +417,7 @@ export class ZukWaveDirector {
       default:
         return assertNever(command);
     }
-    return cue ? { gameEvents: [{ type: 'inferno_visual', ...structuredClone(cue) }] } : {};
+    return cue ? { gameEvents: [encounterVisual(cue)] } : {};
   }
 
   castSparks(actor: NpcActor, target: { readonly position: Coordinate }, context: NpcDefinitionContext): void {
@@ -420,7 +425,7 @@ export class ZukWaveDirector {
       { sparks: generateSparkVolley({ source: actor.position, player: target.position, random: context.random }) },
       context.tick,
     );
-    if (cue) emitInfernoVisual(context.tickEvents, cue);
+    if (cue) emitEncounterVisual(context.tickEvents, cue);
   }
 
   spawnJad(sourceActorId: string, ctx: SpawnContext): NpcActor {

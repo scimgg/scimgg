@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CombatSystem } from '../../../core/combat/CombatSystem';
 import { setArenaConfig, setDefaultArenaConfig } from '../../../core/constants';
+import { isEncounterVisualEvent } from '../../../core/events/encounterVisual';
 import { TickEvents } from '../../../core/events/TickEvents';
 import type { NpcDefinitionContext } from '../../../core/npcs';
 import { SimulationEngine } from '../../../core/SimulationEngine';
@@ -8,7 +9,6 @@ import { LobbyEncounter } from '../../../encounters/lobby/LobbyEncounter';
 import { createInfernoActor } from '../actors';
 import { isZukAttackEvent } from '../events';
 import { createGlyph, glyphDefinition } from '../glyph';
-import { isInfernoVisualEvent } from '../visualEvents';
 import { createZuk, zukCastTickSyncedToShield, zukDefinition } from '../zuk';
 
 afterEach(() => {
@@ -239,7 +239,7 @@ describe('glyph combat lifecycle', () => {
       damage < 600
         ? [
             expect.objectContaining({
-              type: 'inferno_visual',
+              type: 'encounter_visual',
               animations: [{ actorId: glyph.id, clipId: 'hit', delayCycles: 0 }],
               projectiles: [],
               graphics: [],
@@ -268,7 +268,7 @@ describe('glyph combat lifecycle', () => {
     expect(
       context.tickEvents
         .flush()
-        .filter(isInfernoVisualEvent)
+        .filter(isEncounterVisualEvent)
         .every((cue) => cue.animations.length === 1),
     ).toBe(true);
   });
@@ -348,7 +348,7 @@ describe('Zuk launch presentation', () => {
 
     const result = registration.tick(zuk, { ...context, tick: 13 });
 
-    const cue = context.tickEvents.flush().find(isInfernoVisualEvent);
+    const cue = context.tickEvents.flush().find(isEncounterVisualEvent);
     expect(cue?.projectiles).toHaveLength(1);
     expect(cue?.projectiles[0]).toMatchObject({ startDelayCycles: start, endDelayCycles: end });
     expect(result.npcAttacks?.[0]).toMatchObject({ targetId: player.id, impactDelayTicks: hitDelay });
@@ -389,7 +389,7 @@ describe('Zuk launch presentation', () => {
       })
       .tick(zuk, context);
 
-    const cue = context.tickEvents.flush().find(isInfernoVisualEvent);
+    const cue = context.tickEvents.flush().find(isEncounterVisualEvent);
     expect(cue?.projectiles[0]?.endDelayCycles).toBe(106);
     expect(cue?.animations).toEqual([
       { actorId: 'zuk', clipId: 'attack', delayCycles: 0 },

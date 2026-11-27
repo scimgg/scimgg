@@ -1,12 +1,12 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { setArenaConfig, setDefaultArenaConfig } from '../../../core/constants';
+import { isEncounterVisualEvent } from '../../../core/events/encounterVisual';
 import { SimulationEngine } from '../../../core/SimulationEngine';
 import { createZukWaveEncounter } from '../../../test/helpers/zukWave';
 import { createInfernoActor } from '../actors';
 import { demonstrateHeal, demonstrateJad, demonstrateSet } from '../demonstrations';
 import { createGlyph } from '../glyph';
 import { createJad } from '../jad';
-import { isInfernoVisualEvent } from '../visualEvents';
 import { ZUK_WAVE_GRAPHICS } from './fixtures/zukWaveGraphicsCapture';
 
 const capture = { packets: ZUK_WAVE_GRAPHICS };
@@ -27,7 +27,7 @@ describe('recorded Inferno visual-only demonstrations', () => {
 
     const cue = demonstrateSet([ranger], receiver);
 
-    expect(isInfernoVisualEvent({ type: 'inferno_visual', eventId: 1, tick: 0, ...cue })).toBe(true);
+    expect(isEncounterVisualEvent({ type: 'encounter_visual', eventId: 1, tick: 0, ...cue })).toBe(true);
     expect(cue.projectiles).toHaveLength(2);
     expect(
       cue.projectiles.map(({ spotAnimId, startDelayCycles, endDelayCycles }) => ({
@@ -287,7 +287,7 @@ describe('recorded Inferno visual-only demonstrations', () => {
   it('reproduces the t1069 four-healer bucket and the single t1073 actor graphic without HP mutation', () => {
     const engine = new SimulationEngine({ encounter: createZukWaveEncounter(0) });
     engine.executeEncounterCommand({ encounter: 'zuk', type: 'demonstrate-heal' });
-    const event = engine.getLastTickEvents().find(isInfernoVisualEvent);
+    const event = engine.getLastTickEvents().find(isEncounterVisualEvent);
     if (!event) throw new TypeError('Missing visual event');
     const bucket = capture.packets.filter((packet) => packet.tick === 1069 && packet.id === 660);
     expect(
@@ -311,14 +311,14 @@ describe('recorded Inferno visual-only demonstrations', () => {
   it('keeps ranged demonstrations animation-only while explicit rock inspection remains available', () => {
     const engine = new SimulationEngine({ encounter: createZukWaveEncounter(0) });
     engine.executeEncounterCommand({ encounter: 'zuk', type: 'demonstrate-jad', style: 'range' });
-    const demonstration = engine.getLastTickEvents().filter(isInfernoVisualEvent).at(-1);
+    const demonstration = engine.getLastTickEvents().filter(isEncounterVisualEvent).at(-1);
     expect(demonstration).toMatchObject({
       animations: [expect.objectContaining({ clipId: 'range' })],
       graphics: [],
       projectiles: [],
     });
     engine.executeEncounterCommand({ encounter: 'zuk', type: 'inspect-ranged-graphic' });
-    const inspection = engine.getLastTickEvents().filter(isInfernoVisualEvent).at(-1);
+    const inspection = engine.getLastTickEvents().filter(isEncounterVisualEvent).at(-1);
     const packet = capture.packets.find((candidate) => candidate.id === 451);
     expect(inspection?.graphics).toEqual([
       { spotAnimId: 451, height: packet?.fields.height, delayCycles: 0, target: { kind: 'tile', position: [31, 44] } },

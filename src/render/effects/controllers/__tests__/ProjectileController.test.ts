@@ -2,20 +2,20 @@ import { describe, expect, it, vi } from 'vitest';
 import { chebyshevDistanceToRect } from '../../../../core/combat/distance';
 import { calculateProjectileEndTime, hitDelayFromEndTime, PROJ_ANIM_TIMINGS } from '../../../../core/combat/hitDelay';
 import { getProjectileTiming } from '../../../../core/combat/weaponCombatData';
+import type { EncounterVisualEvent } from '../../../../core/events/encounterVisual';
 import type { ReplayDisplayFrame } from '../../../../core/ReplayRecorder';
 import { MAX_REPLAY_PROJECTILE_STEPS, ReplaySafetyError } from '../../../../core/replaySafety';
 import { SimulationEngine } from '../../../../core/SimulationEngine';
 import { getSpellVisuals } from '../../../../data/spellVisuals';
 import { getWeaponCombatVisuals } from '../../../../data/weaponCombatVisuals';
 import { LobbyEncounter } from '../../../../encounters/lobby/LobbyEncounter';
-import type { InfernoVisualEvent } from '../../../../npcs/inferno/visualEvents';
 import type { RenderQueue } from '../../../core/commands';
 import { ReplayEffectIndex } from '../../../core/replayEffectIndex';
+import { EncounterCuePlayer } from '../../EncounterCuePlayer';
 import type { PlayerProjectileDescriptor } from '../../playerEffectDescriptors';
 import { advanceProjectileMotion } from '../../projectileMotion';
 import { ReplayProjectileWork } from '../../replayProjectileWork';
 import { SpotAnimRenderer } from '../../SpotAnimRenderer';
-import { InfernoVisualController } from '../InfernoVisualController';
 import { ProjectileController } from '../ProjectileController';
 
 function flightFixture() {
@@ -96,33 +96,36 @@ function flightFixture() {
 describe('ProjectileController', () => {
   it('applies shared flight culling and sorting to player and Inferno projectiles', () => {
     const { controller, renderer, visuals, timing } = flightFixture();
-    const inferno = new InfernoVisualController(renderer);
-    inferno.consumeEvents([
-      {
-        type: 'inferno_visual',
-        eventId: 1,
-        tick: 0,
-        animations: [],
-        graphics: [],
-        projectiles: [
-          {
-            spotAnimId: 1375,
-            sourcePosition: [0, 0],
-            target: { kind: 'tile', position: [10, 0] },
-            startDelayCycles: 0,
-            endDelayCycles: 60,
-            startOffset: 0,
-            slope: 0,
-            startHeight: 0,
-            endHeight: 0,
-          },
-        ],
-      },
-    ]);
+    const inferno = new EncounterCuePlayer(renderer);
+    inferno.consumeEvents(
+      [
+        {
+          type: 'encounter_visual',
+          eventId: 1,
+          tick: 0,
+          animations: [],
+          graphics: [],
+          projectiles: [
+            {
+              spotAnimId: 1375,
+              sourcePosition: [0, 0],
+              target: { kind: 'tile', position: [10, 0] },
+              startDelayCycles: 0,
+              endDelayCycles: 60,
+              startOffset: 0,
+              slope: 0,
+              startHeight: 0,
+              endHeight: 0,
+            },
+          ],
+        },
+      ],
+      { npcs: [], currentTick: 0 },
+    );
     controller.launchProjectile({ ...visuals, hitSpotanim: -1 }, 29000, [0, 0], [10, 0], 1, 0, 0, undefined, timing);
 
     controller.update(renderer, 0, 0, null);
-    inferno.update({ cycle: 0, resolveActor: () => null, terrainHeights: null });
+    inferno.update({ cycle: 0, resolveActor: () => null, resolveAttachment: () => null, terrainHeights: null });
     const queue: RenderQueue = { replayPresentationReady: true, commands: [] };
     renderer.render(queue);
 
@@ -138,10 +141,10 @@ describe('ProjectileController', () => {
     true,
   ])('shares the exact allowance across many player and Inferno flights (Inferno first: %s)', (infernoFirst) => {
     const { controller, renderer, visuals, timing } = flightFixture();
-    const inferno = new InfernoVisualController(renderer);
+    const inferno = new EncounterCuePlayer(renderer);
     const state = new SimulationEngine({ encounter: new LobbyEncounter(), combatSeed: 1 }).getState();
-    const emitted: InfernoVisualEvent = {
-      type: 'inferno_visual',
+    const emitted: EncounterVisualEvent = {
+      type: 'encounter_visual',
       eventId: 1,
       tick: 0,
       animations: [],
@@ -158,8 +161,10 @@ describe('ProjectileController', () => {
         endHeight: 0,
       })),
     };
-    const visualFrame = { cycle: 4.5, resolveActor: () => null, terrainHeights: null };
-    inferno.reconstruct({ frames: [{ state, events: [emitted] }], throughFrameIndex: 0 }, visualFrame);
+    const visualFrame = { cycle: 4.5, resolveActor: () => null, resolveAttachment: () => null, terrainHeights: null };
+    const index = new ReplayEffectIndex([{ state, events: [emitted] }]);
+    index.extend();
+    inferno.syncReplay(index, { cycle: 4.5, throughFrameIndex: 0 }, true);
     controller.setReplaySampler(() => () => null);
     for (let index = 0; index < 64; index++) {
       controller.launchProjectile({ ...visuals, hitSpotanim: -1 }, 29000, [0, 0], [10, 0], 1, 0, 0, undefined, timing);

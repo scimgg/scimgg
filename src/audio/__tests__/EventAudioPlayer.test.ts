@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { GameEvent } from '../../core/events/types';
 import { AudioEngine } from '../AudioEngine';
 import { MAX_ATTENUATION_RANGE } from '../constants';
-import type { SoundRule } from '../EventAudioPlayer';
+import type { SoundRules } from '../EventAudioPlayer';
 import { EventAudioPlayer, pass, play, silent } from '../EventAudioPlayer';
 
 describe('EventAudioPlayer', () => {
@@ -15,10 +15,45 @@ describe('EventAudioPlayer', () => {
     };
   });
 
-  function createPlayer(...ruleSets: Record<string, SoundRule>[]): EventAudioPlayer {
-    const layers = ruleSets.map((rules, i) => ({ name: `test-layer-${i}`, rules }));
-    return new EventAudioPlayer(mockAudioEngine as unknown as AudioEngine, ...layers);
+  function createPlayer(...ruleSets: SoundRules[]): EventAudioPlayer {
+    return new EventAudioPlayer(mockAudioEngine as unknown as AudioEngine, ...ruleSets);
   }
+
+  describe('setDispatchRules', () => {
+    const died: GameEvent = { type: 'actor_died', eventId: 1, tick: 0, actorId: 'player' };
+    // The first set silences deaths, as a rule for an event it does not own may; the others play one.
+    const silencing: SoundRules = { actor_died: { resolve: () => silent, preloadIds: [7] } };
+    const one: SoundRules = { actor_died: { resolve: 1 } };
+    const two: SoundRules = { actor_died: { resolve: 2 } };
+    const playedIds = () => mockAudioEngine.play.mock.calls.map(([id]) => id);
+
+    it('dispatches through every constructor rule set, in order, until scoped', () => {
+      createPlayer(silencing, one).onEvents([died], [31, 37]);
+      createPlayer(two, one).onEvents([died], [31, 37]);
+
+      expect(playedIds()).toEqual([2]);
+    });
+
+    it('dispatches only through the given rule sets, in the given order', () => {
+      const player = createPlayer(silencing, one, two);
+      player.setDispatchRules([two, one]);
+      player.onEvents([died], [31, 37]);
+
+      expect(playedIds()).toEqual([2]);
+    });
+
+    it("never lets a rule set outside the scope swallow the selected one's sound", () => {
+      // Two encounters answer the same event: one silences it, the displayed one plays 42.
+      const displayed: SoundRules = { actor_died: { resolve: 42 } };
+      const player = createPlayer(silencing, displayed);
+      player.setDispatchRules([displayed]);
+      player.onEvents([died], [31, 37]);
+
+      expect(playedIds()).toEqual([42]);
+      // Preloading still covers both sets.
+      expect(player.getAllSoundIds().sort((a, b) => a - b)).toEqual([7, 42]);
+    });
+  });
 
   describe('onEvents', () => {
     it('plays a static sound for a matching event', () => {
@@ -412,10 +447,7 @@ describe('EventAudioPlayer replay cue clock', () => {
   beforeEach(() => {
     engine = new AudioEngine();
     vi.spyOn(engine, 'play').mockImplementation(() => {});
-    player = new EventAudioPlayer(engine, {
-      name: 'delayed',
-      rules: { actor_died: { resolve: { id: 10313, delayCycles: 21 } } },
-    });
+    player = new EventAudioPlayer(engine, { actor_died: { resolve: { id: 10313, delayCycles: 21 } } });
   });
 
   afterEach(() => {
@@ -504,20 +536,17 @@ describe('EventAudioPlayer replay cue clock', () => {
 
   it('orders pending onsets by due time and preserves insertion order for simultaneous cues', () => {
     const orderedPlayer = new EventAudioPlayer(engine, {
-      name: 'overlapping',
-      rules: {
-        actor_died: {
-          resolve: [
-            { id: 1, delayCycles: 40 },
-            { id: 2, delayCycles: 21 },
-          ],
-        },
-        item_dropped: {
-          resolve: [
-            { id: 3, delayCycles: 10 },
-            { id: 4, delayCycles: 21 },
-          ],
-        },
+      actor_died: {
+        resolve: [
+          { id: 1, delayCycles: 40 },
+          { id: 2, delayCycles: 21 },
+        ],
+      },
+      item_dropped: {
+        resolve: [
+          { id: 3, delayCycles: 10 },
+          { id: 4, delayCycles: 21 },
+        ],
       },
     });
     orderedPlayer.updateReplayClock(6000);
@@ -534,11 +563,8 @@ describe('EventAudioPlayer replay cue clock', () => {
 
   it('preserves resolved attenuation and channel when a delayed replay cue becomes due', () => {
     const areaPlayer = new EventAudioPlayer(engine, {
-      name: 'area',
-      rules: {
-        actor_died: {
-          resolve: () => play({ id: 10313, delayCycles: 21 }, { position: [15, 0], range: 15, volume: 0.5 }),
-        },
+      actor_died: {
+        resolve: () => play({ id: 10313, delayCycles: 21 }, { position: [15, 0], range: 15, volume: 0.5 }),
       },
     });
     areaPlayer.updateReplayClock(6000);
@@ -589,8 +615,7 @@ describe('EventAudioPlayer replay cue clock', () => {
     { name: 'focus', channel: 'sfx', mute: (value: number) => engine.setFocusSuspended(value === 0) },
   ] as const)('does not revive a cue launched under $name mute when sound is restored', ({ channel, mute }) => {
     const mutedPlayer = new EventAudioPlayer(engine, {
-      name: 'muted',
-      rules: { actor_died: { resolve: { id: 10313, delayCycles: 21, channel } } },
+      actor_died: { resolve: { id: 10313, delayCycles: 21, channel } },
     });
     mutedPlayer.updateReplayClock(6000);
     mute(0);
@@ -604,18 +629,15 @@ describe('EventAudioPlayer replay cue clock', () => {
 
   it('gates only the resolved muted channel when one event mixes area and unpositioned sounds', () => {
     const mixedPlayer = new EventAudioPlayer(engine, {
-      name: 'mixed',
-      rules: {
-        actor_died: {
-          resolve: () =>
-            play(
-              [
-                { id: 1, delayCycles: 21 },
-                { id: 2, delayCycles: 21, position: null },
-              ],
-              { position: [31, 37] },
-            ),
-        },
+      actor_died: {
+        resolve: () =>
+          play(
+            [
+              { id: 1, delayCycles: 21 },
+              { id: 2, delayCycles: 21, position: null },
+            ],
+            { position: [31, 37] },
+          ),
       },
     });
     engine.setAreaVolume(0);
@@ -661,19 +683,16 @@ describe('EventAudioPlayer replay cue clock', () => {
 
     it('preserves options and simultaneous-cue order when onsets extend beyond the last visual tick', () => {
       const tailPlayer = new EventAudioPlayer(engine, {
-        name: 'tail',
-        rules: {
-          actor_died: {
-            resolve: () =>
-              play(
-                [
-                  { id: 9, delayCycles: 100, channel: 'sfx' },
-                  { id: 2, delayCycles: 80 },
-                  { id: 3, delayCycles: 80 },
-                ],
-                { channel: 'area', volume: 0.4 },
-              ),
-          },
+        actor_died: {
+          resolve: () =>
+            play(
+              [
+                { id: 9, delayCycles: 100, channel: 'sfx' },
+                { id: 2, delayCycles: 80 },
+                { id: 3, delayCycles: 80 },
+              ],
+              { channel: 'area', volume: 0.4 },
+            ),
         },
       });
       tailPlayer.updateReplayClock(6000);

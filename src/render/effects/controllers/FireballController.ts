@@ -34,11 +34,6 @@ function isFireballAngle(angle: string | null): angle is FireballAngle {
   return angle === 'vertical' || angle === 'horizontal' || angle === 'diagonal' || angle === 'diagonal-alt';
 }
 
-export const FIREBALL_PRELOAD_IDS = [
-  SpotAnimID.VFX_PLAYER_YAMA_FALLING_ROCK_IMPACT01,
-  SpotAnimID.VFX_FLAMING_SKULL_SHADOW_IMPACT01,
-];
-
 export class FireballController {
   private terrainHeights: Int32Array[] | null = null;
   private active3dIds = new Set<string>();

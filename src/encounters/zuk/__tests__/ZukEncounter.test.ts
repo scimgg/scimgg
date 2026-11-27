@@ -13,6 +13,7 @@ import {
 } from '../../../core/constants';
 import { type DecisionKey, type DecisionOption, generatorDecisionRandom } from '../../../core/decisionRandom';
 import type { EngineRunConfig } from '../../../core/engineRunConfig';
+import { isEncounterVisualEvent } from '../../../core/events/encounterVisual';
 import { TickEvents } from '../../../core/events/TickEvents';
 import { type GameEvent, isCoreEvent } from '../../../core/events/types';
 import { recordNpcLethalTransition } from '../../../core/npcDeath';
@@ -25,9 +26,8 @@ import { healerDefinition } from '../../../npcs/inferno/healer';
 import { jadDefinition } from '../../../npcs/inferno/jad';
 import { jadHealerDefinition } from '../../../npcs/inferno/jadHealer';
 import { createRanger, rangerDefinition } from '../../../npcs/inferno/setMonsters';
-import { isInfernoVisualEvent } from '../../../npcs/inferno/visualEvents';
 import { createZuk, zukDefinition } from '../../../npcs/inferno/zuk';
-import { InfernoVisualController } from '../../../render/effects/controllers/InfernoVisualController';
+import { EncounterCuePlayer } from '../../../render/effects/EncounterCuePlayer';
 import { SpotAnimRenderer } from '../../../render/effects/SpotAnimRenderer';
 import { diffResumableState } from '../../../replay/resumableState';
 import { CollisionFlag } from '../../../rs/collision/CollisionFlag';
@@ -1070,7 +1070,7 @@ describe('Zuk victory lifecycle', () => {
     expect(zukWaveView(engine)).toMatchObject({ state: { setTimer: null, timerPaused: false } });
     expect(engine.getDamageHistory().filter((entry) => entry.source === 'ZukSpark')).toEqual([]);
     expect(
-      events.filter(isInfernoVisualEvent).flatMap((event) => event.graphics.filter((cue) => cue.spotAnimId === 659)),
+      events.filter(isEncounterVisualEvent).flatMap((event) => event.graphics.filter((cue) => cue.spotAnimId === 659)),
     ).toEqual([]);
   });
 });
@@ -1206,7 +1206,7 @@ describe('Zuk automatic spark integration', () => {
     advance(engine, 6);
     const launched = engine
       .getLastTickEvents()
-      .filter(isInfernoVisualEvent)
+      .filter(isEncounterVisualEvent)
       .flatMap((event) => event.projectiles);
     expect(launched.map((cue) => cue.target.position)).toEqual([
       [27, 44],
@@ -1248,8 +1248,12 @@ describe('Zuk automatic spark integration', () => {
     expect(
       engine
         .getLastTickEvents()
-        .filter(isInfernoVisualEvent)
-        .flatMap((event) => event.graphics.filter((cue) => cue.spotAnimId === 659).map((cue) => cue.target.position)),
+        .filter(isEncounterVisualEvent)
+        .flatMap((event) =>
+          event.graphics
+            .filter((cue) => cue.spotAnimId === 659)
+            .map((cue) => cue.target.kind !== 'attached' && cue.target.position),
+        ),
     ).toEqual([
       [27, 44],
       [26, 44],
@@ -1266,7 +1270,7 @@ describe('Zuk automatic spark integration', () => {
     expect(player.position).toEqual([26, 42]);
     const targets = engine
       .getLastTickEvents()
-      .filter(isInfernoVisualEvent)
+      .filter(isEncounterVisualEvent)
       .flatMap((event) => event.projectiles.map((cue) => cue.target.position));
     expect(targets).toContainEqual([26, 44]);
     expect(targets).not.toContainEqual([26, 42]);
@@ -1281,7 +1285,7 @@ describe('Zuk automatic spark integration', () => {
     advance(engine, 6);
     const launched = engine
       .getLastTickEvents()
-      .filter(isInfernoVisualEvent)
+      .filter(isEncounterVisualEvent)
       .flatMap((event) => event.projectiles);
     expect(launched).toHaveLength(3);
 
@@ -1302,9 +1306,11 @@ describe('Zuk automatic spark integration', () => {
 
     expect(
       events
-        .filter(isInfernoVisualEvent)
+        .filter(isEncounterVisualEvent)
         .flatMap((event) =>
-          event.graphics.filter((cue) => cue.spotAnimId === 659).map((cue) => [event.tick, cue.target.position]),
+          event.graphics
+            .filter((cue) => cue.spotAnimId === 659)
+            .map((cue) => [event.tick, cue.target.kind !== 'attached' && cue.target.position]),
         ),
     ).toEqual(launched.map((cue) => [9, cue.target.position]));
     const damage = engine.getDamageHistory().filter((entry) => entry.source === 'ZukSpark');
@@ -1328,7 +1334,7 @@ describe('Zuk automatic spark integration', () => {
     expect(
       engine
         .getLastTickEvents()
-        .filter(isInfernoVisualEvent)
+        .filter(isEncounterVisualEvent)
         .flatMap((event) => event.projectiles),
     ).toHaveLength(3);
 
@@ -1349,7 +1355,7 @@ describe('Zuk automatic spark integration', () => {
       expect(
         engine
           .getLastTickEvents()
-          .filter(isInfernoVisualEvent)
+          .filter(isEncounterVisualEvent)
           .flatMap((event) => event.graphics.filter((cue) => cue.spotAnimId === 659)),
       ).toEqual([]);
     }
@@ -1364,7 +1370,7 @@ describe('Zuk automatic spark integration', () => {
       if (npc.id !== tagged.id) engine['despawnEncounterNpc'](npc.id);
     const audio = new AudioEngine();
     const played = vi.spyOn(audio, 'play').mockImplementation(() => undefined);
-    const audioPlayer = new EventAudioPlayer(audio, { name: 'zuk', rules: zukAudioRules });
+    const audioPlayer = new EventAudioPlayer(audio, zukAudioRules);
     const events = collectTickEvents(engine, 6);
     engine['despawnEncounterNpc'](tagged.id);
     events.push(...collectTickEvents(engine, 9));
@@ -1394,7 +1400,7 @@ describe('Zuk automatic spark integration', () => {
       events.flatMap((event) => (event.type === 'zuk_healer_cast' && event.sourceId === tagged.id ? [event.tick] : [])),
     ).toEqual([6, 9, 12]);
     const volleys = events
-      .filter(isInfernoVisualEvent)
+      .filter(isEncounterVisualEvent)
       .flatMap((event) =>
         event.projectiles.filter((cue) => cue.target.kind === 'tile').map((cue) => ({ tick: event.tick, ...cue })),
       );
@@ -1402,7 +1408,7 @@ describe('Zuk automatic spark integration', () => {
     expect(volleys.every((cue) => cue.spotAnimId === 660)).toBe(true);
     expect(
       events
-        .filter(isInfernoVisualEvent)
+        .filter(isEncounterVisualEvent)
         .flatMap((event) => event.graphics.filter((cue) => cue.spotAnimId === 659).map(() => event.tick)),
     ).toEqual([9, 9, 9, 12, 12, 12]);
   });
@@ -1752,7 +1758,7 @@ describe('Zuk seeded healer amounts', () => {
     const events = collectTickEvents(engine, 12);
 
     const graphics = events
-      .filter(isInfernoVisualEvent)
+      .filter(isEncounterVisualEvent)
       .flatMap((event) => event.graphics.map((cue) => ({ tick: event.tick, ...cue })));
     expect(graphics.filter((cue) => cue.spotAnimId === 444)).toEqual(
       [
@@ -1784,11 +1790,16 @@ describe('Zuk seeded healer amounts', () => {
     vi.spyOn(renderer, 'isLoaded').mockReturnValue(true);
     vi.spyOn(renderer, 'getFrameLengths').mockReturnValue([30]);
     const upsert = vi.spyOn(renderer, 'upsert');
-    const controller = new InfernoVisualController(renderer);
+    const controller = new EncounterCuePlayer(renderer);
     const events = collectTickEvents(engine, 8);
 
-    controller.consumeEvents(events);
-    controller.update({ cycle: 240, resolveActor: (id) => world.getNpc(id)?.position ?? null, terrainHeights: null });
+    controller.consumeEvents(events, engine.getState());
+    controller.update({
+      cycle: 240,
+      resolveActor: (id) => world.getNpc(id)?.position ?? null,
+      resolveAttachment: () => null,
+      terrainHeights: null,
+    });
 
     const parents = upsert.mock.calls.map(([effect]) => effect).filter((effect) => effect.spotAnimId === 444);
     expect(parents).toHaveLength(1);
@@ -1804,7 +1815,7 @@ describe('Zuk seeded healer amounts', () => {
     zukDirector(encounter)['random'] = () => 0.9;
     const audio = new AudioEngine();
     const played = vi.spyOn(audio, 'play').mockImplementation(() => undefined);
-    const audioPlayer = new EventAudioPlayer(audio, { name: 'zuk', rules: zukAudioRules });
+    const audioPlayer = new EventAudioPlayer(audio, zukAudioRules);
 
     const events = collectTickEvents(engine, 8);
     audioPlayer.onEvents(events, player.position);
@@ -1832,7 +1843,7 @@ describe('Zuk seeded healer amounts', () => {
 
       const graphics = engine
         .getLastTickEvents()
-        .filter(isInfernoVisualEvent)
+        .filter(isEncounterVisualEvent)
         .flatMap((event) => event.graphics);
       expect(graphics.filter((cue) => cue.spotAnimId === 444).map((cue) => cue.target)).toEqual(
         parents.map((parent) => ({ kind: 'actor', actorId: parent.id, size: parent.size, position: parent.position })),
@@ -1858,7 +1869,7 @@ describe('Zuk seeded healer amounts', () => {
 
     expect(
       events
-        .filter(isInfernoVisualEvent)
+        .filter(isEncounterVisualEvent)
         .flatMap((event) => event.graphics)
         .filter((cue) => cue.spotAnimId === 444),
     ).toEqual([]);
@@ -1882,7 +1893,7 @@ describe('Zuk seeded healer amounts', () => {
     });
     const audio = new AudioEngine();
     const played = vi.spyOn(audio, 'play').mockImplementation(() => undefined);
-    const audioPlayer = new EventAudioPlayer(audio, { name: 'zuk', rules: zukAudioRules });
+    const audioPlayer = new EventAudioPlayer(audio, zukAudioRules);
 
     const events = collectTickEvents(engine, 9);
     audioPlayer.onEvents(events, [31, 51]);
@@ -2066,7 +2077,7 @@ describe('Zuk evidence-bounded encounter', () => {
       ),
     );
     expect(collectTickEvents(engine, 6).filter((event) => event.type === 'hit_applied')).toEqual([]);
-    expect(engine.getLastTickEvents().filter(isInfernoVisualEvent)).toEqual([]);
+    expect(engine.getLastTickEvents().filter(isEncounterVisualEvent)).toEqual([]);
   });
 
   it.each([true, false])('ignores Yama default arena data with bounds present: %s', (hasBounds) => {
@@ -2138,7 +2149,7 @@ describe('Zuk evidence-bounded encounter', () => {
 
     expect(targetsPlayer).toHaveBeenCalledExactlyOnceWith(30, [31, 44]);
     expect(result.npcAttacks ?? []).toHaveLength(exposed ? 1 : 0);
-    expect(tickEvents.flush().find(isInfernoVisualEvent)?.projectiles).toEqual([
+    expect(tickEvents.flush().find(isEncounterVisualEvent)?.projectiles).toEqual([
       expect.objectContaining({
         target: expect.objectContaining({ actorId: exposed ? 'player' : 'zuk_shield' }),
         startOffset: exposed ? 128 : 64,
@@ -2239,7 +2250,7 @@ describe('Zuk evidence-bounded encounter', () => {
       if (captureTick === 1066) engine.executeEncounterCommand({ encounter: 'zuk', type: 'clear-spawns' });
       engine.advanceTick(player);
       if (blast) expected.push({ tick: captureTick - 26, ...blast });
-      for (const event of engine.getLastTickEvents().filter(isInfernoVisualEvent)) {
+      for (const event of engine.getLastTickEvents().filter(isEncounterVisualEvent)) {
         for (const projectile of event.projectiles.filter((cue) => cue.spotAnimId === 1375)) {
           actual.push({
             tick: event.tick,
@@ -2308,7 +2319,7 @@ describe('Zuk evidence-bounded encounter', () => {
     expect(
       engine
         .getLastTickEvents()
-        .filter(isInfernoVisualEvent)
+        .filter(isEncounterVisualEvent)
         .flatMap((event) => event.projectiles),
     ).toHaveLength(1);
     expect(world.getNpcs().filter((npc) => npc.npcTypeId === 7708)).toHaveLength(4);
@@ -2763,7 +2774,9 @@ describe('Zuk evidence-bounded encounter', () => {
     const healers = world.getNpcs().filter(healerDefinition.isActor);
     expect(healers.map((actor) => actor.spawnTick)).toEqual(hp === 241 ? Array(4).fill(phaseHit?.tick) : []);
     expect(
-      events.filter(isInfernoVisualEvent).flatMap((event) => event.animations.filter((cue) => cue.clipId === 'spawn')),
+      events
+        .filter(isEncounterVisualEvent)
+        .flatMap((event) => event.animations.filter((cue) => cue.clipId === 'spawn')),
     ).toEqual([]);
   });
 
@@ -2776,15 +2789,15 @@ describe('Zuk evidence-bounded encounter', () => {
 
     const healers = world.getNpcs().filter(healerDefinition.isActor);
     expect(healers.map((actor) => actor.spawnTick)).toEqual([5, 5, 5, 5]);
-    expect(engine.getLastTickEvents().filter(isInfernoVisualEvent)).toEqual([]);
-    expect(collectTickEvents(engine, 8).filter(isInfernoVisualEvent)).toEqual([]);
+    expect(engine.getLastTickEvents().filter(isEncounterVisualEvent)).toEqual([]);
+    expect(collectTickEvents(engine, 8).filter(isEncounterVisualEvent)).toEqual([]);
   });
 
   it('keeps visual-only command batches detached and leaves all healing and AI unscheduled', () => {
     const { engine, world } = setup();
     engine.setMechanicsConfig({ zukAttacks: false });
     engine.executeEncounterCommand({ encounter: 'zuk', type: 'demonstrate-heal' });
-    const event = engine.getLastTickEvents().find(isInfernoVisualEvent);
+    const event = engine.getLastTickEvents().find(isEncounterVisualEvent);
     expect(event?.projectiles).toHaveLength(4);
     expect(event?.graphics).toEqual([
       {
@@ -2799,10 +2812,10 @@ describe('Zuk evidence-bounded encounter', () => {
     boss.position[0] = 29;
     boss.vitals.hp = 500;
     advance(engine, 150);
-    expect(event?.graphics[0].target.position).toEqual([28, 52]);
+    expect(event?.graphics[0].target).toMatchObject({ position: [28, 52] });
     expect(boss.vitals.hp).toBe(500);
     expect(engine.getDamageHistory()).toEqual([]);
-    expect(engine.getLastTickEvents().filter(isInfernoVisualEvent)).toEqual([]);
+    expect(engine.getLastTickEvents().filter(isEncounterVisualEvent)).toEqual([]);
   });
 
   it('allows a hybrid accuracy miss rather than forcing every exposed blast to hit', () => {
@@ -2826,7 +2839,7 @@ describe('Zuk evidence-bounded encounter', () => {
     engine.advanceTick([36, 46]);
     const event = engine
       .getLastTickEvents()
-      .filter(isInfernoVisualEvent)
+      .filter(isEncounterVisualEvent)
       .find((cue) => cue.projectiles.some((projectile) => projectile.spotAnimId === 1375));
     expect(event?.projectiles[0]).toMatchObject({
       endDelayCycles: 106,
@@ -2930,7 +2943,7 @@ describe('Zuk NPC activation through the real engine', () => {
     expect(jad.vitals.hp).toBe(hpAfterHit + 40);
     for (const healer of healers) {
       const actions = events
-        .filter(isInfernoVisualEvent)
+        .filter(isEncounterVisualEvent)
         .flatMap((event) => event.animations.map((cue) => ({ ...cue, tick: event.tick })))
         .filter((cue) => cue.actorId === healer.id);
       expect(actions).toEqual(
@@ -2974,7 +2987,7 @@ describe('Zuk NPC activation through the real engine', () => {
     engine.advanceTick(player.position);
 
     const events = engine.getLastTickEvents();
-    expect(events.filter(isInfernoVisualEvent).flatMap((event) => event.animations)).toEqual([]);
+    expect(events.filter(isEncounterVisualEvent).flatMap((event) => event.animations)).toEqual([]);
     expect(events.filter((event) => event.type === 'attack_started')).toEqual([]);
     expect(dispatch.mock.calls.some(([actor]) => actor === healer)).toBe(false);
   });
@@ -3002,7 +3015,7 @@ describe('Zuk NPC activation through the real engine', () => {
     tagged.combat.targetId = player.id;
     const healCues = (events: GameEvent[]) =>
       events
-        .filter(isInfernoVisualEvent)
+        .filter(isEncounterVisualEvent)
         .flatMap((event) => event.animations)
         .filter((cue) => cue.clipId === 'heal');
 
@@ -3376,7 +3389,7 @@ describe('Zuk NPC activation through the real engine', () => {
     expect(healIndex).toBeGreaterThanOrEqual(0);
     const healerActionIndex = events.findIndex(
       (event) =>
-        isInfernoVisualEvent(event) &&
+        isEncounterVisualEvent(event) &&
         event.animations.some((cue) => cue.clipId === 'attack' && cue.actorId === healer.id),
     );
     expect(healerActionIndex).toBeGreaterThan(healIndex);
@@ -3528,7 +3541,7 @@ describe('Zuk NPC activation through the real engine', () => {
     expect(healers).toHaveLength(4);
 
     const allEvents = collectTickEvents(engine, 12);
-    const events = allEvents.filter(isInfernoVisualEvent);
+    const events = allEvents.filter(isEncounterVisualEvent);
 
     for (const tick of [4, 7]) {
       const volley = events.filter((event) => event.tick === tick);
@@ -3581,7 +3594,7 @@ describe('Zuk NPC activation through the real engine', () => {
     for (const actor of healers) expect(actor.state).toMatchObject({ supportTargetId: 'zuk' });
     const laterEvents = [...reactionEvents, ...collectTickEvents(engine, 7)];
     const castingIds = laterEvents
-      .filter(isInfernoVisualEvent)
+      .filter(isEncounterVisualEvent)
       .filter((event) => event.tick === 7)
       .flatMap((event) => event.animations)
       .filter((cue) => cue.clipId === 'heal')
@@ -3591,7 +3604,7 @@ describe('Zuk NPC activation through the real engine', () => {
     expect(laterEvents.filter((event) => event.type === 'attack_started')).toEqual([]);
     expect(
       laterEvents
-        .filter(isInfernoVisualEvent)
+        .filter(isEncounterVisualEvent)
         .flatMap((event) => event.projectiles)
         .every((cue) => cue.spotAnimId === 660 && (cue.target.kind === 'tile' || cue.target.actorId === 'zuk')),
     ).toBe(true);
@@ -3814,7 +3827,7 @@ describe('Zuk live Jad combat policy', () => {
     expect(events.filter((event) => event.type === 'attack_started').map((event) => event.tick)).toEqual([
       11, 19, 27, 35,
     ]);
-    expect(events.filter(isInfernoVisualEvent).flatMap((event) => event.animations)).toEqual(
+    expect(events.filter(isEncounterVisualEvent).flatMap((event) => event.animations)).toEqual(
       cues.map((event) => ({ actorId: jad.id, clipId: event.style, delayCycles: 0 })),
     );
     expect(jad.position).toEqual([30, 35]);
@@ -3899,9 +3912,9 @@ describe('Zuk live Jad combat policy', () => {
     engine.advanceTick([33, 44]);
 
     const release = engine.getLastTickEvents();
-    expect(beforeRelease.filter(isInfernoVisualEvent).flatMap((event) => event.graphics)).toEqual([]);
+    expect(beforeRelease.filter(isEncounterVisualEvent).flatMap((event) => event.graphics)).toEqual([]);
     expect(player.position).toEqual([33, 44]);
-    expect(release.filter(isInfernoVisualEvent)).toMatchObject([
+    expect(release.filter(isEncounterVisualEvent)).toMatchObject([
       {
         tick: 11,
         animations: [],
@@ -3926,7 +3939,7 @@ describe('Zuk live Jad combat policy', () => {
 
     const events = collectTickEvents(engine, impact);
 
-    const volley = events.filter(isInfernoVisualEvent).flatMap((event) => event.projectiles);
+    const volley = events.filter(isEncounterVisualEvent).flatMap((event) => event.projectiles);
     expect(volley).toMatchObject([
       { spotAnimId: 448, startDelayCycles: 2, endDelayCycles: endCycles },
       { spotAnimId: 449, startDelayCycles: 6, endDelayCycles: endCycles + 4 },
@@ -3945,7 +3958,7 @@ describe('Zuk live Jad combat policy', () => {
     expect(events.filter(isZukAttackEvent)).toMatchObject([
       { attack: 'jad_magic', launchTick: 11, impactTick: impact, projectileArrivalCycles: endCycles },
     ]);
-    expect(events.filter(isInfernoVisualEvent).flatMap((event) => event.graphics)).toEqual([]);
+    expect(events.filter(isEncounterVisualEvent).flatMap((event) => event.graphics)).toEqual([]);
     expect(engine.getDamageHistory()).toMatchObject([{ tick: impact, attackType: 'magic' }]);
   });
 
@@ -4051,7 +4064,7 @@ describe('Zuk live Jad combat policy', () => {
     const events = collectTickEvents(engine, 15);
 
     expect(events.filter(isZukAttackEvent)).toEqual([]);
-    expect(events.filter(isInfernoVisualEvent)).toEqual([]);
+    expect(events.filter(isEncounterVisualEvent)).toEqual([]);
     expect(jad.state.pendingAttack).toBeNull();
     expect(engine.getDamageHistory()).toEqual([]);
     const recovery = collectTickEvents(engine, 20);
@@ -4093,7 +4106,7 @@ describe('Zuk live Jad combat policy', () => {
     const events = collectTickEvents(engine, 20);
 
     expect(events.filter(isZukAttackEvent)).toEqual([]);
-    expect(events.filter(isInfernoVisualEvent)).toEqual([]);
+    expect(events.filter(isEncounterVisualEvent)).toEqual([]);
     expect(jad.state.pendingAttack).toBeNull();
     expect(engine.getDamageHistory().filter((damage) => damage.targetId === 'player')).toEqual([]);
   });
@@ -4349,7 +4362,7 @@ describe('Zuk demonstration actor isolation', () => {
 
     engine.executeEncounterCommand(command);
 
-    expect(engine.getLastTickEvents().filter(isInfernoVisualEvent)).toHaveLength(1);
+    expect(engine.getLastTickEvents().filter(isEncounterVisualEvent)).toHaveLength(1);
     const actors = world.getNpcs().filter((actor) => actor.role === 'minion');
     expect(actors.length).toBeGreaterThan(0);
     for (const actor of actors) {
@@ -4357,7 +4370,7 @@ describe('Zuk demonstration actor isolation', () => {
       expect(actor.combat.retaliation).toBeUndefined();
     }
     const events = collectTickEvents(engine, 150);
-    expect(events.filter(isInfernoVisualEvent)).toEqual([]);
+    expect(events.filter(isEncounterVisualEvent)).toEqual([]);
     expect(events.filter((event) => event.type === 'attack_started')).toEqual([]);
     expect(engine.getDamageHistory()).toEqual([]);
     expect(world.getNpc('zuk')?.vitals.hp).toBe(500);
@@ -4394,8 +4407,8 @@ describe('Zuk supplied spark emissions', () => {
 
     engine.executeEncounterCommand({ encounter: 'zuk', type });
 
-    expect(engine.getLastTickEvents().filter((event) => event.type === 'inferno_clear_minions')).toEqual([
-      expect.objectContaining({ type: 'inferno_clear_minions', npcTypeIds, tick: 1 }),
+    expect(engine.getLastTickEvents().filter((event) => event.type === 'actor_presentations_removed')).toEqual([
+      expect.objectContaining({ type: 'actor_presentations_removed', npcTypeIds, tick: 1 }),
     ]);
     expect(world.getNpcs().map((npc) => npc.npcTypeId)).toEqual(type === 'replace-set' ? [7703, 7702] : []);
     advance(engine, 4);
@@ -4421,7 +4434,7 @@ describe('Zuk supplied spark emissions', () => {
 
     engine.executeEncounterCommand({ encounter: 'zuk', type: 'replace-set' });
 
-    expect(engine.getLastTickEvents().filter((event) => event.type === 'inferno_clear_minions')).toEqual([
+    expect(engine.getLastTickEvents().filter((event) => event.type === 'actor_presentations_removed')).toEqual([
       expect.objectContaining({ npcTypeIds: [7703, 7702] }),
     ]);
     expect(
@@ -4507,7 +4520,7 @@ describe('Zuk supplied spark emissions', () => {
     expect(events.filter((event) => event.type === 'attack_started')).toEqual([]);
     expect(
       events
-        .filter(isInfernoVisualEvent)
+        .filter(isEncounterVisualEvent)
         .flatMap((event) => event.animations)
         .filter((cue) => cue.actorId === healer.id),
     ).toEqual([]);
@@ -4573,9 +4586,9 @@ describe('Zuk supplied spark emissions', () => {
     });
     engine.executeEncounterCommand(supplied);
     supplied.sparks[0].position[0] = 40;
-    const launched = engine.getLastTickEvents().filter(isInfernoVisualEvent);
+    const launched = engine.getLastTickEvents().filter(isEncounterVisualEvent);
 
-    const events = collectTickEvents(engine, 4).filter(isInfernoVisualEvent);
+    const events = collectTickEvents(engine, 4).filter(isEncounterVisualEvent);
 
     expect(launched.flatMap((event) => event.projectiles).map((cue) => cue.target.position)).toEqual(
       command.sparks.map((spark) => spark.position),
@@ -4686,7 +4699,7 @@ describe('Zuk supplied spark emissions', () => {
         heals: healingEvents(target.getLastTickEvents()).map(({ eventId: _eventId, ...event }) => event),
         graphics: target
           .getLastTickEvents()
-          .filter(isInfernoVisualEvent)
+          .filter(isEncounterVisualEvent)
           .flatMap((event) => event.graphics.map((cue) => ({ tick: event.tick, ...cue }))),
       };
     };
@@ -4830,7 +4843,7 @@ describe('Zuk supplied spark emissions', () => {
         });
         engine.executeEncounterCommand(volley);
       }
-      const visualEvents = engine.getLastTickEvents().filter(isInfernoVisualEvent);
+      const visualEvents = engine.getLastTickEvents().filter(isEncounterVisualEvent);
       expect(visualEvents.flatMap((event) => event.graphics)).toEqual(
         parentHealDue
           ? [

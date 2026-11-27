@@ -12,10 +12,11 @@ import {
 import { createNpcRetaliation } from '../../core/combat/retaliation';
 import { contextAttackDecisions, contextDecisions } from '../../core/decisionRandom';
 import type { EncounterTickResult } from '../../core/encounters/types';
+import type { NpcProjectileCue } from '../../core/events/encounterVisual';
+import { emitEncounterVisual } from '../../core/events/encounterVisual';
 import { canNpcActThisTurn, canReceiveNewAttack } from '../../core/npcDeath';
 import { createNpcDefinition, type NpcDefinitionContext } from '../../core/npcs';
 import { type Coordinate, PrayerType } from '../../types/simulation';
-import type { NpcProjectileCue } from '../projectileCue';
 import { createInfernoActor } from './actors';
 import { INFERNO_WAVE_NPC_IDS } from './constants';
 import { emitZukAttack, emitZukDeath, type ZukAttackKind } from './events';
@@ -28,7 +29,6 @@ import {
   JAL_AKREK_XIL_PROJECTILE,
 } from './projectileProfiles';
 import { resolveReadyTarget } from './targetResolution';
-import { emitInfernoVisual } from './visualEvents';
 import { emitInfernoWaveAttack, infernoWaveProjectileCue } from './waveCombat';
 
 // docs/encounters/inferno-facts-spec.md (Behavior, Jal-Ak): it reads the protection prayer on a
@@ -218,7 +218,7 @@ function releaseProjectile(
   const cue = infernoWaveProjectileCue(actor, target, projectile, endCycles, source);
   if (dying) {
     // The death sequence owns the model: only the projectile and its sounds (Q:82067-82110).
-    emitInfernoVisual(context.tickEvents, { animations: [], projectiles: [cue], graphics: [] });
+    emitEncounterVisual(context.tickEvents, { animations: [], projectiles: [cue], graphics: [] });
     emitZukAttack(context, {
       attack: profile.sound,
       sourceId: actor.id,

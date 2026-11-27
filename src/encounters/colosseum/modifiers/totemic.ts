@@ -2,10 +2,10 @@ import type { NpcActor } from '../../../core/actors/NpcActor';
 import { npcHitDelayFromEndTime } from '../../../core/combat/hitDelay';
 import { applyNpcHealing } from '../../../core/combat/npcHealing';
 import type { EncounterContext } from '../../../core/encounters/types';
+import { emitEncounterVisual } from '../../../core/events/encounterVisual';
 import { createNpcDefinition, type DefinedNpcActor } from '../../../core/npcs';
 import { createColosseumActor } from '../../../npcs/colosseum/actors';
 import { COLOSSEUM_SPOTANIMS, HEALING_TOTEM_PROJECTILE } from '../../../npcs/colosseum/constants';
-import { emitColosseumVisual } from '../../../npcs/colosseum/visualEvents';
 import { actorVisualTarget, npcProjectileSource } from '../../../npcs/projectileCue';
 import type { Coordinate } from '../../../types/simulation';
 
@@ -117,15 +117,23 @@ export function advanceHealingTotem(
   state.arrivals.splice(0, landed.length);
   for (const _ of landed) {
     if (applyNpcHealing(target, state.healAmount, ctx.tickEvents) <= 0) continue;
-    emitColosseumVisual(ctx.tickEvents, {
+    emitEncounterVisual(ctx.tickEvents, {
       animations: [],
-      graphics: [{ spotAnimId: COLOSSEUM_SPOTANIMS.totemImpact, actorId: target.id, delayCycles: 0 }],
+      projectiles: [],
+      graphics: [
+        {
+          spotAnimId: COLOSSEUM_SPOTANIMS.totemImpact,
+          target: { kind: 'attached', actorId: target.id },
+          delayCycles: 0,
+          height: 0,
+        },
+      ],
     });
   }
   if (ctx.tick < state.nextLaunchTick || target.vitals.hp >= target.vitals.maxHp) return;
   state.nextLaunchTick = ctx.tick + TOTEM_LAUNCH_INTERVAL_TICKS;
   state.arrivals.push(ctx.tick + TOTEM_HEAL_FLIGHT_TICKS);
-  emitColosseumVisual(ctx.tickEvents, {
+  emitEncounterVisual(ctx.tickEvents, {
     animations: [{ actorId: totem.id, clipId: 'attack', delayCycles: 0 }],
     graphics: [],
     projectiles: [

@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { ActorCueLife } from '../actorCueLife';
 import { ReplayDeferredPrimaryIndex } from '../replayDeferredPrimaryIndex';
 import type { PrimarySpec } from '../replayPrimaryIndex';
 
@@ -261,6 +262,28 @@ describe('ReplayDeferredPrimaryIndex', () => {
     expect(resolve.mock.calls).toEqual([['new']]);
     expect(index.sample(destination(305, 0, 0), metadata, resolve).primary?.clip).toBe('old');
     expect(index.sample(destination(305, 0, 10), metadata, resolve).primary?.clip).toBe('new');
+  });
+
+  it('drops a queued cue whose actor life ended before it became due, as a direct sample does', () => {
+    // The actor is removed on tick 1 and its id reused with no spawn tick, so the successor samples
+    // the same spawn key: only the cue's own life tells the two apart.
+    const life = new ActorCueLife();
+    life.bind(undefined, { frameIndex: 0, tick: 0 });
+    const cues = [{ cycle: 70, clipId: 'attack', life }];
+    const resolve = (id: string) => spec(id, 5);
+    const metadata = {};
+    const warmed = new ReplayDeferredPrimaryIndex<string>();
+    warmed.append(0, 0, cues);
+    expect(warmed.sample(destination(0, 0), metadata, resolve)).toMatchObject({ primary: null });
+    life.end({ frameIndex: 1, tick: 1 });
+    const direct = new ReplayDeferredPrimaryIndex<string>();
+    direct.append(0, 0, cues);
+
+    for (const index of [warmed, direct])
+      expect(index.sample(destination(70, 2), metadata, resolve)).toMatchObject({
+        primary: null,
+        firstCycle: undefined,
+      });
   });
 
   it.each([
