@@ -28,7 +28,7 @@
     "check:cache-runtime": "vitest run --config scripts/cache-runtime.vitest.config.ts"
   },
   "dependencies": {
-    "@foxglove/wasm-bz2": "^0.3.0",
+    "@foxglove/wasm-bz2": "0.3.0",
     "driver.js": "1.4.0",
     "gl-matrix": "^3.4.4",
     "jszip": "^3.10.2",

@@ -1,6 +1,8 @@
+import { createHash } from 'node:crypto';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   buildLicenseNotices,
@@ -331,6 +333,38 @@ describe('renderLicenseNotices', () => {
     expect(rendered).toContain('Copyright © 2005-2020 Rich Felker, et al.');
     expect(rendered).toContain('---- LLVM Exceptions to the Apache 2.0 License ----');
     expect(rendered).toContain('Copyright (c) 2009-2019 by the contributors listed in CREDITS.TXT');
+  });
+
+  // That attribution is for @foxglove/wasm-bz2 0.3.0's build, so the version is locked and the
+  // committed binaries must stay its wasm/module.wasm and wasm/module.js. Changing either is
+  // deliberate: update the version, the lockfile, the binaries and these hashes together.
+  it('ships bzip2 binaries identical to the locked @foxglove/wasm-bz2 0.3.0', () => {
+    const root = process.cwd();
+    const manifest = JSON.parse(readFileSync(join(root, 'package.json'), 'utf-8'));
+    const lockfile = JSON.parse(readFileSync(join(root, 'package-lock.json'), 'utf-8'));
+    const installedManifestPath = createRequire(import.meta.url).resolve('@foxglove/wasm-bz2/package.json');
+    const installed = JSON.parse(readFileSync(installedManifestPath, 'utf-8'));
+    const sha256 = (bytes: Buffer) => createHash('sha256').update(bytes).digest('hex');
+
+    expect(manifest.dependencies['@foxglove/wasm-bz2']).toBe('0.3.0');
+    expect(lockfile.packages['node_modules/@foxglove/wasm-bz2']).toMatchObject({
+      version: '0.3.0',
+      resolved: 'https://registry.npmjs.org/@foxglove/wasm-bz2/-/wasm-bz2-0.3.0.tgz',
+      integrity: 'sha512-MP18X3TbeoGT3Kfke7KrYin+5zESfcPnsdD2gaVviN1xzteoDDfVTZbVmbdfGrIV/qAAhBhBVbRcrN25rWSNOQ==',
+    });
+    expect(installed.version).toBe('0.3.0');
+
+    for (const [committed, built, expected] of [
+      ['bzip2.wasm', 'module.wasm', 'a8a96ffc1118ed9c2adc93a8ddd4e8069c617320cd6dc141bd1029b9104265d7'],
+      ['bzip2-module.js', 'module.js', '05243622b34a0fa405576c7ac686a45a86d99ca1d8d6b5d7506c08b3857d5723'],
+    ]) {
+      const committedBytes = readFileSync(join(root, 'public', committed));
+      const builtBytes = readFileSync(join(dirname(installedManifestPath), 'wasm', built));
+
+      expect(sha256(committedBytes), `sha256 of public/${committed}`).toBe(expected);
+      expect(sha256(builtBytes), `sha256 of @foxglove/wasm-bz2/wasm/${built}`).toBe(expected);
+      expect(committedBytes.equals(builtBytes), `public/${committed} equals wasm/${built}`).toBe(true);
+    }
   });
 
   it('records the Mulberry32 public-domain dedications', () => {
