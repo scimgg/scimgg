@@ -86,7 +86,8 @@ export interface EncounterSetupCamera {
 
 export interface EncounterPresentationModule {
   readonly kind: string;
-  readonly sceneBuilder: SceneBuilderFactory;
+  /** Omit for the common scene (`SceneCompositor`) with {@link renderConfig}. */
+  readonly sceneBuilder?: SceneBuilderFactory;
   readonly renderConfig?: AuthoredEncounterRenderConfig;
   readonly defaultCamera?: EncounterCameraConfig;
   /**
@@ -135,9 +136,9 @@ export const INFERNO_WAVES_PITCH = -50;
 export const FALLBACK_ENCOUNTER_CAMERA: EncounterCameraConfig = { yaw: 180, pitch: DEFAULT_ORBIT_PITCH };
 
 /**
- * Audio layer precedence is the ARRAY ORDER below, then the engine's own `core` layer last.
- * `EventAudioPlayer` walks the layers per event and stops at the first non-`pass` rule, so
- * reordering these changes which sound wins. Locked by `encounterModules.test.ts`.
+ * Event audio dispatches through the displayed encounter's layer, then the engine's own `core`
+ * layer (`eventAudioLayersFor`), so one encounter's rules never answer another's events. The array
+ * order below is the order layers are installed and preloaded in. Locked by `encounterModules.test.ts`.
  */
 export const ENCOUNTER_PRESENTATION_MODULES: readonly EncounterPresentationModule[] = [
   {
@@ -247,7 +248,7 @@ export function encounterPresentationModuleForKind(kind: string): EncounterPrese
   return MODULE_BY_KIND.get(kind);
 }
 
-/** Audio layers in precedence order. The caller appends the engine's own `core` layer last. */
+/** Every encounter's audio layer, in manifest order. The caller appends the engine's own `core` layer last. */
 export function encounterAudioLayers(): readonly {
   readonly name: string;
   readonly rules: Record<string, SoundRule>;

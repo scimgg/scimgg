@@ -85,7 +85,7 @@ import { encounterControlsForKind } from './encounters/modules';
 import { encounterRegistry } from './encounters/registry';
 import type { DevHarnessBoot, DevHarnessSource } from './harness/devHarnessTypes';
 import { useAntiDrag } from './hooks/useAntiDrag';
-import { useAudioManager } from './hooks/useAudioManager';
+import { useAudioManager, useEventAudioScope } from './hooks/useAudioManager';
 import { useAutoOverlayScales } from './hooks/useAutoOverlayScale';
 import { useBossHealthBarSettings } from './hooks/useBossHealthBarSettings';
 import { useCacheBootstrap } from './hooks/useCacheBootstrap';
@@ -577,6 +577,8 @@ function AppShell({ devHarness }: { devHarness?: DevHarnessBoot } = {}) {
     updateStartingHpPerEncounter,
     devHarness: harnessMode,
   });
+  // The kind Grid builds the displayed scene for, so its sounds come from the same encounter.
+  useEventAudioScope(eventAudioPlayerRef, activeEncounterKind);
   const settledEncounterKind =
     sceneState.kind === 'encounter' ? sceneState.encounterKind : sceneState.kind === 'lobby' ? 'lobby' : null;
   const activeTzhaarHpTracker = encounterPluginOptions(
@@ -749,7 +751,7 @@ function AppShell({ devHarness }: { devHarness?: DevHarnessBoot } = {}) {
   });
 
   // "Has fixed layout" — the user has explicitly locked a custom game
-  // resolution, opting into a desktop-style layout regardless of window
+  // resolution, opting into a desktop layout regardless of window
   // width. The responsive-collapse-to-mobile behavior must respect this
   // choice; otherwise shrinking the window silently overrides the user's
   // configured layout.

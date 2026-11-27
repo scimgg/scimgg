@@ -1,14 +1,9 @@
-import type { FrameSoundTracker } from '../../audio/FrameSoundTracker';
 import { isSolHereditSnapshot } from '../../core/encounters/snapshot';
 import { type GameEvent, isCoreEvent } from '../../core/events/types';
 import { COLOSSEUM_SPOTANIMS } from '../../npcs/colosseum/constants';
-import { COLOSSEUM_SPOT_ANIM_IDS } from '../../npcs/colosseum/visualEvents';
-import type { NpcModelLoader } from '../../rs/model/NpcModelLoader';
-import type { SpotAnimModelLoader } from '../../rs/model/SpotAnimModelLoader';
 import { rgbToHsl } from '../../rs/util/ColorUtil';
 import type { Coordinate, SimulationState } from '../../types/simulation';
 import { DEFAULT_TILE_MARKER_WIDTH } from '../../types/tileMarkers';
-import type { AnimationSystem } from '../core/animation';
 import type { Camera3D, Projection2D, Viewport } from '../core/camera';
 import type { RenderQueue } from '../core/commands';
 import { rgbaFromHex } from '../core/types';
@@ -83,7 +78,6 @@ function isCamera3D(projection: Projection2D): projection is Projection2D & Came
 
 export class ColosseumSceneCompositor extends SceneCompositor {
   private readonly visuals = new ColosseumVisualController(this.spotAnimRenderer);
-  private frameSoundTracker: FrameSoundTracker | null = null;
   /** The player's rendered tile, for effects on the player; spotanim transforms resolve after it is set. */
   private playerVisualPosition: Readonly<Coordinate> | null = null;
 
@@ -96,14 +90,7 @@ export class ColosseumSceneCompositor extends SceneCompositor {
     if (options.batchSolEffects === true)
       this.spotAnimRenderer.setBatchableSpotAnimFamilies([COLOSSEUM_SPOTANIMS.solMelee, SOL_BEAM_SPOTANIMS]);
     if (options.skipZeroAreaBeamParts === true) this.spotAnimRenderer.setZeroAreaPartSkip(SOL_BEAM_SPOTANIMS);
-    this.registerTransientReset('colosseum-visuals', () => {
-      this.visuals.clear();
-      this.frameSoundTracker?.reset();
-    });
-  }
-
-  setFrameSoundTracker(tracker: FrameSoundTracker | null): void {
-    this.frameSoundTracker = tracker;
+    this.registerTransientReset('colosseum-visuals', () => this.visuals.clear());
   }
 
   override build(ctx: RenderContext, projection: Projection2D, viewport: Viewport): RenderQueue {
@@ -111,41 +98,10 @@ export class ColosseumSceneCompositor extends SceneCompositor {
     // is the GPU's. It is dropped again afterwards: no camera outlives the frame it was built for.
     const cull = this.cullSolMeleeOutsideView && ctx.options.renderMode === '3d' && isCamera3D(projection);
     this.spotAnimRenderer.setViewRejection(cull ? projection : null);
-    let queue: RenderQueue;
     try {
-      queue = super.build(ctx, projection, viewport);
+      return super.build(ctx, projection, viewport);
     } finally {
       this.spotAnimRenderer.setViewRejection(null);
-    }
-    if (this.frameSoundTracker) {
-      const actors = this.collectActorFrameStates();
-      if (
-        this.reconstructedVisuals ||
-        this.lastDiscontinuityReason !== null ||
-        (ctx.timeline?.paused ?? ctx.replayPaused ?? false)
-      ) {
-        this.frameSoundTracker.silentSync(actors);
-      } else this.frameSoundTracker.update(actors, this.getFrameSoundListenerPosition());
-    }
-    return queue;
-  }
-
-  protected override isEncounterReplayPresentationReady(ctx: RenderContext): boolean {
-    return (
-      ctx.options.renderMode !== '3d' ||
-      (this.isEncounterSpotAnimsLoaded() &&
-        (this.encounterRenderConfig?.preloadNpcTypes ?? []).every(({ npcTypeId }) =>
-          this.isNpcTypeLoadSettled(npcTypeId),
-        ))
-    );
-  }
-
-  protected override async loadEncounterNpc(loader: NpcModelLoader, animation?: AnimationSystem): Promise<void> {
-    await super.loadEncounterNpc(loader, animation);
-    for (const type of this.encounterRenderConfig?.preloadNpcTypes ?? []) {
-      if (type.npcTypeId !== this.encounterRenderConfig?.primaryNpc?.npcTypeId) {
-        await this.loadNpcType(type.npcTypeId, loader, animation, type);
-      }
     }
   }
 
@@ -156,14 +112,6 @@ export class ColosseumSceneCompositor extends SceneCompositor {
   protected override updateEncounterNpcFacing(playerPosition: Coordinate): number {
     const elapsed = Math.max(0, this.primaryCycle - (this.npcAnimationCycle ?? this.primaryCycle));
     return this.npcInstanceManager.updateNpcVisualFacing(playerPosition, elapsed * 20) ?? 0;
-  }
-
-  protected override async loadEncounterSpotAnims(loader: SpotAnimModelLoader): Promise<void> {
-    this.spotAnimRenderer.preload(loader, [...COLOSSEUM_SPOT_ANIM_IDS]);
-  }
-
-  protected override isEncounterSpotAnimsLoaded(): boolean {
-    return COLOSSEUM_SPOT_ANIM_IDS.every((id) => this.spotAnimRenderer.isLoaded(id));
   }
 
   protected override onEncounterEvents(events: GameEvent[], context: RenderContext): void {

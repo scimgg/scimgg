@@ -1,8 +1,9 @@
 import type { EventAudioPlayer, FrameSoundTracker } from '../../audio';
 import type { CacheManager } from '../../cache/CacheManager';
 import { ENCOUNTER_CORE_MODULES, encounterKindsOf } from '../../encounters/modules';
-import { ENCOUNTER_PRESENTATION_MODULES } from '../../encounters/presentationModules';
+import { ENCOUNTER_PRESENTATION_MODULES, type EncounterPresentationModule } from '../../encounters/presentationModules';
 import type { EncounterRenderConfig } from './encounterRenderConfig';
+import { createEncounterSceneBuilder } from './encounterSceneBuilder';
 import type { SceneBuilderLike } from './types';
 
 export interface SceneBuilderOptions {
@@ -44,6 +45,13 @@ export const sceneBuilderRegistry = new SceneBuilderRegistry();
 for (const module of ENCOUNTER_PRESENTATION_MODULES) {
   const core = ENCOUNTER_CORE_MODULES.find((entry) => entry.kind === module.kind);
   for (const kind of core ? encounterKindsOf(core) : [module.kind]) {
-    sceneBuilderRegistry.register(kind, module.sceneBuilder);
+    sceneBuilderRegistry.register(kind, sceneBuilderFactoryFor(module));
   }
+}
+
+/** The module's own scene builder, else the common scene with the module's resolved render config. */
+export function sceneBuilderFactoryFor(
+  module: Pick<EncounterPresentationModule, 'kind' | 'sceneBuilder' | 'renderConfig'>,
+): SceneBuilderFactory {
+  return module.sceneBuilder ?? ((options) => createEncounterSceneBuilder(module.kind, module.renderConfig, options));
 }

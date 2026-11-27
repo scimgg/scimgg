@@ -45,3 +45,23 @@ export function collectDeclaredNpcSeqIds(
   }
   return ids;
 }
+
+/**
+ * Every spot animation the encounter render configs make the renderer draw — each config's
+ * `spotAnimIds` and the primary NPC's death effect — with a label naming where it was declared.
+ * Cache trimming roots these, and frame-sound extraction walks their sequences, so an effect added to
+ * a render config keeps its model and its frame sounds in a trimmed build.
+ */
+export function collectDeclaredSpotAnimIds(
+  configs: ReadonlyMap<string, AuthoredEncounterRenderConfig> = ENCOUNTER_RENDER_CONFIGS,
+): Map<number, string> {
+  const ids = new Map<number, string>();
+  const add = (spotAnimId: number | undefined, label: string): void => {
+    if (spotAnimId !== undefined && spotAnimId >= 0 && !ids.has(spotAnimId)) ids.set(spotAnimId, label);
+  };
+  for (const [kind, config] of configs) {
+    add(config.primaryNpc?.deathSpotAnimId, `${kind} render config primaryNpc.deathSpotAnimId`);
+    for (const id of config.spotAnimIds ?? []) add(id, `${kind} render config spotAnimIds`);
+  }
+  return ids;
+}

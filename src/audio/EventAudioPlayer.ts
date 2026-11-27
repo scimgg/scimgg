@@ -82,7 +82,8 @@ type PendingReplaySound = {
 };
 
 export class EventAudioPlayer {
-  private readonly ruleChains: Record<string, SoundRule[]>;
+  private readonly layers: readonly SoundRuleLayer[];
+  private ruleChains: Record<string, SoundRule[]>;
   private replayTimeMs: number | null = null;
   private readonly pendingReplaySounds: PendingReplaySound[] = [];
 
@@ -90,18 +91,22 @@ export class EventAudioPlayer {
     private readonly engine: AudioEngine,
     ...layers: SoundRuleLayer[]
   ) {
-    this.ruleChains = {};
+    this.layers = layers;
+    this.ruleChains = ruleChainsOf(layers);
+  }
 
-    for (const layer of layers) {
-      for (const [eventType, rule] of Object.entries(layer.rules)) {
-        let chain = this.ruleChains[eventType];
-        if (!chain) {
-          chain = [];
-          this.ruleChains[eventType] = chain;
-        }
-        chain.push(rule);
-      }
+  /**
+   * Dispatches events through only the named layers, still in constructor order; `null` restores every
+   * layer. Preloading still covers every layer, so a sound can be ready before its layer dispatches.
+   */
+  setDispatchLayers(names: readonly string[] | null): void {
+    if (names === null) {
+      this.ruleChains = ruleChainsOf(this.layers);
+      return;
     }
+    const unknown = names.filter((name) => !this.layers.some((layer) => layer.name === name));
+    if (unknown.length > 0) throw new Error(`[EventAudioPlayer] Unknown sound rule layers: ${unknown.join(', ')}`);
+    this.ruleChains = ruleChainsOf(this.layers.filter((layer) => names.includes(layer.name)));
   }
 
   updateReplayClock(timeMs: number | null, paused = false): void {
@@ -197,8 +202,8 @@ export class EventAudioPlayer {
   getAllSoundIds(): number[] {
     const ids = new Set<number>();
 
-    for (const chain of Object.values(this.ruleChains)) {
-      for (const handler of chain) {
+    for (const layer of this.layers) {
+      for (const handler of Object.values(layer.rules)) {
         if (typeof handler.resolve === 'number') {
           ids.add(handler.resolve);
         } else if (Array.isArray(handler.resolve)) {
@@ -227,6 +232,19 @@ export class EventAudioPlayer {
 }
 
 const CLIENT_CYCLE_MS = 20;
+
+/** Each event type's rules across `layers`, in layer order: the first non-`pass` rule wins. */
+function ruleChainsOf(layers: readonly SoundRuleLayer[]): Record<string, SoundRule[]> {
+  const chains: Record<string, SoundRule[]> = {};
+  for (const layer of layers) {
+    for (const [eventType, rule] of Object.entries(layer.rules)) {
+      const chain = chains[eventType];
+      if (chain) chain.push(rule);
+      else chains[eventType] = [rule];
+    }
+  }
+  return chains;
+}
 
 function isTimedSound(value: unknown): value is TimedSound {
   return typeof value === 'object' && value !== null && 'id' in value;

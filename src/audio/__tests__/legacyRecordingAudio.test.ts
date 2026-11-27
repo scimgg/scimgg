@@ -1,30 +1,32 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { setArenaConfig, setDefaultArenaConfig } from '../../core/constants';
+import type { GameEvent } from '../../core/events/types';
 import type { ReplayDisplayFrame } from '../../core/ReplayRecorder';
-import { encounterAudioLayers } from '../../encounters/presentationModules';
+import { createEventAudioPlayer, eventAudioLayersFor } from '../../hooks/useAudioManager';
 import {
   LEGACY_INFERNO_EVENTS,
+  LEGACY_SOL_EVENTS,
   legacyInfernoRecording,
   legacySolRecording,
   legacyYamaRecording,
 } from '../../test/helpers/legacyEncounterRecordings';
+import type { Coordinate } from '../../types/simulation';
 import { AudioEngine } from '../AudioEngine';
-import { coreAudioRules } from '../coreAudioRules';
-import { EventAudioPlayer } from '../EventAudioPlayer';
 
 /**
  * What the app's event-audio dispatcher plays for recordings in the 49ef532 encounter event shapes
  * (`legacyEncounterRecordings`), event by event, as a live frame delivers them.
  *
- * Every expectation here is meant to survive the encounter-cue migration unchanged. Only
- * `dispatcherFor` may change: today the app installs every encounter's layer whatever is displayed
- * (`useAudioManager`), so it ignores `kind`; scoping audio to the displayed encounter replaces it.
- * Triggers are not compared: they name the event type, which a converted recording may rename.
+ * Every expectation in the first block is meant to survive the encounter-cue migration unchanged.
+ * `dispatcherFor` builds the player as `useAudioManager` does and scopes it as `useEventAudioScope`
+ * does for the displayed `kind`. Triggers are not compared: they name the event type, which a converted
+ * recording may rename.
  */
-function dispatcherFor(_kind: string) {
+function dispatcherFor(kind: string) {
   const engine = new AudioEngine();
   const played = vi.spyOn(engine, 'play').mockImplementation(() => undefined);
-  const player = new EventAudioPlayer(engine, ...encounterAudioLayers(), { name: 'core', rules: coreAudioRules });
+  const player = createEventAudioPlayer(engine);
+  player.setDispatchLayers(eventAudioLayersFor(kind));
   return { player, played };
 }
 
@@ -77,12 +79,31 @@ describe('event audio for legacy encounter recordings', () => {
   });
 });
 
-describe('event audio routing on 49ef532 (expected to change when audio is scoped)', () => {
-  // Every encounter's layer is installed whatever is displayed, so an Inferno batch sounds even in an
-  // encounter with no rules of its own. Scoping audio to the displayed encounter silences this.
-  it('plays an Inferno spark landing while the lobby is displayed', () => {
-    const { player, played } = dispatcherFor('lobby');
-    player.onEvents([LEGACY_INFERNO_EVENTS.barrage], [25, 25]);
-    expect(played.mock.calls.map(([id]) => id)).toEqual([156]);
+describe('event audio routing to the displayed encounter', () => {
+  const idsPlayed = (kind: string, events: readonly GameEvent[], position: Coordinate) => {
+    const { player, played } = dispatcherFor(kind);
+    player.onEvents([...events], position);
+    return played.mock.calls.map(([id]) => id);
+  };
+
+  it("plays an Inferno spark landing only while the Inferno's scene is displayed", () => {
+    expect(idsPlayed('inferno', [LEGACY_INFERNO_EVENTS.barrage], [25, 25])).toEqual([156]);
+    // On 49ef532 every encounter's layer answered whatever was displayed, so the lobby played 156 too.
+    expect(idsPlayed('lobby', [LEGACY_INFERNO_EVENTS.barrage], [25, 25])).toEqual([]);
+    expect(idsPlayed('sol_heredit', [LEGACY_INFERNO_EVENTS.barrage], [25, 25])).toEqual([]);
+  });
+
+  it("plays Sol's sand burst only while Sol's scene is displayed", () => {
+    expect(idsPlayed('sol_heredit', [LEGACY_SOL_EVENTS.telegraph], [20, 20])).toEqual([8053, 10046]);
+    expect(idsPlayed('inferno', [LEGACY_SOL_EVENTS.telegraph], [20, 20])).toEqual([]);
+    expect(idsPlayed('yama_p3', [LEGACY_SOL_EVENTS.telegraph], [20, 20])).toEqual([]);
+  });
+
+  it('keeps core sounds in every encounter, the lobby and an unregistered kind included', () => {
+    const death: GameEvent = { type: 'actor_died', eventId: 1, tick: 10, actorId: 'player' };
+    const core = idsPlayed('lobby', [death], [20, 20]);
+    expect(core.length).toBeGreaterThan(0);
+    for (const kind of ['inferno', 'sol_heredit', 'yama_p3_divine', 'no_such_encounter'])
+      expect(idsPlayed(kind, [death], [20, 20]), kind).toEqual(core);
   });
 });

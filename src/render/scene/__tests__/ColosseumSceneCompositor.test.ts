@@ -155,11 +155,11 @@ function fixture(options?: ColosseumSceneOptions) {
   return { scene, manager, controller, draw, state, context, engine };
 }
 
-/** The fixture seeds only Sol; treat the other preloaded NPC types as settled so restorations can complete. */
+/** The fixture seeds only Sol; settle the other preloaded NPC types as failed loads so restorations can complete. */
 function settleNpcTypes(scene: ColosseumSceneCompositor): void {
-  vi.spyOn(scene as never as { isNpcTypeLoadSettled(id: number): boolean }, 'isNpcTypeLoadSettled').mockReturnValue(
-    true,
-  );
+  for (const { npcTypeId } of SOL_HEREDIT_RENDER_CONFIG.preloadNpcTypes ?? []) {
+    if (!scene.isNpcTypeLoaded(npcTypeId)) scene['failedNpcTypeLoadAttempts'].add(npcTypeId);
+  }
 }
 
 function visual(overrides: Partial<ColosseumVisualEvent> = {}): ColosseumVisualEvent {

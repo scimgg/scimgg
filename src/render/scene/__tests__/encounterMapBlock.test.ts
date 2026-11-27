@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
+import { SOL_HEREDIT_RENDER_CONFIG } from '../../../encounters/solHeredit/renderConfig';
 import type { MapSquareData } from '../../../rs/map/MapLoader';
 import { withDescriptorMapBlock } from '../encounterMapBlock';
 import { getEncounterRenderConfig } from '../encounterRenderConfig';
+import { createEncounterSceneBuilder } from '../encounterSceneBuilder';
 import type { SceneCompositor } from '../SceneCompositor';
 import { createSolHereditSceneBuilder } from '../solHereditSceneBuilder';
 import type { SceneBuilder } from '../types';
@@ -31,12 +33,14 @@ describe('withDescriptorMapBlock', () => {
   });
 });
 
-describe.each<[string, () => SceneBuilder]>([
-  ['sol_heredit', () => createSolHereditSceneBuilder()],
-  ['inferno', () => createZukSceneBuilder()],
+describe.each<[string, string, () => SceneBuilder]>([
+  ['sol_heredit scene builder', 'sol_heredit', () => createSolHereditSceneBuilder()],
+  ['inferno scene builder', 'inferno', () => createZukSceneBuilder()],
   // The Yama builder wraps its compositor; the config and terrain live there.
-  ['yama_p3', () => new YamaSceneBuilder()['compositor']],
-])('the %s scene builder made without options', (kind, create) => {
+  ['yama_p3 scene builder', 'yama_p3', () => new YamaSceneBuilder()['compositor']],
+  // A module without a scene builder of its own gets the common scene from its authored config.
+  ['common scene', 'sol_heredit', () => createEncounterSceneBuilder('sol_heredit', SOL_HEREDIT_RENDER_CONFIG)],
+])('the %s made without options', (_builder, kind, create) => {
   it("uses the app's resolved render config, the descriptor's map squares included", () => {
     const scene = create() as SceneCompositor;
     expect(scene['encounterRenderConfig']).toEqual(getEncounterRenderConfig(kind));

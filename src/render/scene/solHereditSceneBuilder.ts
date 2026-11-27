@@ -2,6 +2,7 @@ import { SOL_HEREDIT_RENDER_CONFIG } from '../../encounters/solHeredit/renderCon
 import { isAppleTouchDevice } from '../../util/mobileDetection';
 import { ColosseumSceneCompositor } from './ColosseumSceneCompositor';
 import { withDescriptorMapBlock } from './encounterMapBlock';
+import { configureEncounterScene } from './encounterSceneBuilder';
 import type { SceneBuilderOptions } from './sceneBuilderFactory';
 import type { SceneBuilder } from './types';
 
@@ -15,11 +16,5 @@ export function createSolHereditSceneBuilder(options?: Partial<SceneBuilderOptio
     batchSolEffects: ios,
     skipZeroAreaBeamParts: ios,
   });
-  compositor.setEncounterRenderConfig(
-    options?.encounterRenderConfig ?? withDescriptorMapBlock(SOL_HEREDIT_RENDER_CONFIG, 'sol_heredit'),
-  );
-  compositor.setEventAudioPlayer(options?.eventAudioPlayer ?? null);
-  compositor.setFrameSoundTracker(options?.frameSoundTracker ?? null);
-  compositor.setGroundItemLoaderSource(options?.cacheManager ?? null);
-  return compositor;
+  return configureEncounterScene(compositor, options, withDescriptorMapBlock(SOL_HEREDIT_RENDER_CONFIG, 'sol_heredit'));
 }

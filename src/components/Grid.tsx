@@ -2802,7 +2802,6 @@ export const Grid: React.FC<Partial<GridProps>> = (props) => {
                         animationSystem={animationSystem}
                         mapLocs={mapLocs}
                         encounterRequiresLocs={encounterRequiresLocs}
-                        encounterRenderConfig={encounterRenderConfig}
                         projection3D={projection3DRef.current}
                         cameraKeybinds={cameraKeybinds}
                         width={fixedSceneRect ? fixedSceneRect.width : size.width}

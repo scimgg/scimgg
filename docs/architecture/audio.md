@@ -18,19 +18,24 @@ confirm or deny one.
   renderer animates needs no event rule (adding one double-plays). Located sounds attenuate on the
   `area` channel; others play flat on `sfx`. After a seek, `silentSync()` re-anchors cursors without
   playing.
-- Driven by each encounter compositor that owns a tracker (currently `YamaSceneCompositor` and
-  `InfernoSceneCompositor` for Zuk). NPC clips reach `extracted-frame-sounds.json` through
+- Driven by the base `SceneCompositor.build()` once per frame, after the final pose, for every scene
+  built with a tracker (`configureEncounterScene`). A paused, discontinuous or rebuilt frame only
+  calls `silentSync()`. NPC clips and encounter effects reach `extracted-frame-sounds.json` through
   `scripts/extract-frame-sounds.ts`, which collects every seq the render configs declare
-  (`collectDeclaredNpcSeqIds`); `frameSoundManifest.test.ts` fails when a declared clip is missing.
+  (`collectDeclaredNpcSeqIds`) and the sequence of every effect they declare
+  (`collectDeclaredSpotAnimIds`); `frameSoundManifest.test.ts` fails when either is missing.
 
 ## Event sounds
 
 The base `SceneCompositor.build()` forwards each frame's unprocessed events to
 [`EventAudioPlayer`](../../src/audio/EventAudioPlayer.ts) (not while replay is paused).
-[`useAudioManager`](../../src/hooks/useAudioManager.ts) installs the encounter layers from
-`encounterAudioLayers()` first, in manifest order (each declared as `audio: { layerName, rules }` in [`presentationModules.ts`](../../src/encounters/presentationModules.ts)),
-and the `core` layer last. Lookup stops at the first rule that returns something other than `pass`,
-so an encounter can override a core sound. Zuk's rules and gating decisions are in
+[`useAudioManager`](../../src/hooks/useAudioManager.ts) installs every encounter layer from
+`encounterAudioLayers()`, in manifest order (each declared as `audio: { layerName, rules }` in [`presentationModules.ts`](../../src/encounters/presentationModules.ts)),
+and the `core` layer last, so preloading covers every sound. Only the displayed encounter's layer and
+`core` dispatch: `useEventAudioScope` scopes the player from the same kind that chooses the displayed
+scene builder (a variant resolves to its parent's layer), and a change of displayed encounter drops
+the old scene's queued replay sounds. Lookup stops at the first rule that returns something other than
+`pass`, so an encounter can override a core sound, but never another encounter's. Zuk's rules and gating decisions are in
 [Zuk policy: presentation](../encounters/zuk-policy.md#presentation).
 
 Shape rules from the captures:

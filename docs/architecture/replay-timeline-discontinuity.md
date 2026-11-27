@@ -139,8 +139,10 @@ keep source eligibility and same-time chronological order. `restoreDeferredRepla
 restores primary and canonical base phase without updating historical meshes, excludes cues before
 spawn, holds destination movement constant, and starts a walking clip at the earlier of the first
 due cue or 50 client cycles after spawn. Corpses restore from their local `despawnTick` without
-stepping death animations. Reconstruction waits until every declared Inferno spot animation and
-preloaded NPC type reports `isLoaded` (not proof of usable geometry), retrying without latching.
+stepping death animations. In 3D, every encounter's replay presentation waits until each spot
+animation and NPC type its render config declares has settled (`SceneCompositor.encounterAssetState`:
+loaded or failed, which is not proof of usable geometry), retrying without latching; a 2D view never
+waits.
 
 **Limits.** These are canonical tick-origin reconstructions, not recordings of the render loop:
 original RAF arrival offsets, free-running idle/movement phase, full player locomotion backlog and

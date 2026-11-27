@@ -2132,7 +2132,7 @@ afterEach(() => {
 });
 
 describe('RenderViewport3D scene readiness', () => {
-  it('preserves the Jad healer death duration through viewport NPC preloading', async () => {
+  it('has the scene load every declared NPC type once, keeping the Jad healer death duration', async () => {
     const npcModelLoader = new NpcModelLoader(
       {
         load: () => {
@@ -2148,11 +2148,13 @@ describe('RenderViewport3D scene readiness', () => {
       },
     );
     const animationSystem = new AnimationSystem();
-    const loadNpcType = vi.fn<NonNullable<SceneBuilderLike['loadNpcType']>>(() => Promise.resolve());
+    const scene = createZukSceneBuilder({ encounterRenderConfig: INFERNO_RENDER_CONFIG });
+    if (!(scene instanceof InfernoSceneCompositor)) expect.fail('Expected Inferno compositor');
+    const loadNpcType = vi.spyOn(scene, 'loadNpcType').mockResolvedValue();
     const sceneBuilder: SceneBuilderLike = {
       ...makeSceneBuilder(),
-      isNpcTypeLoaded: () => false,
-      loadNpcType,
+      isNpcLoaded: () => scene.isNpcLoaded(),
+      loadNpc: (loader, animation) => scene.loadNpc(loader, animation),
     };
 
     render(
@@ -2164,7 +2166,6 @@ describe('RenderViewport3D scene readiness', () => {
         sceneBuilder={sceneBuilder}
         npcModelLoader={npcModelLoader}
         animationSystem={animationSystem}
-        encounterRenderConfig={INFERNO_RENDER_CONFIG}
       />,
     );
 
@@ -2175,6 +2176,9 @@ describe('RenderViewport3D scene readiness', () => {
       animationSystem,
       expect.objectContaining({ deathSeqId: 2638, deathDurationMs: 1800 }),
     );
+    const declared = INFERNO_RENDER_CONFIG.preloadNpcTypes?.map(({ npcTypeId }) => npcTypeId) ?? [];
+    expect(loadNpcType.mock.calls.map(([npcTypeId]) => npcTypeId)).toEqual(declared);
+    scene.dispose();
   });
 
   // The Inferno has no primary NPC, so its scene once reported its NPC "loaded" before `loadNpc`
@@ -2209,7 +2213,6 @@ describe('RenderViewport3D scene readiness', () => {
         animationSystem={animationSystem}
         playerModelLoader={{} as PlayerModelLoader}
         playerConfig={DEFAULT_PLAYER_CONFIG}
-        encounterRenderConfig={INFERNO_RENDER_CONFIG}
       />,
     );
 

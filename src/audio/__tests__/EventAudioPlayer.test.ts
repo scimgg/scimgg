@@ -20,6 +20,54 @@ describe('EventAudioPlayer', () => {
     return new EventAudioPlayer(mockAudioEngine as unknown as AudioEngine, ...layers);
   }
 
+  describe('setDispatchLayers', () => {
+    const died: GameEvent = { type: 'actor_died', eventId: 1, tick: 0, actorId: 'player' };
+    // Layer 0 silences deaths, as a rule for an event it does not own may; layers 1 and 2 play one.
+    const scoped = () =>
+      createPlayer(
+        { actor_died: { resolve: () => silent } },
+        { actor_died: { resolve: 1 } },
+        { actor_died: { resolve: 2 } },
+      );
+    const playedIds = () => mockAudioEngine.play.mock.calls.map(([id]) => id);
+
+    it('dispatches only through the named layers, in constructor order', () => {
+      const player = scoped();
+      player.setDispatchLayers(['test-layer-2', 'test-layer-1']);
+      player.onEvents([died], [31, 37]);
+
+      expect(playedIds()).toEqual([1]);
+    });
+
+    it("never lets a layer outside the scope swallow another layer's sound", () => {
+      const player = scoped();
+      player.onEvents([died], [31, 37]);
+      player.setDispatchLayers(['test-layer-2']);
+      player.onEvents([died], [31, 37]);
+      player.setDispatchLayers(null);
+      player.onEvents([died], [31, 37]);
+
+      // Every layer at first and again after null: layer 0 silences; scoped to layer 2, it plays.
+      expect(playedIds()).toEqual([2]);
+    });
+
+    it('still preloads every layer while scoped', () => {
+      const player = createPlayer({ actor_died: { resolve: 1 } }, { item_dropped: { resolve: 2, preloadIds: [3] } });
+      player.setDispatchLayers(['test-layer-0']);
+
+      expect(player.getAllSoundIds().sort()).toEqual([1, 2, 3]);
+    });
+
+    it('rejects a layer it was not built with, leaving the scope unchanged', () => {
+      const player = scoped();
+      player.setDispatchLayers(['test-layer-1']);
+
+      expect(() => player.setDispatchLayers(['test-layer-1', 'missing'])).toThrow('missing');
+      player.onEvents([died], [31, 37]);
+      expect(playedIds()).toEqual([1]);
+    });
+  });
+
   describe('onEvents', () => {
     it('plays a static sound for a matching event', () => {
       const player = createPlayer({

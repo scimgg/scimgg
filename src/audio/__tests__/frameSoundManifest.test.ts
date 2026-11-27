@@ -2,7 +2,7 @@ import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { SPECIAL_ATTACK_REGISTRY } from '../../core/combat/player/specialAttacks/registry';
 import { PLAYER_ANIMATION_SEQ_IDS } from '../../data/weaponAnimations';
 import { HANDWRITTEN_WEAPON_COMBAT_VISUALS } from '../../data/weaponCombatVisuals';
-import { collectDeclaredNpcSeqIds } from '../../encounters/declaredNpcSeqIds';
+import { collectDeclaredNpcSeqIds, collectDeclaredSpotAnimIds } from '../../encounters/declaredNpcSeqIds';
 import type { ReplayEffectSourceFrame } from '../../render/core/replayEffectContext';
 import { PlayerGraphicController } from '../../render/effects/controllers/PlayerGraphicController';
 import { describePlayerEffects } from '../../render/effects/playerEffectDescriptors';
@@ -56,6 +56,17 @@ describe('FRAME_SOUND_IDS', () => {
     const unchecked = [...collectDeclaredNpcSeqIds()]
       .filter(([seqId]) => !checked.has(seqId))
       .map(([seqId, label]) => `${seqId} (${label})`);
+
+    expect(unchecked, 'run `npx tsx scripts/extract-frame-sounds.ts`').toEqual([]);
+  });
+
+  // An encounter effect's sequence carries frame sounds as an NPC clip does, and most encounter
+  // effects are not `SpotAnimID` members, so the extraction has to walk the render configs' list.
+  it('was extracted after every spotanim the encounter render configs declare', () => {
+    const checked = new Set(extractedFrameSounds.checkedSpotAnimIds);
+    const unchecked = [...collectDeclaredSpotAnimIds()]
+      .filter(([spotAnimId]) => !checked.has(spotAnimId))
+      .map(([spotAnimId, label]) => `${spotAnimId} (${label})`);
 
     expect(unchecked, 'run `npx tsx scripts/extract-frame-sounds.ts`').toEqual([]);
   });

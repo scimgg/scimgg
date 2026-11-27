@@ -1,16 +1,11 @@
-import type { FrameSoundTracker } from '../../audio';
 import { isYamaSnapshot } from '../../core/encounters/snapshot';
 import type { GameEvent } from '../../core/events/types';
 import { getFireballDangerTiles } from '../../encounters/yamaP3/fireball';
 import { YAMA_ENCOUNTER_RENDER_CONFIG } from '../../encounters/yamaP3/renderConfig';
 import type { WaveConfig } from '../../encounters/yamaP3/waves';
-import type { NpcModelLoader } from '../../rs/model/NpcModelLoader';
 import type { SpotAnimModelLoader } from '../../rs/model/SpotAnimModelLoader';
 import { packHsl } from '../../rs/util/ColorUtil';
 import type { Coordinate, DamageHistoryEntry, SimulationState } from '../../types/simulation';
-import { log } from '../../util/Logger';
-import { profiler } from '../../util/Profiler';
-import type { AnimationSystem } from '../core/animation';
 import type { Projection2D, Viewport } from '../core/camera';
 import type { FillStyle, RenderQueue } from '../core/commands';
 import { describeYamaPrimaries } from '../core/replayPrimaryCues';
@@ -55,7 +50,6 @@ export class YamaSceneCompositor extends SceneCompositor {
   private attackController = new YamaAttackController();
   private fireballController = new FireballController();
   private voidFlareController = new VoidFlareController();
-  private frameSoundTracker: FrameSoundTracker | null = null;
   private yamaAttackOutlineIsMagic = false;
   private yamaAttackOutlineEndTick: number | undefined = undefined;
   private _fadedDamageEntries = new Set<DamageHistoryEntry>();
@@ -87,9 +81,6 @@ export class YamaSceneCompositor extends SceneCompositor {
       this.yamaAttackOutlineEndTick = undefined;
       this.yamaAttackOutlineIsMagic = false;
     });
-    this.registerTransientReset('yama-frame-audio', () => {
-      this.frameSoundTracker?.reset();
-    });
   }
 
   override dispose(): void {
@@ -98,40 +89,15 @@ export class YamaSceneCompositor extends SceneCompositor {
     this.fireballController.clearActive(this.spotAnimRenderer);
     this.voidFlareController.clearActive(this.spotAnimRenderer);
     super.dispose();
-    this.frameSoundTracker = null;
     this._fadedDamageEntries.clear();
     this._fadedDamageHistoryLen = 0;
     this.yamaAttackOutlineEndTick = undefined;
   }
 
-  setFrameSoundTracker(tracker: FrameSoundTracker | null): void {
-    this.frameSoundTracker = tracker;
-  }
-
   override build(ctx: RenderContext, projection: Projection2D, viewport: Viewport): RenderQueue {
     const snapshot = ctx.simulationState.encounter;
     this.cachedWaveConfig = isYamaSnapshot(snapshot) ? snapshot.state.waveConfig : undefined;
-    const queue = super.build(ctx, projection, viewport);
-    if (this.frameSoundTracker) {
-      const paused = ctx.timeline?.paused ?? ctx.replayPaused ?? false;
-      // Silent-sync (advance state without playing) on any discontinuity or while
-      // paused, so a seek/scrub/jump never replays stale frame sounds.
-      if (this.lastDiscontinuityReason !== null || this.reconstructedVisuals || paused) {
-        this.frameSoundTracker.silentSync(this.collectActorFrameStates());
-      } else {
-        this.frameSoundTracker.update(this.collectActorFrameStates(), this.getFrameSoundListenerPosition());
-      }
-    }
-    return queue;
-  }
-
-  override async loadNpcType(
-    npcTypeId: number,
-    npcModelLoader: NpcModelLoader,
-    animSystem?: AnimationSystem,
-    config?: import('../npc/NpcInstanceManager').NpcTypeLoadConfig,
-  ): Promise<void> {
-    await this.npcInstanceManager.loadNpcType(npcTypeId, npcModelLoader, animSystem, config);
+    return super.build(ctx, projection, viewport);
   }
 
   protected override onEncounterEvents(events: GameEvent[], ctx: RenderContext): void {
@@ -345,38 +311,6 @@ export class YamaSceneCompositor extends SceneCompositor {
     return this.isWaveSpotAnimsLoaded();
   }
 
-  protected override async loadEncounterNpc(
-    npcModelLoader: NpcModelLoader,
-    animSystem?: AnimationSystem,
-  ): Promise<void> {
-    const primaryNpc = this.getPrimaryNpcRenderConfig();
-    const primaryNpcTypeConfig = this.encounterRenderConfig?.preloadNpcTypes?.find(
-      (config) => config.npcTypeId === primaryNpc.npcTypeId,
-    );
-    if (this.npcInstanceManager.isNpcTypeLoaded(primaryNpc.npcTypeId)) {
-      return;
-    }
-
-    profiler.start('YamaSceneBuilder.loadNpc');
-    try {
-      await this.loadNpcType(primaryNpc.npcTypeId, npcModelLoader, animSystem, {
-        ...this.getPrimaryNpcDeathLoadConfig(primaryNpc),
-        attackClips: primaryNpcTypeConfig?.attackClips,
-        depthBias: primaryNpcTypeConfig?.depthBias,
-      });
-      log.info('SceneBuilder', 'Yama NPC mesh loaded successfully');
-      profiler.end('YamaSceneBuilder.loadNpc');
-    } catch (error) {
-      profiler.end('YamaSceneBuilder.loadNpc');
-      log.error('SceneBuilder', 'Failed to load Yama NPC mesh', error);
-      throw error;
-    }
-  }
-
-  protected override isEncounterNpcLoaded(): boolean {
-    return this.npcInstanceManager.isNpcTypeLoaded(this.getPrimaryNpcRenderConfig().npcTypeId);
-  }
-
   private async loadWaveSpotAnims(spotAnimModelLoader: SpotAnimModelLoader): Promise<void> {
     this.spotAnimModelLoader = spotAnimModelLoader;
     this.spotAnimRenderer.preload(spotAnimModelLoader, WAVE_PRELOAD_IDS);
@@ -385,10 +319,6 @@ export class YamaSceneCompositor extends SceneCompositor {
 
   private getPrimaryNpcRenderConfig(): NpcRenderConfig {
     return this.encounterRenderConfig?.primaryNpc ?? YAMA_ENCOUNTER_RENDER_CONFIG.primaryNpc!;
-  }
-
-  protected getEffectivePrimaryNpcRenderConfig(): NpcRenderConfig {
-    return this.getPrimaryNpcRenderConfig();
   }
 
   private isWaveSpotAnimsLoaded(): boolean {

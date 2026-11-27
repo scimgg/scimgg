@@ -282,8 +282,8 @@ describe('encounter registration invariants', () => {
   });
 
   it('keeps only registered encounter audio layers (core is appended by the player)', () => {
-    // EventAudioPlayer stops at the first non-pass rule, so layer precedence must remain stable.
-    // The event types the layers answer are disjoint, so the Inferno's moving after Sol changes no sound.
+    // Only the displayed encounter's layer dispatches (`eventAudioLayersFor`), so this order is install
+    // and preload order, not precedence between encounters.
     expect(encounterAudioLayers().map((layer) => layer.name)).toEqual(['yama', 'solHeredit', 'inferno']);
   });
 

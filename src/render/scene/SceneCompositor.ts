@@ -1,4 +1,4 @@
-import type { ActorFrameState, EventAudioPlayer } from '../../audio';
+import type { ActorFrameState, EventAudioPlayer, FrameSoundTracker } from '../../audio';
 import type { LocWithType } from '../../cache/CacheManager';
 import { getSpecialAttackDef } from '../../core/combat/player/specialAttacks/registry';
 import { GRID_SIZE, getArenaBounds, getWalkableTiles } from '../../core/constants';
@@ -95,7 +95,12 @@ import {
   SceneObjectRenderer,
 } from '../graphics/SceneObjectRenderer';
 import type { FightStartCountdownPhase, SceneObjectController } from '../graphics/sceneObjectTypes';
-import { NpcInstanceManager, type NpcOverlayHeights, PRIMARY_NPC_ACTOR_ID } from '../npc/NpcInstanceManager';
+import {
+  NpcInstanceManager,
+  type NpcOverlayHeights,
+  type NpcTypeLoadConfig,
+  PRIMARY_NPC_ACTOR_ID,
+} from '../npc/NpcInstanceManager';
 import { UIOverlayRenderer } from '../overlay/UIOverlayRenderer';
 import { type PlayerAnimatedMeshPair, PlayerAnimationController } from '../player/PlayerAnimationController';
 import type { PlayerAnimationSet, PlayerAnimModelAdapter } from '../player/playerAnimationTypes';
@@ -322,6 +327,9 @@ class PlayerModelAdapter implements PlayerAnimModelAdapter {
   }
 }
 
+/** Whether an encounter's declared assets are still loading, settled with some unusable, or all drawable. */
+export type EncounterAssetState = 'pending' | 'unavailable' | 'ready';
+
 export class SceneCompositor {
   private cachedTerrainMeshes: TerrainMesh3DCommand[] = [];
   /** The terrain load in flight; a repeated request joins it instead of reporting it done. */
@@ -444,6 +452,10 @@ export class SceneCompositor {
    * the clock starts. Only encounters that animate by absolute cycle use it; see `advanceNpcAnimationClock`.
    */
   protected npcAnimationCycle: number | null = null;
+  /**
+   * Whether this frame rebuilt presentation rather than advancing it. Frame audio then syncs silently,
+   * so a seek, restore or late asset load never plays a rebuilt clip's sounds as new.
+   */
   protected reconstructedVisuals = false;
   private previousEffectCycle: number | undefined;
   private previousEffectFrame: number | undefined;
@@ -466,6 +478,7 @@ export class SceneCompositor {
   private uiOverlayRenderer = new UIOverlayRenderer();
   protected spotAnimModelLoader: SpotAnimModelLoader | null = null;
   private eventAudioPlayer: EventAudioPlayer | null = null;
+  private frameSoundTracker: FrameSoundTracker | null = null;
   private _disposed = false;
   private reusableQueue: RenderQueue | null = null;
 
@@ -483,6 +496,7 @@ export class SceneCompositor {
     // a seek — registration IS participation.
     this.registerTransientReset('base-encounter-visuals', (reason) => this.clearEncounterVisuals(reason));
     this.registerTransientReset('event-audio', () => this.eventAudioPlayer?.reset());
+    this.registerTransientReset('frame-audio', () => this.frameSoundTracker?.reset());
     this.registerTransientReset('npc-animation-clock', () => {
       this.npcAnimationCycle = null;
     });
@@ -768,7 +782,7 @@ export class SceneCompositor {
     npcTypeId: number,
     npcModelLoader: NpcModelLoader,
     animSystem?: AnimationSystem,
-    config?: import('../npc/NpcInstanceManager').NpcTypeLoadConfig,
+    config?: NpcTypeLoadConfig,
   ): Promise<void> {
     if (this._disposed) return;
     this.pendingNpcTypeLoadAttempts.set(npcTypeId, (this.pendingNpcTypeLoadAttempts.get(npcTypeId) ?? 0) + 1);
@@ -789,11 +803,9 @@ export class SceneCompositor {
     return this.npcInstanceManager.isNpcTypeLoaded(npcTypeId);
   }
 
-  protected isNpcTypeLoadSettled(npcTypeId: number): boolean {
-    return (
-      this.isNpcTypeLoaded(npcTypeId) ||
-      (!this.pendingNpcTypeLoadAttempts.has(npcTypeId) && this.failedNpcTypeLoadAttempts.has(npcTypeId))
-    );
+  /** Whether `npcTypeId`'s last load failed and no retry is in flight: settled, with nothing to draw. */
+  private isNpcTypeLoadFailed(npcTypeId: number): boolean {
+    return !this.pendingNpcTypeLoadAttempts.has(npcTypeId) && this.failedNpcTypeLoadAttempts.has(npcTypeId);
   }
 
   async loadPlayer(
@@ -1160,6 +1172,11 @@ export class SceneCompositor {
     this.eventAudioPlayer = player;
   }
 
+  /** Plays the sounds embedded in the frames of every drawn clip and spot animation, once per frame. */
+  setFrameSoundTracker(tracker: FrameSoundTracker | null): void {
+    this.frameSoundTracker = tracker;
+  }
+
   /** Sync NPC instances for rendering. Default: sync as-is. Override to remap IDs. */
   protected syncNpcInstances(
     npcs: NpcSnapshot[],
@@ -1312,21 +1329,60 @@ export class SceneCompositor {
     return (this.encounterRenderConfig?.spotAnimIds ?? []).every((id) => this.spotAnimRenderer.isLoaded(id));
   }
 
+  /**
+   * Loads every NPC type the render config declares, once each: the primary NPC with its preload
+   * entry's clips and its death settings, and every other `preloadNpcTypes` entry as declared. A type
+   * that fails to load is settled but unusable and does not stop the others; only the primary's
+   * failure rejects, since the scene cannot be ready without it.
+   */
   protected async loadEncounterNpc(npcModelLoader: NpcModelLoader, animSystem?: AnimationSystem): Promise<void> {
-    const primaryNpc = this.encounterRenderConfig?.primaryNpc;
-    if (!primaryNpc || this.isNpcTypeLoaded(primaryNpc.npcTypeId)) return;
-    const preload = this.encounterRenderConfig?.preloadNpcTypes?.find(
-      (type) => type.npcTypeId === primaryNpc.npcTypeId,
-    );
-    await this.loadNpcType(primaryNpc.npcTypeId, npcModelLoader, animSystem, {
-      ...preload,
-      ...this.getPrimaryNpcDeathLoadConfig(),
-    });
+    const primaryNpcTypeId = this.encounterRenderConfig?.primaryNpc?.npcTypeId;
+    const pending = [...this.declaredNpcTypeConfigs()]
+      .filter(([npcTypeId]) => !this.isNpcTypeLoaded(npcTypeId))
+      .map(async ([npcTypeId, config]) => {
+        try {
+          await this.loadNpcType(npcTypeId, npcModelLoader, animSystem, config);
+        } catch (error) {
+          if (npcTypeId === primaryNpcTypeId) throw error;
+          log.error('SceneBuilder', `Failed to load encounter NPC type ${npcTypeId}`, error);
+        }
+      });
+    await Promise.all(pending);
   }
 
-  protected getPrimaryNpcDeathLoadConfig(
-    primaryNpc = this.encounterRenderConfig?.primaryNpc,
-  ): import('../npc/NpcInstanceManager').NpcTypeLoadConfig {
+  /** Each NPC type the render config declares, with the settings it loads with. */
+  private declaredNpcTypeConfigs(): Map<number, NpcTypeLoadConfig> {
+    const config = this.encounterRenderConfig;
+    const types = new Map<number, NpcTypeLoadConfig>();
+    const primaryNpc = config?.primaryNpc;
+    if (primaryNpc) {
+      const preload = config.preloadNpcTypes?.find((type) => type.npcTypeId === primaryNpc.npcTypeId);
+      types.set(primaryNpc.npcTypeId, { ...preload, ...this.getPrimaryNpcDeathLoadConfig() });
+    }
+    for (const type of config?.preloadNpcTypes ?? []) {
+      if (!types.has(type.npcTypeId)) types.set(type.npcTypeId, type);
+    }
+    return types;
+  }
+
+  /**
+   * Whether the encounter's declared assets can be drawn: `pending` while any NPC type or effect is
+   * still loading or not yet requested, `unavailable` once all have settled but some could not be
+   * loaded (a failed NPC model, an effect the cache could not supply), else `ready`.
+   */
+  protected encounterAssetState(): EncounterAssetState {
+    const npcTypeIds = [...this.declaredNpcTypeConfigs().keys()];
+    const npcTypePending = npcTypeIds.some(
+      (npcTypeId) => !this.isNpcTypeLoaded(npcTypeId) && !this.isNpcTypeLoadFailed(npcTypeId),
+    );
+    if (npcTypePending || !this.isEncounterSpotAnimsLoaded()) return 'pending';
+    const unavailable =
+      npcTypeIds.some((npcTypeId) => !this.isNpcTypeLoaded(npcTypeId)) ||
+      (this.encounterRenderConfig?.spotAnimIds ?? []).some((id) => !this.spotAnimRenderer.isUsable(id));
+    return unavailable ? 'unavailable' : 'ready';
+  }
+
+  protected getPrimaryNpcDeathLoadConfig(primaryNpc = this.encounterRenderConfig?.primaryNpc): NpcTypeLoadConfig {
     if (!primaryNpc) return {};
     return {
       deathSeqId: primaryNpc.deathSeqId,
@@ -1337,6 +1393,10 @@ export class SceneCompositor {
     };
   }
 
+  /**
+   * Whether the scene's NPC load is done: the primary NPC, if any, is drawable. The other declared
+   * types load in the same `loadNpc` call; a replay waits for them through `encounterAssetState`.
+   */
   protected isEncounterNpcLoaded(): boolean {
     const primaryNpc = this.encounterRenderConfig?.primaryNpc;
     return primaryNpc === undefined || this.isNpcTypeLoaded(primaryNpc.npcTypeId);
@@ -1548,6 +1608,7 @@ export class SceneCompositor {
     this.playerAnimationSystem = null;
     this.spotAnimModelLoader = null;
     this.eventAudioPlayer = null;
+    this.frameSoundTracker = null;
     this.projectileTargetId = null;
     this.lastProcessedEventId = -1;
     this.lastPlayedAudioEventId = -1;
@@ -1751,6 +1812,7 @@ export class SceneCompositor {
     this.replayThroughFrameIndex = ctx.replayHistory?.throughFrameIndex;
     try {
       const queue = this.buildScene(ctx, projection, viewport);
+      this.updateFrameAudio(ctx.timeline?.paused ?? ctx.replayPaused ?? false);
       // Decided before recording the restoration, so it is retried until encounter assets settle.
       if (ctx.replayHistory && !this.isEncounterReplayPresentationReady(ctx)) queue.replayPresentationReady = false;
       if (restoration && initializeRestoration) {
@@ -1764,9 +1826,25 @@ export class SceneCompositor {
     }
   }
 
-  /** Whether the encounter could reconstruct this history frame; called only for history contexts. */
-  protected isEncounterReplayPresentationReady(_context: RenderContext): boolean {
-    return true;
+  /**
+   * Plays the frame sounds this frame's final poses reached. A paused, discontinuous or rebuilt frame
+   * only syncs the tracker, so a seek, scrub or restore never replays stale frame sounds.
+   */
+  private updateFrameAudio(paused: boolean): void {
+    if (!this.frameSoundTracker || this._disposed) return;
+    const actors = this.collectActorFrameStates();
+    if (paused || this.lastDiscontinuityReason !== null || this.reconstructedVisuals) {
+      this.frameSoundTracker.silentSync(actors);
+    } else this.frameSoundTracker.update(actors, this.getFrameSoundListenerPosition());
+  }
+
+  /**
+   * Whether the encounter could reconstruct this history frame; called only for history contexts. A 2D
+   * view draws no models or effects, so it never waits; a 3D one waits until every declared asset has
+   * settled, usable or not.
+   */
+  protected isEncounterReplayPresentationReady(context: RenderContext): boolean {
+    return context.options.renderMode !== '3d' || this.encounterAssetState() !== 'pending';
   }
 
   private buildScene(ctx: RenderContext, projection: Projection2D, viewport: Viewport): RenderQueue {

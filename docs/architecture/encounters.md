@@ -94,15 +94,17 @@ Every other declaration is a checked projection of the catalog:
 - [`modules.ts`](../../src/encounters/modules.ts): node-safe runtime manifest (factory, descriptor,
   `variantFactories`, controls, intro). It must stay free of render/UI imports: its node consumers
   would otherwise pull picogl, which needs a browser global.
-- [`presentationModules.ts`](../../src/encounters/presentationModules.ts): scene builder, render
-  config, opening camera, audio layer, picker art.
+- [`presentationModules.ts`](../../src/encounters/presentationModules.ts): render config, opening
+  camera, audio layer, picker art, and a scene builder only when the encounter needs its own; without
+  one it gets the common `SceneCompositor`, which loads every NPC type and effect the render config
+  declares and holds a 3D replay frame until they settle.
 - [`registry.ts`](../../src/encounters/registry.ts): owns the populated `encounterRegistry`, so
   `src/core` keeps only the `EncounterRegistry` class and never imports a concrete encounter.
 - [`slugs.ts`](../../src/encounters/slugs.ts) derives routes; `registered: false` withholds an entry
   from routing.
 
 [`encounterModules.test.ts`](../../src/encounters/__tests__/encounterModules.test.ts) pins catalog,
-registry, presentation, slug and lobby agreement, audio layer precedence, opening cameras, and an
+registry, presentation, slug and lobby agreement, audio layer order, opening cameras, and an
 import boundary: no `src/core` runtime import from `src/encounters` (the pure catalog excepted),
 `src/render` or `src/components`.
 

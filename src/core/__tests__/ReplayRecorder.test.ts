@@ -2719,6 +2719,22 @@ describe('ReplayRecorder legacy encounter recordings', () => {
     ]);
   });
 
+  // Read-time conversion may change what `exportData` writes, but a second load must change nothing.
+  it.each([
+    ['Inferno', legacyInfernoRecording],
+    ['Sol Heredit', legacySolRecording],
+    ['Yama', legacyYamaRecording],
+  ] as const)('publishes the same %s frames when its loaded recording is exported and loaded again', (_, record) => {
+    const first = new ReplayRecorder();
+    first.load(record().data);
+    const exported = first.exportData();
+    const again = new ReplayRecorder();
+    again.load(structuredClone(exported));
+
+    expect(again.getDisplayFrames()).toEqual(first.getDisplayFrames());
+    expect(again.exportData().frames).toEqual(exported.frames);
+  });
+
   it("leaves Yama's semantic events and attack snapshot exactly as recorded", () => {
     const { frames } = legacyYamaRecording();
 

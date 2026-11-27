@@ -1,15 +1,12 @@
-import type { FrameSoundTracker } from '../../audio/FrameSoundTracker';
 import { zukWaveState } from '../../core/encounters/snapshot';
 import { type GameEvent, isCoreEvent } from '../../core/events/types';
 import type { ReplayDisplayFrame } from '../../core/ReplayRecorder';
 import { type ZukIntroCameraPoint, zukIntroAddTick, zukIntroCutsceneFrame } from '../../encounters/zuk/introCutscene';
 import { zukTargetsPlayer } from '../../encounters/zuk/targeting';
 import { ZUK_NPC_ID } from '../../npcs/inferno/constants';
-import type { NpcModelLoader } from '../../rs/model/NpcModelLoader';
 import { rgbToHsl } from '../../rs/util/ColorUtil';
 import { type Coordinate, type NpcSnapshot, OSRS_TICK_MS, type SimulationState } from '../../types/simulation';
 import { DEFAULT_TILE_MARKER_WIDTH } from '../../types/tileMarkers';
-import type { AnimationSystem } from '../core/animation';
 import type { Projection2D, Viewport } from '../core/camera';
 import type { RenderQueue } from '../core/commands';
 import { rgbaFromHex } from '../core/types';
@@ -36,7 +33,6 @@ function isClearMinionsEvent(
 
 export class InfernoSceneCompositor extends SceneCompositor {
   private readonly visuals = new InfernoVisualController(this.spotAnimRenderer);
-  private frameSoundTracker: FrameSoundTracker | null = null;
   private replayHistory: readonly ReplayDisplayFrame[] | undefined;
   private reconstructedHistory = false;
 
@@ -46,13 +42,6 @@ export class InfernoSceneCompositor extends SceneCompositor {
       this.visuals.clear();
       this.replayHistory = undefined;
     });
-    this.registerTransientReset('inferno-frame-audio', () => {
-      this.frameSoundTracker?.reset();
-    });
-  }
-
-  setFrameSoundTracker(tracker: FrameSoundTracker | null): void {
-    this.frameSoundTracker = tracker;
   }
 
   /** Wave 69's intro after wave 68: its fade and scripted camera (`zukIntroCutsceneFrame`). */
@@ -74,23 +63,7 @@ export class InfernoSceneCompositor extends SceneCompositor {
 
   override build(ctx: RenderContext, projection: Projection2D, viewport: Viewport): RenderQueue {
     this.reconstructedHistory = false;
-    const history = ctx.replayHistory?.frames;
-    const queue = super.build(ctx, projection, viewport);
-    if (this.frameSoundTracker) {
-      const paused = ctx.timeline?.paused ?? ctx.replayPaused ?? false;
-      if (
-        this.reconstructedHistory ||
-        this.reconstructedVisuals ||
-        history !== this.replayHistory ||
-        this.lastDiscontinuityReason !== null ||
-        paused
-      ) {
-        this.frameSoundTracker.silentSync(this.collectActorFrameStates());
-      } else {
-        this.frameSoundTracker.update(this.collectActorFrameStates(), this.getFrameSoundListenerPosition());
-      }
-    }
-    return queue;
+    return super.build(ctx, projection, viewport);
   }
 
   protected override renderEncounterDebugOverlays(
@@ -175,9 +148,13 @@ export class InfernoSceneCompositor extends SceneCompositor {
     }
     const history = ctx.replayHistory;
     if (history) {
+      // Neither a frame held for assets nor one initializing a restored presentation advances the
+      // fight, so its clips' frame sounds must not play as new.
+      if (ctx.restoredPresentation) this.reconstructedVisuals = true;
       if (!this.isReplayReconstructionSettled()) {
         if (this.replayHistory) this.visuals.clear();
         this.replayHistory = undefined;
+        this.reconstructedVisuals = true;
         return;
       }
       const frame = {
@@ -191,6 +168,7 @@ export class InfernoSceneCompositor extends SceneCompositor {
         // Rebuilt actors restart the clock at the destination; skipped history is not replayed.
         this.npcAnimationCycle = null;
         this.reconstructedHistory = true;
+        this.reconstructedVisuals = true;
       } else this.visuals.syncReplay(history, frame, this.replayEffectIndex);
     } else {
       this.visuals.consumeEvents(events);
@@ -232,22 +210,8 @@ export class InfernoSceneCompositor extends SceneCompositor {
     }
   }
 
-  protected override isEncounterReplayPresentationReady(ctx: RenderContext): boolean {
-    return ctx.options.renderMode !== '3d' || this.isReplayReconstructionSettled();
-  }
-
   private isReplayReconstructionSettled(): boolean {
-    return (
-      this.isEncounterSpotAnimsLoaded() &&
-      (this.encounterRenderConfig?.preloadNpcTypes ?? []).every(({ npcTypeId }) => this.isNpcTypeLoadSettled(npcTypeId))
-    );
-  }
-
-  protected override async loadEncounterNpc(loader: NpcModelLoader, animation?: AnimationSystem): Promise<void> {
-    await super.loadEncounterNpc(loader, animation);
-    for (const type of this.encounterRenderConfig?.preloadNpcTypes ?? []) {
-      await this.loadNpcType(type.npcTypeId, loader, animation, type);
-    }
+    return this.encounterAssetState() !== 'pending';
   }
 
   protected override getNpcVisualDeltaMs(): number {
@@ -352,6 +316,5 @@ export class InfernoSceneCompositor extends SceneCompositor {
   override dispose(): void {
     this.visuals.dispose();
     super.dispose();
-    this.frameSoundTracker = null;
   }
 }
