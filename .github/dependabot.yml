@@ -17,6 +17,10 @@ updates:
     # Skip releases younger than a week, the usual window in which a compromised one is pulled.
     cooldown:
       default-days: 7
+    # Locked at 0.3.0: public/bzip2.wasm and public/bzip2-module.js are byte-for-byte copies of its
+    # build, which a test checks. Changing it takes a deliberate change to both.
+    ignore:
+      - dependency-name: "@foxglove/wasm-bz2"
     groups:
       npm-minor-and-patch:
         update-types: [minor, patch]
