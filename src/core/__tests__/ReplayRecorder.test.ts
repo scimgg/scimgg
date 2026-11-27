@@ -38,7 +38,9 @@ import { BackgroundClock } from '../../util/BackgroundClock';
 import type { GameFrameRect } from '../../util/viewportBounds';
 import type { ActorId } from '../actors/types';
 import { isYamaSnapshot } from '../encounters/snapshot';
+import { isActorPresentationsRemovedEvent, isEncounterVisualEvent } from '../events/encounterVisual';
 import type { GameEvent } from '../events/types';
+import { LegacyReplayEventError } from '../legacyReplayEvents';
 import {
   DEFAULT_REPLAY_UI_STATE,
   modifierMaskAt,
@@ -2743,5 +2745,75 @@ describe('ReplayRecorder legacy encounter recordings', () => {
     const melee = frames[LEGACY_YAMA.meleeTick]?.state.encounter;
     if (!melee || !isYamaSnapshot(melee)) expect.fail('Expected a Yama snapshot');
     expect([melee.state.lastAttackTick, melee.state.lastAttackKind]).toEqual([LEGACY_YAMA.meleeTick, 'melee_crush']);
+  });
+});
+
+describe('ReplayRecorder reading older encounter event shapes', () => {
+  it('reads each inferno_visual batch as the same encounter_visual batch, and a type clear as a presentation removal', () => {
+    const { data, frames } = legacyInfernoRecording();
+    const renamed: Record<string, string> = {
+      inferno_visual: 'encounter_visual',
+      inferno_clear_minions: 'actor_presentations_removed',
+    };
+
+    // Frame by frame and in order: ids, ticks, ordinals, delays and heights all as written.
+    expect(frames.map(({ events }) => events)).toEqual(
+      data.frames.map(({ events }) => events.map((event) => ({ ...event, type: renamed[event.type] }))),
+    );
+    const read = frames.flatMap(({ events }) => events);
+    expect(read.filter(isEncounterVisualEvent).map(({ eventId }) => eventId)).toEqual([
+      LEGACY_INFERNO_EVENTS.delayedClip.eventId,
+      LEGACY_INFERNO_EVENTS.zukRise.eventId,
+      LEGACY_INFERNO_EVENTS.barrage.eventId,
+    ]);
+    expect(read.filter(isActorPresentationsRemovedEvent)).toEqual([
+      { type: 'actor_presentations_removed', eventId: 81, tick: 8, npcTypeIds: [7701] },
+    ]);
+  });
+
+  it('passes events of every other shape through as written', () => {
+    for (const record of [legacySolRecording, legacyYamaRecording]) {
+      const { data, frames } = record();
+      expect(frames.map(({ events }) => events)).toEqual(data.frames.map(({ events }) => events));
+    }
+  });
+
+  it.each([
+    [
+      'inferno_visual graphic without a height',
+      (event: GameEvent): GameEvent =>
+        event.type === 'inferno_visual' && Array.isArray(event.graphics) && event.graphics.length > 0
+          ? { ...event, graphics: [{ ...event.graphics[0], height: undefined }] }
+          : event,
+    ],
+    [
+      'inferno_visual flight that lands before it launches',
+      (event: GameEvent): GameEvent =>
+        event.type === 'inferno_visual' && Array.isArray(event.projectiles) && event.projectiles.length > 0
+          ? { ...event, projectiles: [{ ...event.projectiles[0], startDelayCycles: 80 }] }
+          : event,
+    ],
+    [
+      'inferno_clear_minions with a non-integer type',
+      (event: GameEvent): GameEvent =>
+        event.type === 'inferno_clear_minions' ? { ...event, npcTypeIds: [7701, '7702'] } : event,
+    ],
+  ] as const)('refuses a recording with a malformed %s, installing none of it', (_, corrupt) => {
+    const recorder = new ReplayRecorder();
+    recorder.load(legacyYamaRecording().data);
+    const installed = recorder.getDisplayFrames();
+    const { data } = legacyInfernoRecording();
+    const malformed = {
+      ...data,
+      frames: data.frames.map((frame) => ({
+        ...frame,
+        events: frame.events.map(corrupt),
+      })),
+    };
+    const written = structuredClone(malformed);
+
+    expect(() => recorder.load(malformed)).toThrow(LegacyReplayEventError);
+    expect(recorder.getDisplayFrames()).toEqual(installed);
+    expect(malformed).toEqual(written);
   });
 });

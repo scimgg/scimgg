@@ -6,7 +6,7 @@
 import type { LocWithType } from '../../../cache/CacheManager';
 import { SOL_MAP_X, SOL_MAP_Y } from '../../../encounters/solHeredit/constants';
 import { COLOSSEUM_SPOT_ANIM_IDS } from '../../../npcs/colosseum/visualEvents';
-import { INFERNO_SPOT_ANIM_IDS } from '../../../npcs/inferno/visualEvents';
+import { INFERNO_SPOT_ANIM_IDS } from '../../../npcs/inferno/constants';
 import { AnimationSystem } from '../../../render/backends/picogl/AnimationSystem';
 import { FIREBALL_PRELOAD_IDS } from '../../../render/effects/controllers/FireballController';
 import { PLAYER_GRAPHIC_PRELOAD_IDS } from '../../../render/effects/controllers/PlayerGraphicController';

@@ -3,15 +3,16 @@ import type { PlayerActor } from '../../core/actors/PlayerActor';
 import { calculateProjectileEndTime } from '../../core/combat/hitDelay';
 import { projectileDistance } from '../../core/combat/npcAttackRequest';
 import { getCollisionMap } from '../../core/constants';
+import type { NpcProjectileCue } from '../../core/events/encounterVisual';
+import { emitEncounterVisual } from '../../core/events/encounterVisual';
 import { isArenaFootprintWalkable } from '../../core/npcMovementCollision';
 import type { NpcDefinitionContext } from '../../core/npcs';
 import { CollisionFlag } from '../../rs/collision/CollisionFlag';
 import type { Coordinate } from '../../types/simulation';
-import { actorVisualTarget, type NpcProjectileCue, npcProjectileSource } from '../projectileCue';
+import { actorVisualTarget, npcProjectileSource } from '../projectileCue';
 import { faceInfernoAction } from './demonstrations';
 import { emitZukAttack, type ZukAttackKind } from './events';
 import type { InfernoWaveProjectile } from './projectileProfiles';
-import { emitInfernoVisual } from './visualEvents';
 
 const BLOCKING_FLAGS = CollisionFlag.OBJECT | CollisionFlag.FLOOR_BLOCKED;
 
@@ -53,7 +54,7 @@ export function emitInfernoWaveAttack(
 ): void {
   const { actor, target, projectiles = [] } = attack;
   faceInfernoAction(actor, target);
-  emitInfernoVisual(context.tickEvents, {
+  emitEncounterVisual(context.tickEvents, {
     animations: [{ actorId: actor.id, clipId: attack.clipId, delayCycles: 0 }],
     projectiles,
     graphics: [],

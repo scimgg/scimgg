@@ -1,17 +1,49 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { setArenaConfig, setDefaultArenaConfig } from '../../../../core/constants';
-import type { ReplayDisplayFrame } from '../../../../core/ReplayRecorder';
-import { SimulationEngine } from '../../../../core/SimulationEngine';
-import { type InfernoVisualEvent, isInfernoVisualEvent } from '../../../../npcs/inferno/visualEvents';
-import type { NpcProjectileCue } from '../../../../npcs/projectileCue';
-import { createZukWaveEncounter } from '../../../../test/helpers/zukWave';
-import type { Coordinate } from '../../../../types/simulation';
-import type { RenderQueue } from '../../../core/commands';
-import { makeSnapshot } from '../../../npc/__tests__/npcFacingTestHarness';
-import { advanceProjectileMotion } from '../../projectileMotion';
-import { SpotAnimRenderer } from '../../SpotAnimRenderer';
-import { InfernoVisualController } from '../InfernoVisualController';
-import type { SurfaceHeightResolver } from '../ProjectileController';
+import { setArenaConfig, setDefaultArenaConfig } from '../../../core/constants';
+import {
+  type EncounterVisualEvent,
+  isEncounterVisualEvent,
+  type NpcProjectileCue,
+} from '../../../core/events/encounterVisual';
+import type { ReplayDisplayFrame } from '../../../core/ReplayRecorder';
+import { SimulationEngine } from '../../../core/SimulationEngine';
+import { createZukWaveEncounter } from '../../../test/helpers/zukWave';
+import type { Coordinate } from '../../../types/simulation';
+import type { RenderQueue } from '../../core/commands';
+import { ReplayEffectIndex } from '../../core/replayEffectIndex';
+import { makeSnapshot } from '../../npc/__tests__/npcFacingTestHarness';
+import type { SurfaceHeightResolver } from '../controllers/ProjectileController';
+import { EncounterCuePlayer } from '../EncounterCuePlayer';
+import { advanceProjectileMotion } from '../projectileMotion';
+import { SpotAnimRenderer } from '../SpotAnimRenderer';
+import type { SpotAnimTransform } from '../spotAnimTypes';
+
+type History = { readonly frames: readonly ReplayDisplayFrame[]; readonly throughFrameIndex: number };
+
+/** The cue player as a scene drives it from a history: one shared effect index per history. */
+class ReplayedCuePlayer extends EncounterCuePlayer {
+  private readonly indexes = new WeakMap<readonly ReplayDisplayFrame[], ReplayEffectIndex>();
+
+  /** A seek, new history or restore: everything held is rebuilt for the destination. */
+  reconstruct(history: History, frame: { readonly cycle: number }): void {
+    this.syncReplay(this.indexOf(history), { cycle: frame.cycle, throughFrameIndex: history.throughFrameIndex }, true);
+  }
+
+  /** A continuing replay frame: cues already playing keep their state. */
+  syncHistory(history: History, frame: { readonly cycle: number }): void {
+    this.syncReplay(this.indexOf(history), { cycle: frame.cycle, throughFrameIndex: history.throughFrameIndex }, false);
+  }
+
+  private indexOf(history: History): ReplayEffectIndex {
+    let index = this.indexes.get(history.frames);
+    if (!index) {
+      index = new ReplayEffectIndex(history.frames);
+      this.indexes.set(history.frames, index);
+    }
+    index.extend();
+    return index;
+  }
+}
 
 function fixture(resolveSurfaceHeight?: SurfaceHeightResolver) {
   const renderer = new SpotAnimRenderer();
@@ -31,11 +63,18 @@ function fixture(resolveSurfaceHeight?: SurfaceHeightResolver) {
       heightOffset: 999,
     });
   }
-  const controller = new InfernoVisualController(renderer);
+  const controller = new ReplayedCuePlayer(renderer);
   let target: Coordinate | null = [10, 5];
+  let attachment: SpotAnimTransform | null = null;
   const heights = Array.from({ length: 65 }, () => new Int32Array(65).fill(-128));
   const update = (cycle: number) => {
-    controller.update({ cycle, resolveActor: () => target, terrainHeights: heights, resolveSurfaceHeight });
+    controller.update({
+      cycle,
+      resolveActor: () => target,
+      resolveAttachment: () => attachment,
+      terrainHeights: heights,
+      resolveSurfaceHeight,
+    });
     renderer.tick(Math.floor(cycle / 30), cycle / 30);
     const queue: RenderQueue = { replayPresentationReady: true, commands: [] };
     renderer.render(queue);
@@ -58,6 +97,10 @@ function fixture(resolveSurfaceHeight?: SurfaceHeightResolver) {
     move: (position: Coordinate | null) => {
       target = position;
     },
+    /** The rendered model an `attached` graphic rides, or null while its actor is not drawn. */
+    attach: (transform: SpotAnimTransform | null) => {
+      attachment = transform;
+    },
   };
 }
 
@@ -73,9 +116,9 @@ const projectile: NpcProjectileCue = {
   endHeight: 124,
 };
 
-function event(overrides: Partial<InfernoVisualEvent> = {}): InfernoVisualEvent {
+function event(overrides: Partial<EncounterVisualEvent> = {}): EncounterVisualEvent {
   return {
-    type: 'inferno_visual',
+    type: 'encounter_visual',
     eventId: 1,
     tick: 0,
     animations: [],
@@ -94,7 +137,7 @@ function realZukBall() {
     engine.advanceTick([40, 46]);
     const emitted = engine
       .getLastTickEvents()
-      .filter(isInfernoVisualEvent)
+      .filter(isEncounterVisualEvent)
       .find((event) => event.projectiles.some((cue) => cue.spotAnimId === 1375));
     if (!emitted) continue;
     const cue = emitted.projectiles.find((cue) => cue.spotAnimId === 1375);
@@ -109,17 +152,14 @@ afterEach(() => {
   setDefaultArenaConfig({ bounds: null, walkableTiles: null, collisionMap: null });
 });
 
-describe('InfernoVisualController', () => {
+describe('EncounterCuePlayer', () => {
   it('aims a new real Zuk ball at the live player after reconstructed history hands off', () => {
     const { initial, emitted, cue, base } = realZukBall();
     expect(cue.sourcePosition).toEqual([31.5, 55.5]);
     expect(cue.target).toMatchObject({ kind: 'actor', actorId: 'player', position: [40, 46] });
     const restored = fixture();
     const live = fixture();
-    restored.controller.reconstruct(
-      { frames: [{ state: initial, events: [] }], throughFrameIndex: 0 },
-      { cycle: 0, resolveActor: () => initial.playerPosition, terrainHeights: restored.heights },
-    );
+    restored.controller.reconstruct({ frames: [{ state: initial, events: [] }], throughFrameIndex: 0 }, { cycle: 0 });
     restored.update(0);
     restored.controller.consumeEvents([]);
     for (const scene of [restored, live]) {
@@ -148,7 +188,7 @@ describe('InfernoVisualController', () => {
     restored.move(state.playerPosition);
     restored.controller.reconstruct(
       { frames: [{ state, events: [emitted] }], throughFrameIndex: 0 },
-      { cycle: handoff, resolveActor: () => state.playerPosition, terrainHeights: restored.heights },
+      { cycle: handoff },
     );
     expect(restored.update(handoff)).toEqual(live.update(handoff));
     const [id, flight] = [...restored.controller['flights']['flights'].entries()][0];
@@ -188,10 +228,7 @@ describe('InfernoVisualController', () => {
     scene.move([50, 50]);
     const cycle = base + Math.max(cue.startDelayCycles + 1, 31);
     const sample = (throughFrameIndex: number) => {
-      scene.controller.reconstruct(
-        { frames, throughFrameIndex },
-        { cycle, resolveActor: () => [50, 50], terrainHeights: scene.heights },
-      );
+      scene.controller.reconstruct({ frames, throughFrameIndex }, { cycle: cycle });
       scene.update(cycle);
       const motion = [...scene.controller['flights']['flights'].values()][0]?.runtime['motion'];
       if (!motion) expect.fail('Expected historical Zuk ball');
@@ -229,11 +266,17 @@ describe('InfernoVisualController', () => {
     expect(meshes).toEqual([]);
   });
 
-  it('skips a flight when consuming an event exactly at packet endtime', () => {
+  it('restores no flight at exactly its packet endtime: the end is exclusive', () => {
     const { controller } = fixture();
+    const state = new SimulationEngine({ encounter: createZukWaveEncounter(1) }).getState();
+    const history = {
+      frames: [{ state: { ...state, currentTick: 2 }, events: [event({ tick: 2 })] }],
+      throughFrameIndex: 0,
+    };
 
-    controller.consumeEvents([event({ tick: 2 })], 84);
-
+    controller.reconstruct(history, { cycle: 83.5 });
+    expect(controller['flights'].size).toBe(1);
+    controller.reconstruct(history, { cycle: 84 });
     expect(controller['flights'].size).toBe(0);
   });
 
@@ -267,15 +310,9 @@ describe('InfernoVisualController', () => {
     reference.controller.consumeEvents([emitted]);
     for (let cycle = 0; cycle <= 60; cycle++) reference.update(cycle);
     const sought = fixture();
-    sought.controller.reconstruct(
-      { frames, throughFrameIndex: 0 },
-      { cycle: 60, resolveActor: () => null, terrainHeights: sought.heights },
-    );
+    sought.controller.reconstruct({ frames, throughFrameIndex: 0 }, { cycle: 60 });
     expect(sought.update(60)).toEqual(reference.update(60));
-    sought.controller.reconstruct(
-      { frames, throughFrameIndex: 1 },
-      { cycle: 60, resolveActor: () => null, terrainHeights: sought.heights },
-    );
+    sought.controller.reconstruct({ frames, throughFrameIndex: 1 }, { cycle: 60 });
     expect(sought.update(60)).toEqual(reference.update(60));
   });
   it('matches fine and fractional coarse replay sampling after a moving target disappears', () => {
@@ -316,14 +353,7 @@ describe('InfernoVisualController', () => {
       const scene = fixture();
       let meshes: ReturnType<typeof scene.update> = [];
       for (const cycle of cycles) {
-        scene.controller.syncReplay(
-          { frames, throughFrameIndex: Math.floor(cycle / 30) },
-          {
-            cycle,
-            resolveActor: () => null,
-            terrainHeights: scene.heights,
-          },
-        );
+        scene.controller.syncHistory({ frames, throughFrameIndex: Math.floor(cycle / 30) }, { cycle: cycle });
         meshes = scene.update(cycle);
       }
       return meshes;
@@ -374,10 +404,7 @@ describe('InfernoVisualController', () => {
     ];
     const scene = fixture((worldX, worldY) => -128 * (worldX + worldY));
     const seek = (history: readonly ReplayDisplayFrame[], throughFrameIndex: number) => {
-      scene.controller.reconstruct(
-        { frames: history, throughFrameIndex: throughFrameIndex },
-        { cycle: 89.9999, resolveActor: () => null, terrainHeights: scene.heights },
-      );
+      scene.controller.reconstruct({ frames: history, throughFrameIndex: throughFrameIndex }, { cycle: 89.9999 });
       return scene.update(89.9999)[0];
     };
 
@@ -422,12 +449,9 @@ describe('InfernoVisualController', () => {
       },
     });
     const frames = Array.from({ length: 10000 }, (_, tick) => makeFrame(tick));
-    const { controller, heights, update } = fixture();
+    const { controller, update } = fixture();
     const seek = (tick: number) => {
-      controller.reconstruct(
-        { frames, throughFrameIndex: tick },
-        { cycle: tick * 30 + 5, resolveActor: () => null, terrainHeights: heights },
-      );
+      controller.reconstruct({ frames, throughFrameIndex: tick }, { cycle: tick * 30 + 5 });
       update(tick * 30 + 5);
     };
     seek(9999);
@@ -445,7 +469,7 @@ describe('InfernoVisualController', () => {
   });
 
   it('materializes cache-ready held replay graphics without changing their original clock', () => {
-    const { controller, renderer, heights, update } = fixture();
+    const { controller, renderer, update } = fixture();
     const state = new SimulationEngine({ encounter: createZukWaveEncounter(1) }).getState();
     const frames = [
       {
@@ -462,13 +486,13 @@ describe('InfernoVisualController', () => {
     if (!cache) expect.fail('Missing graphic fixture');
     renderer['meshCache'].delete(451);
     const history = { frames, throughFrameIndex: 0 };
-    const frame = { cycle: 75.5, resolveActor: () => null, terrainHeights: heights };
+    const frame = { cycle: 75.5 };
     controller.reconstruct(history, frame);
     expect(update(75.5)).toEqual([]);
     renderer['meshCache'].set(451, cache);
-    controller.syncReplay(history, frame);
+    controller.syncHistory(history, frame);
     expect(update(75.5)).toHaveLength(1);
-    expect(renderer['activeInstances'].get('inferno-1-graphic-0')?.lifecycle).toMatchObject({ startTick: 70 / 30 });
+    expect(renderer['activeInstances'].get('cue-1-graphic-0')?.lifecycle).toMatchObject({ startTick: 70 / 30 });
     expect(update(80)).toEqual([]);
   });
   it.each`
@@ -583,15 +607,7 @@ describe('InfernoVisualController', () => {
     const sought = fixture(resolveSurfaceHeight);
     sought.move([12, 5]);
 
-    sought.controller.reconstruct(
-      { frames: history, throughFrameIndex: 2 },
-      {
-        cycle: destination,
-        resolveActor: () => [12, 5],
-        terrainHeights: sought.heights,
-        resolveSurfaceHeight,
-      },
-    );
+    sought.controller.reconstruct({ frames: history, throughFrameIndex: 2 }, { cycle: destination });
     const actual = sought.update(destination);
     const destinationOnly = fixture(resolveSurfaceHeight);
     destinationOnly.move([12, 5]);
@@ -603,7 +619,7 @@ describe('InfernoVisualController', () => {
 
   it('retains only destination-active and pending cues and excludes future frames', () => {
     const initial = new SimulationEngine({ encounter: createZukWaveEncounter(1) }).getState();
-    const { controller, update, heights } = fixture();
+    const { controller, update } = fixture();
     const history: ReplayDisplayFrame[] = [
       {
         state: initial,
@@ -624,14 +640,7 @@ describe('InfernoVisualController', () => {
       },
     ];
 
-    controller.reconstruct(
-      { frames: history, throughFrameIndex: 0 },
-      {
-        cycle: 60,
-        resolveActor: () => [10, 5],
-        terrainHeights: heights,
-      },
-    );
+    controller.reconstruct({ frames: history, throughFrameIndex: 0 }, { cycle: 60 });
 
     expect(update(60)).toEqual([]);
     expect(controller.takeAnimations(60)).toEqual([]);
@@ -641,7 +650,7 @@ describe('InfernoVisualController', () => {
   });
 
   it('keeps a long cache-owned graphic without an arbitrary history lookback', () => {
-    const { controller, renderer, heights, update } = fixture();
+    const { controller, renderer, update } = fixture();
     const cache = renderer['meshCache'].get(444);
     if (!cache) expect.fail('Missing graphic fixture');
     cache.frameLengths = [20000];
@@ -662,11 +671,7 @@ describe('InfernoVisualController', () => {
         ],
         throughFrameIndex: 0,
       },
-      {
-        cycle: 19000,
-        resolveActor: () => [10, 5],
-        terrainHeights: heights,
-      },
+      { cycle: 19000 },
     );
 
     expect(update(19000).map((mesh) => mesh.id)).toEqual(['effect-444']);
@@ -796,13 +801,13 @@ describe('InfernoVisualController', () => {
     expect(meshes[1]?.matrix[13]).toBeCloseTo(5.5, 3);
   });
 
-  it.each(['clear', 'dispose'] as const)('forgets a sampled destination when %s resets a reused flight id', (reset) => {
+  it('forgets a sampled destination when clear resets a reused flight id', () => {
     const { controller, update, move } = fixture();
     controller.consumeEvents([event()]);
     move([20, 10]);
     update(10);
 
-    controller[reset]();
+    controller.clear();
     controller.consumeEvents([event()]);
     move(null);
     const mesh = update(23.9999)[0];
@@ -961,7 +966,7 @@ describe('InfernoVisualController', () => {
     expect(update(0).map((mesh) => mesh.id)).toEqual(['effect-451']);
     controller.consumeEvents([event()]);
     expect(update(0)).toHaveLength(2);
-    controller.dispose();
+    controller.clear();
     expect(update(0)).toHaveLength(1);
   });
 
@@ -978,13 +983,12 @@ describe('InfernoVisualController', () => {
       state: { ...state, currentTick },
       events: currentTick === 2 ? [attack] : [],
     }));
-    const frame = { resolveActor: () => null, terrainHeights: null };
     const queued = (throughFrameIndex: number, cycle: number) => {
-      controller.syncReplay({ frames, throughFrameIndex }, { ...frame, cycle });
+      controller.syncHistory({ frames, throughFrameIndex }, { cycle });
       return controller['animations'].map(({ cue, cycle: start }) => ({ clipId: cue.clipId, start }));
     };
     // The first sync predates the cue; later syncs at newer cutoffs must still owe it to live play.
-    controller.reconstruct({ frames, throughFrameIndex: 1 }, { ...frame, cycle: 45 });
+    controller.reconstruct({ frames, throughFrameIndex: 1 }, { cycle: 45 });
     expect(controller['animations']).toEqual([]);
     expect(queued(2, 67.5)).toEqual([{ clipId: 'attack', start: 90 }]);
     expect(queued(2, 67.5)).toHaveLength(1);
@@ -993,5 +997,94 @@ describe('InfernoVisualController', () => {
     expect(queued(2, 90)).toEqual([]);
     expect(queued(2, 89)).toEqual([{ clipId: 'attack', start: 90 }]);
     expect(controller.takeAnimations(90).map(({ cycle }) => cycle)).toEqual([90]);
+  });
+  it("rides an attached graphic on its actor's rendered model, turning with it, and hides it while the actor is absent", () => {
+    const { controller, renderer, update, attach, move } = fixture();
+    const yawOf = (matrix: readonly number[]) => (Math.atan2(matrix[8], matrix[0]) * 2048) / (2 * Math.PI);
+    controller.consumeEvents([
+      event({
+        projectiles: [],
+        graphics: [{ spotAnimId: 444, target: { kind: 'attached', actorId: 'sol' }, delayCycles: 2, height: 64 }],
+      }),
+    ]);
+    attach({ position: [10, 20, 1], yaw2048: 512 });
+    // The tracked-anchor actor position is ignored: an attachment follows only the rendered model.
+    move([40, 40]);
+
+    expect(update(1)).toEqual([]);
+    const turned = update(2)[0];
+    attach({ position: [11, 20, 1], yaw2048: 0 });
+    const facing = update(3)[0];
+    attach(null);
+    const hidden = update(5);
+    attach({ position: [12, 20, 1], yaw2048: 1024 });
+    const back = update(7)[0];
+    const lifecycle = renderer['activeInstances'].get('cue-1-graphic-0')?.lifecycle;
+    attach(null);
+    update(12);
+
+    expect(turned?.matrix.slice(12, 15)).toEqual([10, 20, 1.5]);
+    expect(yawOf(turned?.matrix ?? [])).toBeCloseTo(512, 6);
+    expect(facing?.matrix.slice(12, 15)).toEqual([11, 20, 1.5]);
+    expect(yawOf(facing?.matrix ?? [])).toBeCloseTo(0, 6);
+    expect(hidden).toEqual([]);
+    // Back on its own clock, not restarted by the gap.
+    expect(back?.matrix.slice(12, 15)).toEqual([12, 20, 1.5]);
+    expect(Math.abs(yawOf(back?.matrix ?? []))).toBeCloseTo(1024, 6);
+    expect(lifecycle).toMatchObject({ startTick: 2 / 30 });
+    // Its lifetime runs out while hidden: it is gone rather than shown late.
+    expect(controller['graphics'].size).toBe(0);
+    attach({ position: [12, 20, 1] });
+    expect(update(12)).toEqual([]);
+  });
+
+  it('draws a tracked graphic on its recorded fallback while its actor is not rendered, unlike an attached one', () => {
+    const { controller, update, move } = fixture();
+    controller.consumeEvents([
+      event({
+        projectiles: [],
+        graphics: [
+          {
+            spotAnimId: 444,
+            target: { kind: 'actor', actorId: 'gone', size: 2, position: [8, 3] },
+            delayCycles: 0,
+            height: 128,
+          },
+          { spotAnimId: 451, target: { kind: 'attached', actorId: 'gone' }, delayCycles: 0, height: 128 },
+        ],
+      }),
+    ]);
+    move(null);
+
+    const meshes = update(1);
+
+    expect(meshes.map((mesh) => [mesh.id, mesh.matrix.slice(12, 15)])).toEqual([['effect-444', [9, 4, 2]]]);
+  });
+
+  it('plays same-cycle clips in emission order and every clip in start order, whatever order they were added in', () => {
+    const { controller } = fixture();
+    controller.consumeEvents([
+      event({
+        eventId: 1,
+        tick: 1,
+        projectiles: [],
+        animations: [
+          { actorId: 'a', clipId: 'late', delayCycles: 20 },
+          { actorId: 'a', clipId: 'first', delayCycles: 5 },
+          { actorId: 'a', clipId: 'second', delayCycles: 5 },
+        ],
+      }),
+    ]);
+    controller.consumeEvents([
+      event({ eventId: 2, tick: 1, projectiles: [], animations: [{ actorId: 'a', clipId: 'third', delayCycles: 5 }] }),
+    ]);
+
+    expect(controller.takeAnimations(34)).toEqual([]);
+    expect(controller.takeAnimations(40).map(({ cue, cycle }) => [cue.clipId, cycle])).toEqual([
+      ['first', 35],
+      ['second', 35],
+      ['third', 35],
+    ]);
+    expect(controller.takeAnimations(50).map(({ cue, cycle }) => [cue.clipId, cycle])).toEqual([['late', 50]]);
   });
 });

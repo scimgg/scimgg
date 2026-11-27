@@ -48,7 +48,7 @@ export const ZUK_INTRO = {
   glyphWalkFrom: -6,
   glyphWalkTo: -4,
 } as const;
-/** The `inferno_visual` clip id Zuk rises with at the intro's add (seq 7563, `ZUK_SEQS.zuk.spawn`). */
+/** The `encounter_visual` clip id Zuk rises with at the intro's add (seq 7563, `ZUK_SEQS.zuk.spawn`). */
 export const ZUK_INTRO_RISE_CLIP = 'rise';
 /**
  * The intro's two lines, in chat: the mesbox at C-12 (inferno-waves-69-zuk L2756) and the

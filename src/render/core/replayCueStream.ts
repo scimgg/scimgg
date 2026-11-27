@@ -45,10 +45,27 @@ export class ReplayCueStream<Cue> {
     endDelay: (cue: Cue) => number,
     extraLifetimeCycles = 0,
   ): ReplayCue<Cue>[] {
+    const result: ReplayCue<Cue>[] = [];
+    this.collectUnexpired(destination, endDelay, extraLifetimeCycles, result);
+    return result;
+  }
+
+  /**
+   * Appends {@link unexpired}'s cues to `into`, one at a time: a stream can hold more cues than a call
+   * can take arguments, so its cues are never spread.
+   */
+  collectUnexpired(
+    destination: ReplayEffectDestination,
+    endDelay: (cue: Cue) => number,
+    extraLifetimeCycles: number,
+    into: ReplayCue<Cue>[],
+  ): void {
     const earliest = destination.cycle - this.maximumLifetimeCycles - extraLifetimeCycles;
-    return this.entries
-      .slice(this.upperBound({ ...destination, cycle: earliest }), this.upperBound(destination))
-      .filter((entry) => entry.tick * 30 + endDelay(entry.cue) > destination.cycle);
+    const end = this.upperBound(destination);
+    for (let index = this.upperBound({ ...destination, cycle: earliest }); index < end; index++) {
+      const entry = this.entries[index];
+      if (entry.tick * 30 + endDelay(entry.cue) > destination.cycle) into.push(entry);
+    }
   }
 
   /** Entries are appended in frame and tick order, so emission through a destination is a prefix. */

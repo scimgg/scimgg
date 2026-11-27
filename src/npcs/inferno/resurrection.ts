@@ -1,6 +1,7 @@
 import type { NpcActor } from '../../core/actors/NpcActor';
 import { scheduleNpcAction } from '../../core/combat/npcActionClock';
 import { contextDecisions, uniformOptions } from '../../core/decisionRandom';
+import { emitEncounterVisual } from '../../core/events/encounterVisual';
 import { isNpcLiving } from '../../core/npcDeath';
 import { npcFootprintsOverlap } from '../../core/npcOccupancy';
 import type { NpcDefinitionContext } from '../../core/npcs';
@@ -9,7 +10,6 @@ import { infernoIdentity } from './actors';
 import { INFERNO_WAVE_NPC_IDS } from './constants';
 import { faceInfernoAction } from './demonstrations';
 import { emitInfernoAbility } from './events';
-import { emitInfernoVisual } from './visualEvents';
 import { isInfernoFootprintLegal } from './waveCombat';
 
 /**
@@ -103,7 +103,7 @@ export function tryMagerResurrection(
   const graphicTile: Coordinate = [position[0] + size - 2, position[1] + size - 2];
   faceInfernoAction(actor, { position, size: 1 });
   resurrection.revive(corpse, position, context);
-  emitInfernoVisual(context.tickEvents, {
+  emitEncounterVisual(context.tickEvents, {
     animations: [{ actorId: actor.id, clipId: 'resurrect', delayCycles: 0 }],
     projectiles: [],
     graphics: [{ spotAnimId: 444, target: { kind: 'tile', position: graphicTile }, delayCycles: 0, height: 150 }],

@@ -94,7 +94,7 @@ describe('ReplayEffectIndex', () => {
       });
       frames.push({
         state: { ...source.state, currentTick: tick, npcs: [dead] },
-        events: [{ type: 'inferno_clear_minions', npcTypeIds: [7705], eventId: tick, tick }],
+        events: [{ type: 'actor_presentations_removed', npcTypeIds: [7705], eventId: tick, tick }],
       });
       index.extend();
     }
@@ -105,7 +105,7 @@ describe('ReplayEffectIndex', () => {
   });
 
   it('applies type clears only to deaths already recorded, including same-frame deaths, at both seek cutoffs', () => {
-    const before = frame(9, [{ type: 'inferno_clear_minions', npcTypeIds: [7705], eventId: 1, tick: 9 }]);
+    const before = frame(9, [{ type: 'actor_presentations_removed', npcTypeIds: [7705], eventId: 1, tick: 9 }]);
     const death = frame(10);
     const dead = corpse('healer', 7705, 1, 10);
     const other = corpse('other', 7706, 1, 10);
@@ -114,7 +114,7 @@ describe('ReplayEffectIndex', () => {
     const index = new ReplayEffectIndex(frames);
     const original = index.deathPresentations({ cycle: 330, throughFrameIndex: 1 }, 6000);
     const replacement = corpse('healer', 7705, 11, 11);
-    const clear = frame(11, [{ type: 'inferno_clear_minions', npcTypeIds: [7705], eventId: 2, tick: 11 }]);
+    const clear = frame(11, [{ type: 'actor_presentations_removed', npcTypeIds: [7705], eventId: 2, tick: 11 }]);
     clear.state.npcs = [replacement];
     frames.push(clear);
     index.extend();
@@ -136,7 +136,7 @@ describe('ReplayEffectIndex', () => {
     const replacement = { ...first, despawnTick: 12 };
     const death = frame(10);
     death.state.npcs = [first];
-    const clear = frame(11, [{ type: 'inferno_clear_minions', npcTypeIds: [7705], eventId: 1, tick: 11 }]);
+    const clear = frame(11, [{ type: 'actor_presentations_removed', npcTypeIds: [7705], eventId: 1, tick: 11 }]);
     const respawn = frame(12);
     respawn.state.npcs = [replacement];
 
@@ -160,7 +160,7 @@ describe('ReplayEffectIndex', () => {
       tick: order === 'actor-first' ? 12 : 11,
     };
     const type: GameEvent = {
-      type: 'inferno_clear_minions',
+      type: 'actor_presentations_removed',
       npcTypeIds: [7705],
       eventId: 3,
       tick: order === 'type-first' ? 12 : 11,
@@ -173,7 +173,7 @@ describe('ReplayEffectIndex', () => {
     expect(results).toEqual([1, 0]);
   });
 
-  it('returns a large active Inferno graphic stream without a variadic call', () => {
+  it('returns a large active encounter graphic stream in emission order', () => {
     const graphics = Array.from({ length: 130_000 }, () => ({
       spotAnimId: 659,
       target: { kind: 'tile', position: [1, 1] },
@@ -181,21 +181,20 @@ describe('ReplayEffectIndex', () => {
       height: 0,
     }));
     const index = new ReplayEffectIndex([
-      frame(0, [{ type: 'inferno_visual', eventId: 1, tick: 0, animations: [], projectiles: [], graphics }]),
+      frame(0, [{ type: 'encounter_visual', eventId: 1, tick: 0, animations: [], projectiles: [], graphics }]),
     ]);
 
-    const active = index.inferno.activeGraphics({ cycle: 0, throughFrameIndex: 0 }, () => 30);
+    const active = index.cues.activeGraphics({ cycle: 0, throughFrameIndex: 0 }, () => 30);
 
     expect(active).toHaveLength(graphics.length);
-    expect(active[0]?.id).toBe('inferno-1-graphic-0');
-    expect(active.at(-1)?.id).toBe('inferno-1-graphic-129999');
+    expect(active[0]?.id).toBe('cue-1-graphic-0');
+    expect(active.at(-1)?.id).toBe('cue-1-graphic-129999');
   });
 
-  // Known baseline failure on 49ef532. The test above passes only because Vitest's worker threads
-  // have 4 MiB stacks: `activeGraphics` still spreads a whole stream into `push`
-  // (infernoReplayIndex.ts:79), which throws RangeError near 125k arguments on a 1 MiB main-thread
-  // stack (Node's default, and a browser page's). Both tests move to the shared cue index with it.
-  it.fails('collects a large active Inferno graphic stream without passing it as call arguments', () => {
+  // Vitest's worker threads have 4 MiB stacks, so the test above would pass even if a stream were
+  // spread into one call; on a 1 MiB main-thread stack (Node's default, and a browser page's) such a
+  // spread throws RangeError near 125k arguments. This pins the bounded iteration instead.
+  it('collects a large active encounter graphic stream without passing it as call arguments', () => {
     const graphics = Array.from({ length: 130_000 }, () => ({
       spotAnimId: 659,
       target: { kind: 'tile', position: [1, 1] },
@@ -203,7 +202,7 @@ describe('ReplayEffectIndex', () => {
       height: 0,
     }));
     const index = new ReplayEffectIndex([
-      frame(0, [{ type: 'inferno_visual', eventId: 1, tick: 0, animations: [], projectiles: [], graphics }]),
+      frame(0, [{ type: 'encounter_visual', eventId: 1, tick: 0, animations: [], projectiles: [], graphics }]),
     ]);
     // A plain wrapper rather than a spy: a spy's own argument copies overflow even a worker's stack.
     const push = Array.prototype.push;
@@ -213,7 +212,7 @@ describe('ReplayEffectIndex', () => {
       return push.apply(this, items);
     };
     try {
-      index.inferno.activeGraphics({ cycle: 0, throughFrameIndex: 0 }, () => 30);
+      index.cues.activeGraphics({ cycle: 0, throughFrameIndex: 0 }, () => 30);
     } finally {
       Array.prototype.push = push;
     }
@@ -586,7 +585,7 @@ describe('ReplayEffectIndex', () => {
       11,
       scope === 'actor'
         ? [{ type: 'actor_despawned', actorId: 'healer', eventId: 2, tick: 11 }]
-        : [{ type: 'inferno_clear_minions', npcTypeIds: [7705], eventId: 2, tick: 11 }],
+        : [{ type: 'actor_presentations_removed', npcTypeIds: [7705], eventId: 2, tick: 11 }],
     );
     const index = new ReplayEffectIndex([death, removal]);
 
@@ -597,7 +596,9 @@ describe('ReplayEffectIndex', () => {
   it('ignores malformed clear suppression and isolates actor-id reuse by spawn life', () => {
     const firstDeath = frame(10);
     firstDeath.state.npcs = [corpse('healer', 7705, 4, 10)];
-    const malformed = frame(11, [{ type: 'inferno_clear_minions', npcTypeIds: [7705, 'bad'], eventId: 2, tick: 11 }]);
+    const malformed = frame(11, [
+      { type: 'actor_presentations_removed', npcTypeIds: [7705, 'bad'], eventId: 2, tick: 11 },
+    ]);
     const replacementDeath = frame(12);
     const replacement = corpse('healer', 7705, 12, 12);
     replacementDeath.state.npcs = [replacement];

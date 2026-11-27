@@ -1,3 +1,4 @@
+import { emitEncounterVisual } from '../../core/events/encounterVisual';
 import { canNpcActThisTurn } from '../../core/npcDeath';
 import { createNpcDefinition } from '../../core/npcs';
 import {
@@ -7,13 +8,12 @@ import {
 } from '../../core/npcs/linearPatrol';
 import type { Coordinate } from '../../types/simulation';
 import { createInfernoActor } from './actors';
-import { emitInfernoVisual } from './visualEvents';
 
 export const glyphDefinition = createNpcDefinition<LinearPatrolState, LinearPatrolRoute>({
   id: 'inferno-glyph',
   onDamageResolved: ({ actor, damage, context }) => {
     if (damage.hpAfter <= 0) return;
-    emitInfernoVisual(context.tickEvents, {
+    emitEncounterVisual(context.tickEvents, {
       animations: [{ actorId: actor.id, clipId: 'hit', delayCycles: 0 }],
       projectiles: [],
       graphics: [],

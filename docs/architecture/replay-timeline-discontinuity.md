@@ -96,8 +96,8 @@ layout coverage hides the menu rather than showing stale state.
 Reset first, then rebuild from snapshots and indexed history. Reconstruction never advances the
 simulation or dispatches historical events to audio; frame-sound trackers silently synchronize
 (including on late readiness). Unavailable cache assets retry on held frames without changing the
-recorded origin. Two encounter-specific paths exist: `ReplayEffectIndex` (player plus Yama)
-and Inferno's history-backed path (Zuk); each is described below.
+recorded origin. `ReplayEffectIndex` is the one history index: player and Yama effects, and the
+encounter cues every scene's cue player restores; each is described below.
 
 - Player tile position and effect state carried in the snapshot (e.g. Yama waves and fireballs) are
   snapshot/tick-derived.
@@ -120,19 +120,24 @@ rules, including its secondary melee clip. `restorePrimaryAt` restores only prim
 fractional client-cycle remainder; the next render updates the mesh once without advancing it
 again. Timelines invalidate with animation-metadata identity.
 
-**Inferno.** `ReplayRecorder.getDisplayFrames()` exposes the frame array as a readonly state/events
-projection; `ReplayFrameStore` keeps that identity across playhead updates, and
+**Encounter cues.** `ReplayRecorder.getDisplayFrames()` exposes the frame array as a readonly
+state/events projection; `ReplayFrameStore` keeps that identity across playhead updates, and
 `RenderContext.replayHistory` supplies it with the inclusive displayed index (future frames are
-never inputs). Inferno clears transient presentation on the first history-backed display, a changed
-history identity, or a discontinuity; history-identity changes run the full base registry before
-event cursors are consumed, so same-tick replacements also clear player graphics, projectiles and
-overlays. `ProjectileFlight.updateReplay` steps only an active flight's horizon from
+never inputs). `ReplayEffectIndex.cues` (`EncounterCueIndex`) indexes every `encounter_visual` batch
+in the same append pass, and the scene's `EncounterCuePlayer` takes from it what a destination owes:
+flights through their exclusive end, graphics still playing or pending, and clips not yet started,
+which a restored presentation hands to live play. The scene rebuilds the cues on the first
+history-backed display, a changed history identity, or a discontinuity; history-identity changes run
+the full base registry before event cursors are consumed, so same-tick replacements also clear
+player graphics, projectiles and overlays. Recordings in older encounter shapes are converted as
+`ReplayRecorder.load` reads them, so the index only sees today's. `ProjectileFlight.updateReplay` steps only an active flight's horizon from
 `ReplayActorHistory`, keeping integer-cycle state and sampling the final fractional step without
 committing it, so coarse and fine presentation share one trajectory. Historical NPC positions mirror
 `NpcInstanceManager` (exact tick boundary uses current position; positive fractions interpolate
 previous to current); player positions follow the snapshot's previous position and path.
 
-Each actor's `ReplayDeferredPrimaryIndex` checkpoints accepted state plus a bounded pending tail at
+In a scene with cue presentation (`npcPresentation: 'cues'`, the Inferno's), each actor's
+`ReplayDeferredPrimaryIndex` checkpoints accepted state plus a bounded pending tail at
 source-frame boundaries. Delayed cues may start out of emission order, so sorting all cues and
 taking the newest eligible would let future source frames reject earlier delayed cues; checkpoints
 keep source eligibility and same-time chronological order. `restoreDeferredReplayAnimation`

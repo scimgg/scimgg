@@ -1,10 +1,10 @@
 import { readFileSync } from 'node:fs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { EncounterVisualCue } from '../core/events/encounterVisual';
 import { generateSparkVolley } from '../encounters/zuk/sparks';
 import { createColosseumActor } from '../npcs/colosseum/actors';
 import type { ColosseumVisualCue } from '../npcs/colosseum/visualEvents';
 import { createInfernoActor } from '../npcs/inferno/actors';
-import type { InfernoVisualCue } from '../npcs/inferno/visualEvents';
 import { installPolyfills } from '../polyfills';
 import type { Coordinate, SimulationState } from '../types/simulation';
 
@@ -142,7 +142,7 @@ describe('structuredClone DTO fallback', () => {
     const inferno = createInfernoActor('shield', 'glyph', [1, 2]);
     const colosseum = createColosseumActor('beam_crystal', 'crystal', [3, 4]);
     const sparks = generateSparkVolley({ source: [30, 50], player: [30, 44], random: () => 0.5 });
-    const infernoCue: InfernoVisualCue = {
+    const infernoCue: EncounterVisualCue = {
       animations: [{ actorId: 'glyph', clipId: 'idle', delayCycles: 0 }],
       projectiles: [],
       graphics: [{ spotAnimId: 659, target: { kind: 'tile', position: [30, 44] }, height: 0, delayCycles: 2 }],

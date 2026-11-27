@@ -1,11 +1,11 @@
 import {
+  INFERNO_SPOT_ANIM_IDS,
   INFERNO_WAVE_NPC_IDS,
   INFERNO_WAVE_SEQS,
   INFERNO_WAVE_SPOT_ANIM_IDS,
   ZUK_GROUND_NPC_DEPTH_BIAS,
   ZUK_SEQS,
 } from '../../npcs/inferno/constants';
-import { INFERNO_SPOT_ANIM_IDS } from '../../npcs/inferno/visualEvents';
 import { FULL_MAP_SQUARE_GROUND_LEVEL, type LocExclusionRegion } from '../../render/environment/locRenderOptions';
 import type { AuthoredEncounterRenderConfig } from '../../render/scene/encounterRenderConfig';
 import { ZUK_ALCOVE_STATIC_LOCS } from '../zuk/alcoveScenery';
@@ -32,7 +32,7 @@ const holdDeathUntilRemoved = true;
 
 /**
  * The Inferno's one render config, waves 1-69. Clip ids are the names the definitions cue through
- * `inferno_visual` animations. Seqs: the facts spec NPC table and cache NpcType defaults
+ * `encounter_visual` animations. Seqs: the facts spec NPC table and cache NpcType defaults
  * (`INFERNO_WAVE_SEQS`); the four species shared with wave 69 use `ZUK_SEQS`; wave 69's own types
  * are `ZUK_WAVE_NPC_TYPES`. No primary NPC: Zuk is drawn from the snapshot, so he is not in the
  * alcove before wave 69 adds him.

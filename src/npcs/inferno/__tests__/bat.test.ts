@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { setArenaConfig, setDefaultArenaConfig } from '../../../core/constants';
 import type { EncounterPlayerDamageInfo } from '../../../core/encounters/types';
+import { isEncounterVisualEvent } from '../../../core/events/encounterVisual';
 import { PrayerType } from '../../../types/simulation';
 import { createBat, jalMejRahDrainEffect } from '../bat';
-import { isInfernoVisualEvent } from '../visualEvents';
 import { createWaveEngine } from './waveFixture';
 
 afterEach(() => {
@@ -34,7 +34,7 @@ describe('Jal-MejRah attacks', () => {
     const { engine, advanceTo, events } = createWaveEngine([bat]);
     advanceTo(10);
 
-    const launches = events.filter(isInfernoVisualEvent).filter((event) => event.animations[0]?.clipId === 'attack');
+    const launches = events.filter(isEncounterVisualEvent).filter((event) => event.animations[0]?.clipId === 'attack');
     expect(launches.map((event) => event.tick)).toEqual([1, 4, 7, 10]);
     expect(launches[0]?.projectiles).toMatchObject([
       { spotAnimId: 1382, startDelayCycles: 10, endDelayCycles: 64, slope: 16, startOffset: 128, startHeight: 200 },
@@ -47,7 +47,7 @@ describe('Jal-MejRah attacks', () => {
     const { advanceTo, events } = createWaveEngine([bat]);
     advanceTo(2);
     // Player at y 20 is 6 tiles from the bat's north edge (y 14) on tick 1; it steps in first.
-    const attacks = events.filter(isInfernoVisualEvent).filter((event) => event.animations[0]?.clipId === 'attack');
+    const attacks = events.filter(isEncounterVisualEvent).filter((event) => event.animations[0]?.clipId === 'attack');
     expect(attacks.map((event) => event.tick)).toEqual([2]);
     expect(bat.position).toEqual([10, 15]);
   });

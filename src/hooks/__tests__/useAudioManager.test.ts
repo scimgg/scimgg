@@ -3,6 +3,7 @@
 import { cleanup, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AudioEngine, EventAudioPlayer } from '../../audio';
+import { decodeLegacyReplayFrames } from '../../core/legacyReplayEvents';
 import { LEGACY_INFERNO_EVENTS } from '../../test/helpers/legacyEncounterRecordings';
 import { tickBus } from '../../tutorial/runtime/tickBus';
 import { resetPageActivityForTests } from '../pageActivity';
@@ -376,8 +377,9 @@ describe('useEventAudioScope', () => {
     tickAudioMetronomeTock: false,
     tickAudioMetronomeVolume: 1,
   };
-  // An Inferno spark landing on [25, 25] at tick 2, its sound 3 cycles later (due at 1260 ms).
-  const spark = LEGACY_INFERNO_EVENTS.barrage;
+  // An Inferno spark landing on [25, 25] at tick 2, its sound 3 cycles later (due at 1260 ms), as a
+  // loaded recording delivers it: in today's shape.
+  const spark = decodeLegacyReplayFrames([{ events: [LEGACY_INFERNO_EVENTS.barrage] }])[0].events[0];
 
   function mountScoped(displayedEncounterKind: string) {
     const hook = renderHook(

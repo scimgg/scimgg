@@ -5,17 +5,18 @@ no event adapters, actor-size heuristics, animation policy or projectile profile
 [`ProjectileFlight.ts`](../../src/render/effects/ProjectileFlight.ts) wraps it in one per-flight
 runtime shared by `ProjectileController` and
 [`NpcProjectileFlights`](../../src/render/effects/NpcProjectileFlights.ts), which flies the
-`NpcProjectileCue`s (`src/npcs/projectileCue.ts`) that the Inferno and Colosseum visual events
-carry. It owns cycle scheduling,
+`NpcProjectileCue`s (`src/core/events/encounterVisual.ts`) that the encounter visual batch and
+Colosseum's visual events carry. It owns cycle scheduling,
 incremental homing, model orientation, cache animation progress and render requests. `sample()`
-advances without drawing (Inferno replay reconstruction); `update()` uses the same sample and gates
+advances without drawing (replay reconstruction of encounter cues); `update()` uses the same sample and gates
 drawing on cache readiness. Motion starts at the first active sample, advances while the mesh is
 unavailable, and never re-aims on a held cycle.
 
 Adapters resolve actor/terrain endpoints and choose animation/render policy; neither calculates
 flight kinematics or orientation. The player adapter keeps independent launch snapshots, flights,
-`ProjectileAim`, scheduled impact graphics and shared asset loading. Inferno keeps cue events,
-overlapping volleys, graphics, NPC clips and historical actor resolution.
+`ProjectileAim`, scheduled impact graphics and shared asset loading. The scene's
+`EncounterCuePlayer` keeps cue events, overlapping volleys, graphics, NPC clips and historical actor
+resolution.
 
 ## Inputs and Lifetime Boundary
 

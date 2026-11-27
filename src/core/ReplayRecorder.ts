@@ -7,6 +7,7 @@ import { BackgroundClock } from '../util/BackgroundClock';
 import { type GameFrameRect, toReplayCursorPoint } from '../util/viewportBounds';
 import type { FirstPartyPlayerAttackProjectionSummary } from './combat/player/firstPartyPlayerAttack';
 import type { GameEvent } from './events/types';
+import { decodeLegacyReplayFrames } from './legacyReplayEvents';
 import { ReplayCaptureBudget } from './ReplayCaptureBudget';
 import { replayCursorTailUpdate } from './replayCursorSampling';
 import {
@@ -1042,10 +1043,19 @@ export class ReplayRecorder {
     });
   }
 
+  /**
+   * Installs a recording. Events in the encounter wire shapes of older builds are converted to
+   * today's as they are read (`decodeLegacyReplayFrames`), so an export after a load writes the
+   * current shapes; the caller's data is never modified. Throws, installing nothing, when a recognized
+   * old event is malformed.
+   */
   load(data: ReplayRecorderData): void {
     const copy = structuredClone({
       ...data,
-      frames: data.frames.map((frame) => ({ ...frame, state: { ...frame.state, damageHistory: [] } })),
+      frames: decodeLegacyReplayFrames(data.frames).map((frame) => ({
+        ...frame,
+        state: { ...frame.state, damageHistory: [] },
+      })),
     });
     this.frames = [];
     for (const frame of copy.frames) {

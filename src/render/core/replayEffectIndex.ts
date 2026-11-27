@@ -1,3 +1,4 @@
+import { isActorPresentationsRemovedEvent } from '../../core/events/encounterVisual';
 import type { GameEvent } from '../../core/events/types';
 import type { ReplayDisplayFrame } from '../../core/ReplayRecorder';
 import type { NpcSnapshot } from '../../types/simulation';
@@ -11,7 +12,7 @@ import {
 } from '../effects/playerEffectDescriptors';
 import { type AnimClipRef, CLIENT_TICK_MS } from '../npc/animationTypes';
 import type { NpcAnimationTrigger } from '../npc/NpcInstanceManager';
-import { InfernoReplayIndex } from './infernoReplayIndex';
+import { EncounterCueIndex } from './encounterCueIndex';
 import { ReplayActorHistory } from './replayActorHistory';
 import {
   describePlayerPrimaries,
@@ -62,7 +63,8 @@ function upperBound<Value>(
 
 export class ReplayEffectIndex {
   readonly actors = new ReplayActorHistory();
-  readonly inferno = new InfernoReplayIndex();
+  /** Every encounter visual batch: the scene's cue player restores clips, flights and graphics from it. */
+  readonly cues = new EncounterCueIndex();
   readonly playerPrimaries: PrimaryCue<PlayerPrimaryCue>[] = [];
   readonly yamaPrimaries: PrimaryCue<NpcAnimationTrigger>[] = [];
   readonly playerPrimaryTimeline = new ReplayPrimaryIndex<PlayerPrimaryCue, PlayerPrimaryClip>(this.playerPrimaries);
@@ -77,7 +79,8 @@ export class ReplayEffectIndex {
   private readonly deathsByLife = new Map<number, DeathPresentationRecord>();
   private readonly deathRecords: DeathPresentationRecord[] = [];
   private readonly deathSuppressions = new Map<number, Entry<undefined>>();
-  private readonly minionClears = new Map<number, Entry<undefined>[]>();
+  /** Each NPC type's `actor_presentations_removed` events, in frame order. */
+  private readonly typeRemovals = new Map<number, Entry<undefined>[]>();
   private nextLifeKey = 0;
 
   constructor(readonly frames: readonly ReplayDisplayFrame[]) {
@@ -89,7 +92,7 @@ export class ReplayEffectIndex {
       const source = this.frames[this.indexedLength];
       // Each frame's events are read once, however many indexes consume them.
       const frame = { state: source.state, events: source.events };
-      this.inferno.append(frame.events, this.indexedLength);
+      this.cues.append(frame.events, this.indexedLength);
       this.actors.append(frame, this.indexedLength);
       const presentActorIds = new Set<string>();
       for (const npc of frame.state.npcs) {
@@ -159,18 +162,14 @@ export class ReplayEffectIndex {
             this.deathSuppressions.set(life.key, { ...entry, value: undefined });
           }
         }
-        if (
-          event.type === 'inferno_clear_minions' &&
-          Array.isArray(event.npcTypeIds) &&
-          event.npcTypeIds.every((npcTypeId: unknown) => typeof npcTypeId === 'number' && Number.isInteger(npcTypeId))
-        ) {
+        if (isActorPresentationsRemovedEvent(event)) {
           for (const npcTypeId of new Set<number>(event.npcTypeIds)) {
-            let clears = this.minionClears.get(npcTypeId);
-            if (!clears) {
-              clears = [];
-              this.minionClears.set(npcTypeId, clears);
+            let removals = this.typeRemovals.get(npcTypeId);
+            if (!removals) {
+              removals = [];
+              this.typeRemovals.set(npcTypeId, removals);
             }
-            clears.push({ ...entry, value: undefined });
+            removals.push({ ...entry, value: undefined });
           }
         }
       }
@@ -238,7 +237,7 @@ export class ReplayEffectIndex {
       if (record.frameIndex > destination.throughFrameIndex || record.deathCycle > destination.cycle) continue;
       const elapsedMs = (destination.cycle - record.deathCycle) * CLIENT_TICK_MS;
       if (elapsedMs >= maximumDeathDurationMs) continue;
-      const clears = this.minionClears.get(record.npc.npcTypeId) ?? [];
+      const clears = this.typeRemovals.get(record.npc.npcTypeId) ?? [];
       let lower = 0;
       let upper = clears.length;
       while (lower < upper) {

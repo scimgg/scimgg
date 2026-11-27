@@ -11,6 +11,7 @@ import {
 } from '../../core/combat/npcAttackRequest';
 import { createNpcRetaliation } from '../../core/combat/retaliation';
 import { contextAttackDecisions, contextDecisions } from '../../core/decisionRandom';
+import { emitEncounterVisual } from '../../core/events/encounterVisual';
 import { standardNpcCombatMove } from '../../core/npcCombatMovement';
 import { canNpcActThisTurn } from '../../core/npcDeath';
 import { createNpcDefinition, type NpcDefinitionInput } from '../../core/npcs';
@@ -22,7 +23,6 @@ import { presentInfernoDamage } from './presentation';
 import { JAL_XIL_PROJECTILE_TIMING, JAL_ZEK_PROJECTILE_TIMING } from './projectileProfiles';
 import { type MagerResurrection, tryMagerResurrection } from './resurrection';
 import { resolveReadyTarget } from './targetResolution';
-import { emitInfernoVisual } from './visualEvents';
 
 export type SetMonsterSpawnOptions = {
   readonly id: ActorId;
@@ -151,13 +151,13 @@ function tickSetMonster(
 
   if (plan.damageType === 'melee') {
     faceInfernoAction(actor, target);
-    emitInfernoVisual(context.tickEvents, {
+    emitEncounterVisual(context.tickEvents, {
       animations: [{ actorId: actor.id, clipId: 'melee', delayCycles: 0 }],
       projectiles: [],
       graphics: [],
     });
   } else {
-    emitInfernoVisual(context.tickEvents, demonstrateSet([actor], target));
+    emitEncounterVisual(context.tickEvents, demonstrateSet([actor], target));
   }
   const endCycles = plan.projectile
     ? calculateProjectileEndTime(plan.projectile, projectileDistance(actor, target))

@@ -16,6 +16,7 @@ import { generatorDecisionRandom } from '../../../core/decisionRandom';
 import type { InfernoSnapshot } from '../../../core/encounters/snapshot';
 import type { EncounterPracticeRestart } from '../../../core/encounters/types';
 import type { EngineRunConfig } from '../../../core/engineRunConfig';
+import { isEncounterVisualEvent } from '../../../core/events/encounterVisual';
 import type { GameEvent } from '../../../core/events/types';
 import type { NpcDefinitionContext } from '../../../core/npcs';
 import { canMoveInDirection } from '../../../core/pathfinder';
@@ -24,7 +25,6 @@ import { SimulationEngine } from '../../../core/SimulationEngine';
 import type { WorldState } from '../../../core/WorldState';
 import { INFERNO_WAVE_NPC_IDS } from '../../../npcs/inferno/constants';
 import { jadDefinition } from '../../../npcs/inferno/jad';
-import { isInfernoVisualEvent } from '../../../npcs/inferno/visualEvents';
 import type { Projection2D } from '../../../render/core/camera';
 import { createQueue } from '../../../render/core/commands';
 import { UIOverlayRenderer } from '../../../render/overlay/UIOverlayRenderer';
@@ -393,7 +393,7 @@ describe('Inferno director', () => {
     for (const wave of ['62', '67']) {
       for (const events of advanceTo(setup({ infernoStartWave: wave }), 150).values()) {
         for (const event of events) {
-          if (!isInfernoVisualEvent(event)) continue;
+          if (!isEncounterVisualEvent(event)) continue;
           for (const { spotAnimId } of [...event.projectiles, ...event.graphics]) emitted.add(spotAnimId);
         }
       }
@@ -2161,7 +2161,7 @@ describe('Inferno wave 68 into wave 69', () => {
     // Zuk rises (seq 7563) as he is added at C-8, cued there: his spawn tick is C, the cast clock's epoch.
     const riseCues = [...events].flatMap(([tick, tickEvents]) =>
       tickEvents
-        .filter(isInfernoVisualEvent)
+        .filter(isEncounterVisualEvent)
         .flatMap((event) => event.animations.filter((cue) => cue.clipId === ZUK_INTRO_RISE_CLIP).map(() => tick)),
     );
     expect(riseCues).toEqual([control - 8]);
@@ -2283,7 +2283,7 @@ describe('Inferno wave 68 into wave 69', () => {
     // Zuk is already up: no rise, and none of the intro's lines.
     expect(
       events
-        .filter(isInfernoVisualEvent)
+        .filter(isEncounterVisualEvent)
         .flatMap((event) => event.animations.filter((cue) => cue.clipId === ZUK_INTRO_RISE_CLIP)),
     ).toEqual([]);
     expect(messages(events)).not.toContain(ZUK_INTRO_MESSAGES.busy);

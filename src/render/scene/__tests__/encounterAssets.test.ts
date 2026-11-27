@@ -153,6 +153,27 @@ describe('encounter NPC loading from the render config', () => {
     expect(bossMissing.isNpcLoaded()).toBe(false);
     expect(bossMissing.isNpcTypeLoaded(MINION)).toBe(true);
   });
+
+  it('tries a type that failed in one scene again in the next scene for the encounter', async () => {
+    const { loader, animation } = syntheticNpcAssets();
+    const failed = sceneWith(WITH_PRIMARY);
+    installSyntheticSpotAnims(failed, [EFFECT]);
+    const manager = failed['npcInstanceManager'];
+    const real = manager.loadNpcType.bind(manager);
+    vi.spyOn(manager, 'loadNpcType').mockImplementation((id, ...rest) =>
+      id === MINION ? Promise.reject(new Error('model missing')) : real(id, ...rest),
+    );
+    await failed.loadNpc(loader, animation);
+    expect(assetState(failed)).toBe('unavailable');
+
+    // An encounter switch or reload builds a new scene, which owns no record of the failure.
+    const next = sceneWith(WITH_PRIMARY);
+    installSyntheticSpotAnims(next, [EFFECT]);
+    await next.loadNpc(loader, animation);
+
+    expect(next.isNpcTypeLoaded(MINION)).toBe(true);
+    expect(assetState(next)).toBe('ready');
+  });
 });
 
 describe('encounter replay readiness', () => {

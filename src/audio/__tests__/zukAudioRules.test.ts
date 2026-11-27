@@ -1,12 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { layBurnStack } from '../../core/combat/burnStacks';
 import { setArenaConfig, setDefaultArenaConfig } from '../../core/constants';
+import { isEncounterVisualEvent } from '../../core/events/encounterVisual';
 import { TickEvents } from '../../core/events/TickEvents';
 import type { GameEvent } from '../../core/events/types';
 import { SimulationEngine } from '../../core/SimulationEngine';
 import { emitZukAttack, type ZukAttackKind } from '../../npcs/inferno/events';
-import { isInfernoVisualEvent } from '../../npcs/inferno/visualEvents';
-import { InfernoVisualController } from '../../render/effects/controllers/InfernoVisualController';
+import { EncounterCuePlayer } from '../../render/effects/EncounterCuePlayer';
 import { SpotAnimRenderer } from '../../render/effects/SpotAnimRenderer';
 import { enqueueEnginePendingHit } from '../../test/helpers/pendingHits';
 import { createZukWaveEncounter } from '../../test/helpers/zukWave';
@@ -127,7 +127,7 @@ describe('evidence-backed Inferno event audio', () => {
       sourcePosition: [31, 48],
     }));
     events.push({
-      type: 'inferno_visual',
+      type: 'encounter_visual',
       eventId: 3,
       tick: 1072,
       animations: [],
@@ -166,7 +166,7 @@ describe('evidence-backed Inferno event audio', () => {
         })),
         { type: 'hitsplat_spawned', eventId: 3, tick: 100, targetId: 'mager', amount: 0 },
         {
-          type: 'inferno_visual',
+          type: 'encounter_visual',
           eventId: 4,
           tick: 100,
           animations: [],
@@ -270,7 +270,7 @@ describe('live Inferno damage callbacks to audio and defend cues', () => {
     simulation.advanceTick(simulation.getState().playerPosition);
     const events = simulation.getLastTickEvents();
     player.onEvents(events, [0, 0]);
-    const visuals = new InfernoVisualController(new SpotAnimRenderer());
+    const visuals = new EncounterCuePlayer(new SpotAnimRenderer());
     visuals.consumeEvents(events);
 
     expect(actor.vitals.hp).toBe(16);
@@ -279,7 +279,7 @@ describe('live Inferno damage callbacks to audio and defend cues', () => {
     );
     expect(
       events
-        .filter(isInfernoVisualEvent)
+        .filter(isEncounterVisualEvent)
         .flatMap((event) => event.animations)
         .filter((cue) => cue.clipId === 'defend'),
     ).toEqual(defend ? Array.from({ length: 3 }, () => ({ actorId: actor.id, clipId: 'defend', delayCycles: 0 })) : []);
@@ -309,7 +309,7 @@ describe('live Inferno damage callbacks to audio and defend cues', () => {
     player.onEvents(lethal, [0, 0]);
     expect(
       lethal
-        .filter(isInfernoVisualEvent)
+        .filter(isEncounterVisualEvent)
         .flatMap((event) => event.animations)
         .filter((cue) => cue.clipId === 'defend'),
     ).toEqual([]);

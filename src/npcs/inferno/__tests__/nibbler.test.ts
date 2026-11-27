@@ -1,11 +1,11 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import type { NpcActor } from '../../../core/actors/NpcActor';
 import { setArenaConfig, setDefaultArenaConfig } from '../../../core/constants';
+import { isEncounterVisualEvent } from '../../../core/events/encounterVisual';
 import type { GameEvent } from '../../../core/events/types';
 import type { Coordinate } from '../../../types/simulation';
 import { createInfernoActor } from '../actors';
 import { createNibbler } from '../nibbler';
-import { isInfernoVisualEvent } from '../visualEvents';
 import { createWaveEngine } from './waveFixture';
 
 afterEach(() => {
@@ -21,7 +21,7 @@ function pillar(id: string, position: Coordinate): NpcActor {
 
 function attackTicks(events: readonly GameEvent[], actorId: string): number[] {
   return events
-    .filter(isInfernoVisualEvent)
+    .filter(isEncounterVisualEvent)
     .filter((event) => event.animations.some((cue) => cue.actorId === actorId && cue.clipId === 'attack'))
     .map((event) => event.tick);
 }

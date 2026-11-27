@@ -1,4 +1,4 @@
-import type { NpcProjectileCue, NpcVisualTarget } from '../../npcs/projectileCue';
+import type { NpcProjectileCue, NpcVisualTarget } from '../../core/events/encounterVisual';
 import type { Coordinate } from '../../types/simulation';
 import type { ReplayActorSampler } from '../core/replayActorHistory';
 import { getTerrainHeightInterpolated } from '../shared/renderUtils';

@@ -1,8 +1,8 @@
 import { z } from 'zod';
+import { type NpcProjectileCue, npcProjectileCueSchema } from '../../core/events/encounterVisual';
 import type { TickEvents } from '../../core/events/TickEvents';
 import type { GameEvent } from '../../core/events/types';
 import type { Coordinate } from '../../types/simulation';
-import { type NpcProjectileCue, npcProjectileCueSchema } from '../projectileCue';
 import { COLOSSEUM_SPOTANIMS } from './constants';
 import type { CardinalDirection } from './solAttacks';
 

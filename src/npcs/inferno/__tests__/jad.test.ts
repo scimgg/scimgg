@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CombatSystem } from '../../../core/combat/CombatSystem';
 import { applyNpcHealing } from '../../../core/combat/npcHealing';
 import { setArenaConfig, setDefaultArenaConfig } from '../../../core/constants';
+import { isEncounterVisualEvent } from '../../../core/events/encounterVisual';
 import { TickEvents } from '../../../core/events/TickEvents';
 import type { NpcDefinitionContext } from '../../../core/npcs';
 import { SimulationEngine } from '../../../core/SimulationEngine';
@@ -21,7 +22,6 @@ import {
 } from '../jad';
 import { createJadHealer } from '../jadHealer';
 import { JALTOK_JAD_PROJECTILE_TIMING } from '../projectileProfiles';
-import { isInfernoVisualEvent } from '../visualEvents';
 import { createWaveEngine } from './waveFixture';
 
 afterEach(() => {
@@ -416,7 +416,7 @@ describe('configured Jad execution', () => {
       },
     });
     expect(rolls).toBe(0);
-    expect(context.tickEvents.flush().filter(isInfernoVisualEvent)[0]?.projectiles).toEqual([]);
+    expect(context.tickEvents.flush().filter(isEncounterVisualEvent)[0]?.projectiles).toEqual([]);
     player.position = [12, 20];
 
     const result = registration.tick(actor, {
@@ -430,7 +430,7 @@ describe('configured Jad execution', () => {
 
     expect(rolls).toBe(2);
     expect(result.npcAttacks?.[0]).toMatchObject({ targetId: player.id, impactDelayTicks: 2 });
-    expect(context.tickEvents.flush().filter(isInfernoVisualEvent)[0]?.projectiles[0]).toMatchObject({
+    expect(context.tickEvents.flush().filter(isEncounterVisualEvent)[0]?.projectiles[0]).toMatchObject({
       target: { position: [12, 20] },
       startDelayCycles: 2,
     });

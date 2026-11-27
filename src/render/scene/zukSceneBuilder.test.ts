@@ -3,16 +3,19 @@ import { AudioEngine } from '../../audio/AudioEngine';
 import { EventAudioPlayer } from '../../audio/EventAudioPlayer';
 import { FrameSoundTracker } from '../../audio/FrameSoundTracker';
 import { setArenaConfig, setDefaultArenaConfig } from '../../core/constants';
+import { type EncounterVisualEvent, isEncounterVisualEvent } from '../../core/events/encounterVisual';
 import type { GameEvent } from '../../core/events/types';
-import type { ReplayDisplayFrame } from '../../core/ReplayRecorder';
+import { type ReplayDisplayFrame, ReplayRecorder, type ReplayRecorderData } from '../../core/ReplayRecorder';
 import { ReplayFrameStore } from '../../core/replayFrameStore';
 import { MAX_REPLAY_PROJECTILE_STEPS, ReplaySafetyError } from '../../core/replaySafety';
 import { SimulationEngine } from '../../core/SimulationEngine';
 import { INFERNO_RENDER_CONFIG } from '../../encounters/inferno/renderConfig';
+import { reconstructReplayPrefix } from '../../encounters/simulationEngineFactory';
 import { YAMA_ENCOUNTER_RENDER_CONFIG } from '../../encounters/yamaP3/renderConfig';
 import { ZUK_INTRO_RISE_CLIP, ZUK_MAP_SQUARE, ZUK_MAP_SQUARE_OFFSETS } from '../../encounters/zuk/constants';
 import { ZUK_WAVE_NPC_TYPES } from '../../encounters/zuk/renderConfig';
 import {
+  INFERNO_SPOT_ANIM_IDS,
   INFERNO_WAVE_NPC_IDS,
   INFERNO_WAVE_SEQS,
   INFERNO_WAVE_SPOT_ANIM_IDS,
@@ -21,7 +24,6 @@ import {
   ZUK_SEQS,
   ZUK_SHIELD_NPC_ID,
 } from '../../npcs/inferno/constants';
-import { INFERNO_SPOT_ANIM_IDS, type InfernoVisualEvent, isInfernoVisualEvent } from '../../npcs/inferno/visualEvents';
 import { NpcType } from '../../rs/config/npctype/NpcType';
 import { SeqType } from '../../rs/config/seqtype/SeqType';
 import { ModelData } from '../../rs/model/ModelData';
@@ -37,6 +39,7 @@ import {
   replayContextAt,
   SCENE_OPTIONS,
   type SceneObservation,
+  SYNTHETIC_CLIP_FRAME_CYCLES,
   syntheticNpcAssets,
   VIEWPORT,
 } from '../../test/helpers/sceneObservation';
@@ -46,7 +49,7 @@ import type { NpcSnapshot, NpcState, SimulationState } from '../../types/simulat
 import { AnimationSystem } from '../backends/picogl/AnimationSystem';
 import type { Projection2D } from '../core/camera';
 import type { RenderQueue } from '../core/commands';
-import { InfernoVisualController } from '../effects/controllers/InfernoVisualController';
+import { EncounterCuePlayer } from '../effects/EncounterCuePlayer';
 import { advanceProjectileMotion } from '../effects/projectileMotion';
 import { makeSnapshot } from '../npc/__tests__/npcFacingTestHarness';
 import { NpcAnimationController } from '../npc/NpcAnimationController';
@@ -90,8 +93,8 @@ const ZUK_PRIMARY_RENDER_CONFIG: EncounterRenderConfig = {
 class SceneProbe extends InfernoSceneCompositor {
   readonly manager = this.npcInstanceManager;
   readonly effects = this.spotAnimRenderer;
-  events(events: InfernoVisualEvent[]): void {
-    this['visuals'].consumeEvents(events);
+  events(events: EncounterVisualEvent[]): void {
+    this.cues.consumeEvents(events);
   }
   sync(npcs: NpcSnapshot[]): void {
     this.syncNpcInstances(npcs, false);
@@ -191,7 +194,7 @@ async function frameAudio() {
         timeline: { timelineKey: 'live', paused: false },
         events: [
           {
-            type: 'inferno_visual',
+            type: 'encounter_visual',
             eventId: 1,
             tick: 0,
             projectiles: [],
@@ -340,7 +343,7 @@ it.each([
 
 it('passes the build allowance through both Inferno and player controller updates', () => {
   const { scene, state, draw } = safeScene('3d');
-  vi.spyOn(scene['visuals'], 'update').mockImplementation((_frame, work) => {
+  vi.spyOn(scene['cues'], 'update').mockImplementation((_frame, work) => {
     if (!work) expect.fail('Missing explicit Inferno projectile allowance');
     work.charge(1);
   });
@@ -1000,12 +1003,12 @@ describe('Zuk scene builder', () => {
       const { engine } = restored;
       engine.reset([40, 46]);
       engine.setMechanicsConfig({ zukSets: false, infiniteHealth: true });
-      let emitted: InfernoVisualEvent | undefined;
+      let emitted: EncounterVisualEvent | undefined;
       for (let tick = 0; tick < 40 && !emitted; tick++) {
         engine.advanceTick([40, 46]);
         emitted = engine
           .getLastTickEvents()
-          .filter(isInfernoVisualEvent)
+          .filter(isEncounterVisualEvent)
           .find((event) => event.projectiles.some((cue) => cue.spotAnimId === 1375));
       }
       const cue = emitted?.projectiles.find((cue) => cue.spotAnimId === 1375);
@@ -1026,12 +1029,12 @@ describe('Zuk scene builder', () => {
         events: [],
         restoredPresentation: restoration,
       });
-      expect(restored.scene['visuals']['replay']).toBeDefined();
-      const clear = vi.spyOn(restored.scene['visuals'], 'clear');
+      expect(restored.scene['cues']['replay']).toBeDefined();
+      const clear = vi.spyOn(restored.scene['cues'], 'clear');
       if (emptyLiveFrame) {
         restored.draw(base, { simulationState: state, events: [], restoredPresentation: restoration });
         expect(clear).not.toHaveBeenCalled();
-        expect(restored.scene['visuals']['replay']).toBeUndefined();
+        expect(restored.scene['cues']['replay']).toBeUndefined();
       }
       const effects = (queue: RenderQueue) =>
         queue.commands.flatMap((command) =>
@@ -1040,7 +1043,7 @@ describe('Zuk scene builder', () => {
       restored.draw(base, { simulationState: state, events: [emitted], restoredPresentation: restoration });
       live.draw(base, { simulationState: state, events: [emitted] });
       expect(clear).not.toHaveBeenCalled();
-      expect(restored.scene['visuals']['replay']).toBeUndefined();
+      expect(restored.scene['cues']['replay']).toBeUndefined();
       const start = base + cue.startDelayCycles;
       for (const cycle of [base + 30, start, start + 1]) {
         const context = { simulationState: { ...state, currentTick: Math.floor(cycle / 30) }, events: [] };
@@ -1048,7 +1051,7 @@ describe('Zuk scene builder', () => {
         expect(meshes).toEqual(effects(live.draw(cycle, context)));
         if (cycle >= start) expect(meshes).toHaveLength(1);
       }
-      const motion = [...restored.scene['visuals']['flights']['flights'].values()][0]?.runtime['motion'];
+      const motion = [...restored.scene['cues']['flights']['flights'].values()][0]?.runtime['motion'];
       if (!motion) expect.fail('Expected airborne Zuk ball');
       expect(motion.velocity.x).toBeGreaterThan(0);
       const arrival = advanceProjectileMotion(motion, base + cue.endDelayCycles - (start + 1));
@@ -1064,8 +1067,8 @@ describe('Zuk scene builder', () => {
     const { engine, scene, draw, state } = await frameAudio();
     try {
       const manager = scene['npcInstanceManager'];
-      const event: InfernoVisualEvent = {
-        type: 'inferno_visual',
+      const event: EncounterVisualEvent = {
+        type: 'encounter_visual',
         eventId: 1,
         tick: 0,
         graphics: [],
@@ -1112,8 +1115,8 @@ describe('Zuk scene builder', () => {
       const tick = 1;
       // Emitted on tick T+1 and due one tick later, so the late-initialized history has no started
       // animation to restore Zuk from: only the clock's own start sets his cycle phase.
-      const attack: InfernoVisualEvent = {
-        type: 'inferno_visual',
+      const attack: EncounterVisualEvent = {
+        type: 'encounter_visual',
         eventId: 5,
         tick: tick + 1,
         graphics: [],
@@ -1175,13 +1178,13 @@ describe('Zuk scene builder', () => {
         reads++;
         return [
           {
-            type: 'inferno_visual',
+            type: 'encounter_visual',
             tick,
             eventId: tick + 1,
             projectiles: [],
             graphics: [],
             animations: [{ actorId: ZUK_ACTOR_ID, clipId: 'attack', delayCycles: 2 }],
-          } satisfies InfernoVisualEvent,
+          } satisfies EncounterVisualEvent,
         ];
       },
     });
@@ -1215,8 +1218,8 @@ describe('Zuk scene builder', () => {
   ])('uses scene elevation for live and replay flight while leaving graphics unchanged: replay=%s', async (replay) => {
     const { scene, draw, state } = await frameAudio();
     const source = [20, 20] as const;
-    const emitted: InfernoVisualEvent = {
-      type: 'inferno_visual',
+    const emitted: EncounterVisualEvent = {
+      type: 'encounter_visual',
       eventId: 10,
       tick: 0,
       animations: [],
@@ -1274,7 +1277,7 @@ describe('Zuk scene builder', () => {
         state,
         events: [
           {
-            type: 'inferno_visual',
+            type: 'encounter_visual',
             eventId: 1,
             tick: 0,
             projectiles: [],
@@ -1285,7 +1288,7 @@ describe('Zuk scene builder', () => {
               { actorId: 'late-active', clipId: 'attack', delayCycles: 300 },
               { actorId: ZUK_ACTOR_ID, clipId: 'attack', delayCycles: 300 },
             ],
-          } satisfies InfernoVisualEvent,
+          } satisfies EncounterVisualEvent,
         ],
       },
       { state: destination, events: [] },
@@ -1384,8 +1387,8 @@ describe('Zuk scene builder', () => {
       const graphic = renderer['meshCache'].get(444);
       if (!graphic) expect.fail('Missing loaded effect fixture');
       renderer['meshCache'].delete(444);
-      const event: InfernoVisualEvent = {
-        type: 'inferno_visual',
+      const event: EncounterVisualEvent = {
+        type: 'encounter_visual',
         tick: 0,
         eventId: 1,
         projectiles: [],
@@ -1407,7 +1410,7 @@ describe('Zuk scene builder', () => {
           frameDeltaMs: 0,
           timeline: { timelineKey: 'restored-inferno', paused: true, timeMs: 600 },
         });
-      expect(renderer['activeInstances'].has('inferno-1-graphic-0')).toBe(false);
+      expect(renderer['activeInstances'].has('cue-1-graphic-0')).toBe(false);
       // The effect finishes loading as the countdown ends; the first live frame must still restore it.
       renderer['meshCache'].set(444, graphic);
       const live = { ...state, currentTick: 1 };
@@ -1419,7 +1422,7 @@ describe('Zuk scene builder', () => {
         frameDeltaMs: 100,
         timeline: { timelineKey: 'restored-inferno', paused: false, timeMs: 700 },
       });
-      expect(renderer['activeInstances'].get('inferno-1-graphic-0')?.lifecycle).toMatchObject({ startTick: 0 });
+      expect(renderer['activeInstances'].get('cue-1-graphic-0')?.lifecycle).toMatchObject({ startTick: 0 });
       draw(40, {
         simulationState: live,
         events: [],
@@ -1427,8 +1430,8 @@ describe('Zuk scene builder', () => {
         frameDeltaMs: 100,
         timeline: { timelineKey: 'restored-inferno', paused: false, timeMs: 800 },
       });
-      expect(scene['visuals']['replay']).toBeUndefined();
-      expect(renderer['activeInstances'].get('inferno-1-graphic-0')?.lifecycle).toMatchObject({ startTick: 0 });
+      expect(scene['cues']['replay']).toBeUndefined();
+      expect(renderer['activeInstances'].get('cue-1-graphic-0')?.lifecycle).toMatchObject({ startTick: 0 });
     } finally {
       scene.dispose();
     }
@@ -1504,13 +1507,13 @@ describe('Zuk scene builder', () => {
         state,
         events: [
           {
-            type: 'inferno_visual',
+            type: 'encounter_visual',
             tick: 0,
             eventId: 1,
             projectiles: [],
             graphics: [{ spotAnimId: 444, target: { kind: 'tile', position: [25, 25] }, delayCycles: 0, height: 0 }],
             animations: [{ actorId: ZUK_ACTOR_ID, clipId: 'attack', delayCycles: 0 }],
-          } satisfies InfernoVisualEvent,
+          } satisfies EncounterVisualEvent,
         ],
       },
     ];
@@ -1518,7 +1521,7 @@ describe('Zuk scene builder', () => {
     draw(3, context);
     renderer['meshCache'].set(444, graphic);
     draw(3, context);
-    expect(scene['replayHistory']).toBeUndefined();
+    expect(scene['cueHistory']).toBeUndefined();
     manager['typeRegistry'].set(7705, npcType);
 
     const queue = draw(3, context);
@@ -1526,7 +1529,7 @@ describe('Zuk scene builder', () => {
     expect(queue.commands.some((command) => command.kind === 'mesh3d' && command.meshId === 'effect-444-frame-1')).toBe(
       true,
     );
-    expect(renderer['activeInstances'].get('inferno-1-graphic-0')?.lifecycle).toMatchObject({ startTick: 0 });
+    expect(renderer['activeInstances'].get('cue-1-graphic-0')?.lifecycle).toMatchObject({ startTick: 0 });
     expect(
       manager
         .getInstanceFrameStates()
@@ -1605,7 +1608,9 @@ describe('Zuk scene builder', () => {
     manager.updateAnimations(0, 1, [{ actorId: selected.id, trigger: 'attack', tick: 1 }]);
 
     draw(3, {
-      events: [{ type: 'inferno_clear_minions', npcTypeIds: [7703, 7702, 7704, 7705, 7708], tick: 0, eventId: 10 }],
+      events: [
+        { type: 'actor_presentations_removed', npcTypeIds: [7703, 7702, 7704, 7705, 7708], tick: 0, eventId: 10 },
+      ],
       simulationState: { ...state, npcs: [{ ...selected, id: 'replacement' }] },
     });
 
@@ -1621,7 +1626,7 @@ describe('Zuk scene builder', () => {
     { npcTypeIds: '7705' },
     { npcTypeIds: [7705, '7702'] },
     { npcTypeIds: [Number.NaN] },
-  ])('ignores malformed clear payload %j without removing corpses', async ({ npcTypeIds }) => {
+  ])('ignores malformed presentation removal %j without removing corpses', async ({ npcTypeIds }) => {
     const { scene, draw, state } = await frameAudio();
     const selected = {
       ...makeSnapshot({ id: 'healer', npcTypeId: 7705, position: [20, 20], size: 1 }),
@@ -1631,7 +1636,7 @@ describe('Zuk scene builder', () => {
     draw(1, { events: [], simulationState: { ...state, npcs: [{ ...selected, alive: false }] } });
 
     draw(2, {
-      events: [{ type: 'inferno_clear_minions', npcTypeIds, tick: 0, eventId: 10 }],
+      events: [{ type: 'actor_presentations_removed', npcTypeIds, tick: 0, eventId: 10 }],
       simulationState: { ...state, npcs: [] },
     });
 
@@ -1649,7 +1654,7 @@ describe('Zuk scene builder', () => {
         state,
         events: [
           { type: 'actor_despawned', actorId: ZUK_ACTOR_ID, tick: 0, eventId: 10 },
-          { type: 'inferno_clear_minions', npcTypeIds: [ZUK_NPC_ID], tick: 0, eventId: 11 },
+          { type: 'actor_presentations_removed', npcTypeIds: [ZUK_NPC_ID], tick: 0, eventId: 11 },
         ],
       },
     ];
@@ -1664,7 +1669,7 @@ describe('Zuk scene builder', () => {
 
   it.each([
     'actor_despawned',
-    'inferno_clear_minions',
+    'actor_presentations_removed',
   ])('preserves launched flights and pending landings when the source is removed by %s', async (type) => {
     const { scene, draw, state } = await frameAudio();
     loadEffectFixtures(scene);
@@ -1672,8 +1677,8 @@ describe('Zuk scene builder', () => {
       ...makeSnapshot({ id: 'source', npcTypeId: 7705, position: [20, 20], size: 1 }),
       history: new Map(),
     };
-    const emitted: InfernoVisualEvent = {
-      type: 'inferno_visual',
+    const emitted: EncounterVisualEvent = {
+      type: 'encounter_visual',
       tick: 0,
       eventId: 1,
       animations: [],
@@ -1717,8 +1722,8 @@ describe('Zuk scene builder', () => {
   ])('reconstructs emitted effects on a fresh or discontinuous seek: %j', async ({ destination, prior }) => {
     const { scene, draw, state } = await frameAudio();
     loadEffectFixtures(scene);
-    const emitted: InfernoVisualEvent = {
-      type: 'inferno_visual',
+    const emitted: EncounterVisualEvent = {
+      type: 'encounter_visual',
       tick: 0,
       eventId: 10,
       animations: [],
@@ -1754,7 +1759,8 @@ describe('Zuk scene builder', () => {
 
   it('reconstructs historical animation age silently on first history display and consumes only new frames thereafter', async () => {
     const { scene, draw, state, play, silentSync } = await frameAudio();
-    const reconstruct = vi.spyOn(InfernoVisualController.prototype, 'reconstruct');
+    const syncReplay = vi.spyOn(EncounterCuePlayer.prototype, 'syncReplay');
+    const rebuilds = () => syncReplay.mock.calls.filter(([, , rebuild]) => rebuild).length;
     const audioEvents = new EventAudioPlayer(new AudioEngine());
     const onEvents = vi.spyOn(audioEvents, 'onEvents');
     scene.setEventAudioPlayer(audioEvents);
@@ -1763,13 +1769,13 @@ describe('Zuk scene builder', () => {
         state,
         events: [
           {
-            type: 'inferno_visual',
+            type: 'encounter_visual',
             tick: 0,
             eventId: 1,
             projectiles: [],
             graphics: [],
             animations: [{ actorId: ZUK_ACTOR_ID, clipId: 'attack', delayCycles: 0 }],
-          } satisfies InfernoVisualEvent,
+          } satisfies EncounterVisualEvent,
         ],
       },
     ];
@@ -1785,20 +1791,21 @@ describe('Zuk scene builder', () => {
     draw(3, context);
     draw(5, context);
     draw(30, context);
-    expect(reconstruct).toHaveBeenCalledOnce();
+    expect(rebuilds()).toBe(1);
     expect(play).toHaveBeenCalledWith(9002, { channel: 'sfx' }, expect.any(String));
     scene.dispose();
   });
 
   it('reconstructs a replacement history even when the displayed tick is unchanged', async () => {
     const { scene, draw, state } = await frameAudio();
-    const reconstruct = vi.spyOn(InfernoVisualController.prototype, 'reconstruct');
+    const syncReplay = vi.spyOn(EncounterCuePlayer.prototype, 'syncReplay');
+    const rebuilds = () => syncReplay.mock.calls.filter(([, , rebuild]) => rebuild).length;
     const frames: ReplayDisplayFrame[] = [{ state, events: [] }];
     draw(0, { events: [], replayHistory: { frames, throughFrameIndex: 0 } });
 
     draw(0, { events: [], replayHistory: { frames: [...frames], throughFrameIndex: 0 } });
 
-    expect(reconstruct).toHaveBeenCalledTimes(2);
+    expect(rebuilds()).toBe(2);
     scene.dispose();
   });
 
@@ -2213,7 +2220,7 @@ describe('Zuk scene builder', () => {
     scene.sync(state.npcs);
     scene.events([
       {
-        type: 'inferno_visual',
+        type: 'encounter_visual',
         tick: 0,
         eventId: 1,
         projectiles: [],
@@ -2239,7 +2246,7 @@ describe('Zuk scene builder', () => {
     scene.resetIntroState();
     scene.events([
       {
-        type: 'inferno_visual',
+        type: 'encounter_visual',
         tick: 0,
         eventId: 1,
         projectiles: [],
@@ -2401,8 +2408,8 @@ describe('Inferno scene (no primary NPC)', () => {
     expect(manager['instanceRegistry'].get('bat')?.currentModelMatrix[12]).toBeCloseTo(24.5 + 0.5);
     expect(manager['instanceRegistry'].get('nib')?.currentModelMatrix[12]).toBeCloseTo(20.5);
 
-    const cue: InfernoVisualEvent = {
-      type: 'inferno_visual',
+    const cue: EncounterVisualEvent = {
+      type: 'encounter_visual',
       eventId: 1,
       tick: 2,
       projectiles: [],
@@ -2422,8 +2429,8 @@ describe('Inferno scene (no primary NPC)', () => {
     const C = 40;
     const ADD = C - 8;
     const zuk = npc(ZUK_ACTOR_ID, ZUK_NPC_ID, { position: [28, 52], size: 7, spawnTick: C });
-    const rise: InfernoVisualEvent = {
-      type: 'inferno_visual',
+    const rise: EncounterVisualEvent = {
+      type: 'encounter_visual',
       eventId: 1,
       tick: ADD,
       projectiles: [],
@@ -2830,5 +2837,245 @@ describe('legacy inferno_visual recording: continuous playback versus direct see
       sawPending ||= live.effects.some(({ spotAnimId }) => spotAnimId === 448);
     }
     expect(sawPending).toBe(true);
+  });
+});
+
+/**
+ * The shared cue pipeline end to end on the shipped Inferno scene: the cue player and the effect
+ * index's cue index, observed only through the render queue, NPC poses and frame sounds.
+ */
+describe('the shared encounter cue pipeline', () => {
+  let recorded: readonly ReplayDisplayFrame[] | undefined;
+  const legacyFrames = () => {
+    recorded ??= legacyInfernoRecording().frames;
+    return recorded;
+  };
+  const idleSeqIds = new Set(INFERNO_RENDER_CONFIG.preloadNpcTypes?.flatMap(({ idleSeqId }) => idleSeqId ?? []));
+  const cued = ({ poses }: SceneObservation) =>
+    Object.fromEntries(Object.entries(poses).filter(([, pose]) => !idleSeqIds.has(pose.seqId)));
+  const scenes: SceneCompositor[] = [];
+  afterEach(() => {
+    for (const scene of scenes.splice(0)) scene.dispose();
+  });
+
+  /** The Inferno scene over `frames`; `priorities` sets a clip sequence's forced priority (default 5). */
+  async function infernoScene(
+    frames: readonly ReplayDisplayFrame[],
+    priorities: Readonly<Record<number, number>> = {},
+  ) {
+    const scene = createZukSceneBuilder({ encounterRenderConfig: INFERNO_RENDER_CONFIG });
+    if (!(scene instanceof SceneCompositor)) expect.fail('Expected a scene compositor');
+    scenes.push(scene);
+    const { loader, animation } = syntheticNpcAssets();
+    vi.spyOn(animation, 'loadSeqType').mockImplementation((id) => {
+      const sequence = new SeqType(id, cacheInfo);
+      sequence.frameIds = [10, 11, 12];
+      sequence.frameLengths = [...SYNTHETIC_CLIP_FRAME_CYCLES];
+      sequence.forcedPriority = priorities[id] ?? 5;
+      return sequence;
+    });
+    await scene.loadNpc(loader, animation);
+    installSyntheticSpotAnims(scene, INFERNO_RENDER_CONFIG.spotAnimIds ?? []);
+    return (cycle: number, paused = false) =>
+      observeScene(
+        scene,
+        scene.build(
+          {
+            speedMultiplier: 1,
+            interaction: { hoveredTile: null, targetTile: null },
+            options: SCENE_OPTIONS,
+            ...replayContextAt(frames, cycle, paused),
+          },
+          IDENTITY_PROJECTION,
+          VIEWPORT,
+        ),
+      );
+  }
+
+  type SameCycleClips = {
+    readonly order: readonly ('attack' | 'defend')[];
+    readonly priorities: Readonly<Record<number, number>>;
+    readonly shown: 'attack' | 'defend';
+  };
+  const higherAttack = { [INFERNO_WAVE_SEQS.nibbler.attack]: 8 };
+  it.each<SameCycleClips>([
+    { order: ['attack', 'defend'], priorities: higherAttack, shown: 'attack' },
+    { order: ['defend', 'attack'], priorities: higherAttack, shown: 'attack' },
+    { order: ['attack', 'defend'], priorities: {}, shown: 'defend' },
+    { order: ['defend', 'attack'], priorities: {}, shown: 'attack' },
+  ])('shows the same winner of clips $order starting on one cycle whether played or sought, with priorities $priorities', async ({
+    order,
+    priorities,
+    shown,
+  }) => {
+    // The nibbler's clips both start at cycle 50: the higher priority wins, and on a tie the later one.
+    const frames = legacyFrames().map((frame, tick) =>
+      tick === 1
+        ? {
+            ...frame,
+            events: [
+              {
+                type: 'encounter_visual',
+                eventId: 11,
+                tick: 1,
+                animations: order.map((clipId) => ({ actorId: 'nib', clipId, delayCycles: 20 })),
+                projectiles: [],
+                graphics: [],
+              } satisfies EncounterVisualEvent,
+            ],
+          }
+        : frame,
+    );
+    const played = await infernoScene(frames, priorities);
+    for (let cycle = 0; cycle < 53; cycle++) played(cycle);
+    const sought = await infernoScene(frames, priorities);
+
+    const playedPoses = cued(played(53));
+    expect(playedPoses.nib?.seqId).toBe(INFERNO_WAVE_SEQS.nibbler[shown]);
+    expect(cued(sought(53, true))).toEqual(playedPoses);
+  });
+
+  it('holds a restore silently while an encounter NPC type loads, then plays the cue on from its original clock', async () => {
+    const { scene, draw, state, engine, play, update } = await frameAudio();
+    const reference = await frameAudio();
+    try {
+      const manager = scene['npcInstanceManager'];
+      // The attack's frames start at cycles 25, 27 and 30, each with its own sound (9000 + frame).
+      const event: EncounterVisualEvent = {
+        type: 'encounter_visual',
+        eventId: 1,
+        tick: 0,
+        graphics: [],
+        projectiles: [],
+        animations: [{ actorId: ZUK_ACTOR_ID, clipId: 'attack', delayCycles: 25 }],
+      };
+      const frames: ReplayDisplayFrame[] = [{ state, events: [event] }];
+      const restoration: RestoredPresentation = {
+        engine,
+        tick: 0,
+        timeMs: 26 * 20,
+        history: { frames, throughFrameIndex: 0 },
+      };
+      const pose = (target: InfernoSceneCompositor) =>
+        target['npcInstanceManager']
+          .getInstanceFrameStates()
+          .find((entry) => entry.actorId === PRIMARY_NPC_ACTOR_ID)
+          ?.animController?.getFrameState();
+      const restored = (cycle: number, live = false) =>
+        draw(cycle, {
+          simulationState: { ...state, currentTick: Math.floor(cycle / 30) },
+          events: live ? [] : [event],
+          restoredPresentation: restoration,
+          frameDeltaMs: 20,
+          timeline: { timelineKey: 'restored-inferno', paused: false, timeMs: cycle * 20 },
+        });
+      const npcType = manager['typeRegistry'].get(7705);
+      if (!npcType) expect.fail('Missing loaded NPC type');
+      manager['typeRegistry'].delete(7705);
+
+      // Held across the attack's second frame and its sound, without claiming the frame was drawn.
+      const held = [26, 27, 28].map((cycle) => restored(cycle).replayPresentationReady);
+      expect(held).toEqual([false, false, false]);
+      expect(update).not.toHaveBeenCalled();
+      manager['typeRegistry'].set(7705, npcType);
+      expect(restored(29).replayPresentationReady).toBe(true);
+      const restoredPose = pose(scene);
+      expect(update).not.toHaveBeenCalled();
+      restored(30, true);
+      restored(31, true);
+
+      for (let cycle = 0; cycle <= 29; cycle++)
+        reference.draw(cycle, { events: [], replayHistory: { frames, throughFrameIndex: 0 } });
+      expect(restoredPose).toMatchObject({ seqId: ZUK_SEQS.zuk.attack, currentFrameIndex: 1 });
+      expect(restoredPose).toEqual(pose(reference.scene));
+      // Only the frame first shown live sounds.
+      expect(play.mock.calls.map(([id]) => id)).toEqual([9002]);
+    } finally {
+      scene.dispose();
+      reference.scene.dispose();
+    }
+  });
+
+  /** A real Zuk fight, recorded through the recorder as the app records one. */
+  function recordZukFight(ticks: number) {
+    const input: [number, number] = [40, 46];
+    const engine = new SimulationEngine({ encounter: createZukWaveEncounter(1), combatSeed: 1, startPos: input });
+    engine.setMechanicsConfig({ zukSets: false, infiniteHealth: true });
+    const config = engine.getRunConfig();
+    const recorder = new ReplayRecorder();
+    recorder.startRun(config);
+    recorder.recordFrame(0, input, engine.getState(), []);
+    for (let tick = 1; tick <= ticks; tick++) {
+      engine.advanceTick(input);
+      recorder.recordFrame(tick, input, engine.getState(), engine.getLastTickEvents());
+    }
+    return { config, data: recorder.exportData() };
+  }
+
+  /** `data` as the build before the encounter visual batch would have written it. */
+  function inOldShapes(data: ReplayRecorderData): ReplayRecorderData {
+    const old: Record<string, string> = {
+      encounter_visual: 'inferno_visual',
+      actor_presentations_removed: 'inferno_clear_minions',
+    };
+    return {
+      ...data,
+      frames: data.frames.map((frame) => ({
+        ...frame,
+        events: frame.events.map((event) => (old[event.type] ? { ...event, type: old[event.type] } : event)),
+      })),
+    };
+  }
+
+  it('plays a branch taken over from a loaded old-shape recording exactly as the same fight recorded today', async () => {
+    const { config, data } = recordZukFight(45);
+    const today = new ReplayRecorder();
+    today.load(data);
+    const loaded = new ReplayRecorder();
+    loaded.load(inOldShapes(data));
+    expect(loaded.getDisplayFrames().map(({ events }) => events)).toEqual(
+      today.getDisplayFrames().map(({ events }) => events),
+    );
+    // Take over just after the first Zuk ball launches, so it is airborne across the handoff.
+    const takeover = loaded
+      .getDisplayFrames()
+      .findIndex(({ events }) =>
+        events.some(
+          (event) => isEncounterVisualEvent(event) && event.projectiles.some((cue) => cue.spotAnimId === 1375),
+        ),
+      );
+    expect(takeover).toBeGreaterThan(0);
+    const resumed = reconstructReplayPrefix(config, loaded.getReconstructionFrames(), takeover, null);
+    if (!resumed) expect.fail('Expected the takeover engine');
+    const suffix: ReplayDisplayFrame[] = data.frames.slice(takeover + 1).map((frame) => {
+      resumed.advanceTick(frame.input);
+      return { state: resumed.getState(), events: resumed.getLastTickEvents() };
+    });
+    const branch = [...loaded.getDisplayFrames().slice(0, takeover + 1), ...suffix];
+    const batches = (frames: readonly ReplayDisplayFrame[]) =>
+      frames.map(({ events }) => events.filter(isEncounterVisualEvent).map(({ eventId: _id, ...batch }) => batch));
+    const prefixIds = branch.slice(0, takeover + 1).flatMap(({ events }) => events.map(({ eventId }) => eventId));
+    const suffixIds = suffix.flatMap(({ events }) => events.map(({ eventId }) => eventId));
+
+    // The branch's own batches, in today's shape, continue the prefix's ids and the same fight.
+    expect(Math.min(...suffixIds)).toBe(Math.max(...prefixIds) + 1);
+    expect(batches(suffix).flat().length).toBeGreaterThan(0);
+    expect(batches(suffix)).toEqual(batches(today.getDisplayFrames().slice(takeover + 1)));
+    const playBranch = await infernoScene(branch);
+    const playToday = await infernoScene(today.getDisplayFrames());
+    const lastCycle = (branch.length - 1) * 30;
+    let effectsAfterTakeover = 0;
+    const todayEffects: SceneObservation['effects'][] = [];
+    for (let cycle = 0; cycle <= lastCycle; cycle++) {
+      const shown = playBranch(cycle);
+      const expected = playToday(cycle);
+      todayEffects.push(expected.effects);
+      expect(shown.effects, `cycle ${cycle}`).toEqual(expected.effects);
+      expect(cued(shown), `cycle ${cycle}`).toEqual(cued(expected));
+      if (cycle > (takeover + 1) * 30) effectsAfterTakeover += shown.effects.length;
+    }
+    expect(effectsAfterTakeover).toBeGreaterThan(0);
+    for (const cycle of [(takeover + 1) * 30 + 7, lastCycle - 11])
+      expect((await infernoScene(branch))(cycle, true).effects).toEqual(todayEffects[cycle]);
   });
 });

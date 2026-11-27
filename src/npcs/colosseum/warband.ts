@@ -3,6 +3,7 @@ import type { PlayerActor } from '../../core/actors/PlayerActor';
 import type { DamageType } from '../../core/actors/types';
 import { npcHitDelayFromEndTime } from '../../core/combat/hitDelay';
 import { type AttackPlan, resolveAttackRequest } from '../../core/combat/npcAttackRequest';
+import type { NpcProjectileCue } from '../../core/events/encounterVisual';
 import { canNpcActThisTurn } from '../../core/npcDeath';
 import { isArenaFootprintWalkable } from '../../core/npcMovementCollision';
 import {
@@ -15,7 +16,7 @@ import {
 import { createNpcDefinition, type DefinedNpcActor } from '../../core/npcs';
 import { getMonsterFormulaStats, getMonsterHp } from '../../data/monsterData';
 import type { Coordinate } from '../../types/simulation';
-import { actorVisualTarget, type NpcProjectileCue, npcProjectileSource } from '../projectileCue';
+import { actorVisualTarget, npcProjectileSource } from '../projectileCue';
 import {
   COLOSSEUM_SEQS,
   COLOSSEUM_SPOTANIMS,

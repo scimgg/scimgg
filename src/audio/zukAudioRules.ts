@@ -1,3 +1,4 @@
+import { isEncounterVisualEvent } from '../core/events/encounterVisual';
 import type { GameEvent } from '../core/events/types';
 import {
   isInfernoAbilityEvent,
@@ -6,7 +7,6 @@ import {
   isZukGroundEffectEvent,
   isZukHitEvent,
 } from '../npcs/inferno/events';
-import { isInfernoVisualEvent } from '../npcs/inferno/visualEvents';
 import { coordinateFrom, play, type SoundRule, silent, type TimedSound } from './EventAudioPlayer';
 
 // Ordinary waves 1-68, both wave captures (inferno-waves-1-68, -(35ish)-to-68): each id fires on every
@@ -45,9 +45,9 @@ function pillarCollapseSoundPosition(event: GameEvent) {
 }
 
 export const zukAudioRules: Record<string, SoundRule> = {
-  inferno_visual: {
+  encounter_visual: {
     resolve: (event) => {
-      if (!isInfernoVisualEvent(event)) return silent;
+      if (!isEncounterVisualEvent(event)) return silent;
       return play(
         event.graphics.flatMap((graphic): TimedSound[] =>
           graphic.spotAnimId === 659 && graphic.target.kind === 'tile'

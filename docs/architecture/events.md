@@ -17,6 +17,29 @@ happened (`attackKind: 'magic_fire'`), never a cache or asset id; the renderer d
   emitted on the attack tick so the XP drop overlay can show a hit before a delayed hit lands.
   Read the union.
 
+## Visual batches
+
+Semantic events are the normal API. The narrow exception is a transition that *is* a set of
+explicitly scheduled visual instructions, such as a volley with per-occurrence delays, landing tiles
+and heights: the encounter emits one `encounter_visual` batch
+([`src/core/events/encounterVisual.ts`](../../src/core/events/encounterVisual.ts)) of keyed NPC
+clips, NPC projectiles and one-shot graphics. Never also map a semantic event to the same effect.
+Each cue's identity is its batch's `eventId`, its family and its ordinal, so batch boundaries and
+order are part of the wire contract. A graphic stands on a tile's center, on a tracked actor's
+rendered center (its recorded position while the actor is not rendered), or rides an `attached`
+actor's rendered model, hidden while the actor is absent. The scene's `EncounterCuePlayer` plays
+batches live and restores them in replay from `ReplayEffectIndex`.
+
+`actor_presentations_removed` drops every drawn presentation of the listed NPC types, corpses
+included, before the frame's actors are synced (a practice command replacing a set). Plain
+`actor_despawned` is not equivalent: a corpse the simulation already pruned may still be shown.
+
+Recordings from older builds are converted as `ReplayRecorder.load` reads them
+([`legacyReplayEvents.ts`](../../src/core/legacyReplayEvents.ts)): `inferno_visual` becomes
+`encounter_visual` and `inferno_clear_minions` becomes `actor_presentations_removed`, with ids,
+ticks, frames and parameters kept. A malformed recognized event fails the load before anything is
+installed.
+
 ## Consumption
 
 `SceneCompositor.build()` filters events through `getUnprocessedEvents()` (by

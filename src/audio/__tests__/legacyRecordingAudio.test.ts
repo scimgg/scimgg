@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { setArenaConfig, setDefaultArenaConfig } from '../../core/constants';
 import type { GameEvent } from '../../core/events/types';
+import { decodeLegacyReplayFrames } from '../../core/legacyReplayEvents';
 import type { ReplayDisplayFrame } from '../../core/ReplayRecorder';
 import { createEventAudioPlayer, eventAudioLayersFor } from '../../hooks/useAudioManager';
 import {
@@ -80,9 +81,10 @@ describe('event audio for legacy encounter recordings', () => {
 });
 
 describe('event audio routing to the displayed encounter', () => {
+  // As a loaded recording delivers them: in today's shapes.
   const idsPlayed = (kind: string, events: readonly GameEvent[], position: Coordinate) => {
     const { player, played } = dispatcherFor(kind);
-    player.onEvents([...events], position);
+    player.onEvents([...decodeLegacyReplayFrames([{ events }])[0].events], position);
     return played.mock.calls.map(([id]) => id);
   };
 

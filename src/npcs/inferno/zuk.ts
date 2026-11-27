@@ -1,6 +1,7 @@
 import { BYPASS_PROTECTION_PRAYER } from '../../core/combat/damageCalculation';
 import { lookupPrayerMultipliersFromState } from '../../core/combat/formulas';
 import { npcFormulaActor, playerFormulaActor, projectileDistance } from '../../core/combat/npcAttackRequest';
+import { emitEncounterVisual } from '../../core/events/encounterVisual';
 import { createNpcDefinition, type NpcDefinitionContext } from '../../core/npcs';
 import type { Coordinate } from '../../types/simulation';
 import { npcProjectileSource } from '../projectileCue';
@@ -8,7 +9,6 @@ import { createInfernoActor } from './actors';
 import { rollZukBlast } from './blastDamage';
 import { emitZukAttack } from './events';
 import { presentInfernoDamage } from './presentation';
-import { emitInfernoVisual } from './visualEvents';
 
 export type ZukState = {
   lastCastTick: number | null;
@@ -73,7 +73,7 @@ export const zukDefinition = createNpcDefinition<ZukState, ZukConfig>({
     // Flight follows the pre-NPC-phase player position, not the glyph endpoint: docs/encounters/zuk-facts-spec.md#3-zuks-attack-cadence.
     const endCycles = 16 + 10 * projectileDistance(actor, player);
     const impactDelayTicks = Math.floor(endCycles / 30);
-    emitInfernoVisual(context.tickEvents, {
+    emitEncounterVisual(context.tickEvents, {
       animations: [
         { actorId: actor.id, clipId: 'attack', delayCycles: 0 },
         ...(!exposed ? [{ actorId: target.id, clipId: 'hit', delayCycles: endCycles }] : []),

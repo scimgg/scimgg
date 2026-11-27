@@ -11,6 +11,7 @@ import {
   resolveAttackRequest,
 } from '../../core/combat/npcAttackRequest';
 import { contextAttackDecisions, contextDecisions } from '../../core/decisionRandom';
+import { emitEncounterVisual } from '../../core/events/encounterVisual';
 import { canNpcActThisTurn, canReceiveNewAttack } from '../../core/npcDeath';
 import { createNpcDefinition, type NpcDefinitionContext } from '../../core/npcs';
 import type { Coordinate } from '../../types/simulation';
@@ -21,7 +22,6 @@ import { jadHealerDefinition } from './jadHealer';
 import { presentInfernoDamage } from './presentation';
 import { JALTOK_JAD_PROJECTILE_TIMING } from './projectileProfiles';
 import { resolveReadyTarget } from './targetResolution';
-import { emitInfernoVisual } from './visualEvents';
 
 export type JadStyle = 'magic' | 'range' | 'melee';
 export type JadOptions = {
@@ -212,7 +212,7 @@ export const jadDefinition = createNpcDefinition<JadState, JadConfig>({
       actor.combat.attackSpeed =
         style === 'melee' ? 4 : (actor.state.rangedMagicPeriod ?? execution.rangedMagicPeriod ?? 8);
       scheduleNpcAction(actor.combat, context.tick, actor.combat.attackSpeed);
-      emitInfernoVisual(context.tickEvents, {
+      emitEncounterVisual(context.tickEvents, {
         animations: [{ actorId: actor.id, clipId: style, delayCycles: 0 }],
         projectiles: [],
         graphics: [],
@@ -236,7 +236,7 @@ export const jadDefinition = createNpcDefinition<JadState, JadConfig>({
     if (!attack) throw new TypeError(`Missing formula stats for ${actor.id}`);
     if (pending.style === 'magic') {
       const cue = demonstrateJad(actor, target, 'magic');
-      emitInfernoVisual(context.tickEvents, {
+      emitEncounterVisual(context.tickEvents, {
         animations: [],
         graphics: [],
         projectiles: cue.projectiles.map((projectile) => ({
@@ -247,7 +247,7 @@ export const jadDefinition = createNpcDefinition<JadState, JadConfig>({
       });
     }
     if (pending.style === 'range') {
-      emitInfernoVisual(context.tickEvents, {
+      emitEncounterVisual(context.tickEvents, {
         animations: [],
         projectiles: [],
         // Zero-delay rock placement is simulator policy: docs/encounters/zuk-policy.md (Live Jad combat).

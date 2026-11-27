@@ -31,11 +31,11 @@ import type {
   EnvironmentalDamage,
   NpcMovementRequest,
 } from '../../core/encounters/types';
+import { emitEncounterVisual } from '../../core/events/encounterVisual';
 import { isNpcLiving } from '../../core/npcDeath';
 import { NpcDefinitionCollection, type NpcDefinitionContext } from '../../core/npcs';
 import type { WorldState } from '../../core/WorldState';
 import { ZUK_ACTOR_ID, ZUK_JAD_NPC_ID, ZUK_SHIELD_NPC_ID } from '../../npcs/inferno/constants';
-import { emitInfernoVisual } from '../../npcs/inferno/visualEvents';
 import {
   INFERNO_WAVE_JAD_SCHEDULE,
   type InfernoCorpse,
@@ -682,7 +682,7 @@ export class InfernoEncounter implements Encounter {
       for (const actor of this.zuk.createOpeningActors()) ctx.spawnNpc(actor);
       // Zuk rises with seq 7563 as he is added (W69 L2840). His spawn tick is C, the cast clock's
       // epoch, so the clip is cued here rather than played from it as a spawn clip.
-      emitInfernoVisual(ctx.tickEvents, {
+      emitEncounterVisual(ctx.tickEvents, {
         animations: [{ actorId: ZUK_ACTOR_ID, clipId: ZUK_INTRO_RISE_CLIP, delayCycles: 0 }],
         projectiles: [],
         graphics: [],
@@ -867,7 +867,7 @@ export class InfernoEncounter implements Encounter {
     }
     if (this.healedParents.has(target.id)) return;
     this.healedParents.add(target.id);
-    emitInfernoVisual(context.tickEvents, {
+    emitEncounterVisual(context.tickEvents, {
       animations: [],
       projectiles: [],
       graphics: [

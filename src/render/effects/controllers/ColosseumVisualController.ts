@@ -1,3 +1,4 @@
+import type { NpcProjectileCue } from '../../../core/events/encounterVisual';
 import type { GameEvent } from '../../../core/events/types';
 import type { ReplayDisplayFrame } from '../../../core/ReplayRecorder';
 import { COLOSSEUM_SPOTANIMS } from '../../../npcs/colosseum/constants';
@@ -6,7 +7,6 @@ import {
   type ColosseumGraphicCue,
   isColosseumVisualEvent,
 } from '../../../npcs/colosseum/visualEvents';
-import type { NpcProjectileCue } from '../../../npcs/projectileCue';
 import type { ReplayActorSampler } from '../../core/replayActorHistory';
 import { ReplayCueStream } from '../../core/replayCueStream';
 import { ReplayDeferredPrimaryIndex } from '../../core/replayDeferredPrimaryIndex';
