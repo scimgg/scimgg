@@ -67,6 +67,7 @@ export const ENCOUNTER_CATALOG: readonly EncounterCatalogEntry[] = [
     registered: true,
     retiredKinds: [{ kind: 'zuk', slug: 'zuk' }],
   },
+  { kind: 'zulrah', variantKinds: [], slug: 'zulrah', registered: true },
 ];
 
 const ENTRY_BY_KIND: ReadonlyMap<string, EncounterCatalogEntry> = new Map(

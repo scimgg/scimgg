@@ -3,6 +3,7 @@ import type { SolHereditPublicState, SolHereditVisuals } from '../../encounters/
 import type { YamaEncounterKind } from '../../encounters/yamaP3/contracts';
 import type { YamaPublicState, YamaVisuals } from '../../encounters/yamaP3/snapshot';
 import type { ZukPublicState, ZukVisuals } from '../../encounters/zuk/snapshot';
+import type { ZulrahPublicState, ZulrahVisuals } from '../../encounters/zulrah/snapshot';
 import type { MechanicsConfig } from '../../types/simulation';
 import type { WorldState } from '../WorldState';
 
@@ -36,7 +37,8 @@ export type EncounterSnapshot =
       readonly kind: 'inferno';
       readonly state: InfernoPublicState;
       readonly visuals: InfernoVisuals;
-    };
+    }
+  | { readonly kind: 'zulrah'; readonly state: ZulrahPublicState; readonly visuals: ZulrahVisuals };
 
 /** The lobby is a walkable scene with no fight state. */
 export type LobbyPublicState = Record<string, never>;
@@ -46,6 +48,7 @@ export type YamaSnapshot = Extract<EncounterSnapshot, { kind: YamaEncounterKind 
 export type ZukSnapshot = Extract<EncounterSnapshot, { kind: 'zuk' }>;
 export type SolHereditSnapshot = Extract<EncounterSnapshot, { kind: 'sol_heredit' }>;
 export type InfernoSnapshot = Extract<EncounterSnapshot, { kind: 'inferno' }>;
+export type ZulrahSnapshot = Extract<EncounterSnapshot, { kind: 'zulrah' }>;
 
 const YAMA_KINDS: ReadonlySet<string> = new Set<YamaEncounterKind>([
   'yama_p3',

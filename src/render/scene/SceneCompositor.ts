@@ -1,7 +1,7 @@
 import type { ActorFrameState, EventAudioPlayer } from '../../audio';
 import type { LocWithType } from '../../cache/CacheManager';
 import { getSpecialAttackDef } from '../../core/combat/player/specialAttacks/registry';
-import { GRID_SIZE, getArenaBounds, getWalkableTiles } from '../../core/constants';
+import { GRID_SIZE, getArenaBounds, getTileSpaceBounds, getWalkableTiles, isInTileSpace } from '../../core/constants';
 import { type GameEvent, isCoreEvent } from '../../core/events/types';
 import type { ReplayDisplayFrame } from '../../core/ReplayRecorder';
 import { TileKeySetCache } from '../../core/tileKeySet';
@@ -95,7 +95,7 @@ import { NpcInstanceManager, type NpcOverlayHeights, PRIMARY_NPC_ACTOR_ID } from
 import { UIOverlayRenderer } from '../overlay/UIOverlayRenderer';
 import { type PlayerAnimatedMeshPair, PlayerAnimationController } from '../player/PlayerAnimationController';
 import type { PlayerAnimationSet, PlayerAnimModelAdapter } from '../player/playerAnimationTypes';
-import { getTerrainHeight, getTerrainHeightInterpolated } from '../shared/renderUtils';
+import { composeTerrainHeights, getTerrainHeight, getTerrainHeightInterpolated } from '../shared/renderUtils';
 import { resolveEncounterLocRenderOptions } from './encounterLocRenderOptions';
 import type { EncounterRenderConfig } from './encounterRenderConfig';
 import { GroundItemRenderer } from './GroundItemRenderer';
@@ -2522,8 +2522,8 @@ export class SceneCompositor {
     }
   }
 
-  private prepareCenterTerrain(mapData: MapSquareData, terrainBounds: ArenaBounds): void {
-    this.terrainHeights = mapData.tileHeights[0];
+  private prepareCenterTerrain(terrainHeights: Int32Array[], terrainBounds: ArenaBounds): void {
+    this.terrainHeights = terrainHeights;
     this.npcInstanceManager.setTerrainHeights(this.terrainHeights);
     this.spotAnimRenderer.setTerrainHeights(this.terrainHeights);
     this.terrainBounds = terrainBounds;
@@ -2561,7 +2561,16 @@ export class SceneCompositor {
     const maxX = Math.max(...renderedBlock.map(({ tileOffsetX }) => tileOffsetX + MAP_SQUARE_SIZE - 1));
     const minY = Math.min(...renderedBlock.map(({ tileOffsetY }) => tileOffsetY));
     const maxY = Math.max(...renderedBlock.map(({ tileOffsetY }) => tileOffsetY + MAP_SQUARE_SIZE - 1));
-    this.prepareCenterTerrain(centerMapData, {
+    // Heights for every rendered square north or east of the core, so actors there stand on them.
+    const heights =
+      composeTerrainHeights(
+        renderedBlock.flatMap(({ dx, dy, tileOffsetX, tileOffsetY }) => {
+          const square = loadedSquares.get(`${centerMapX + dx},${centerMapY + dy}`);
+          const level0 = square?.tileHeights[0];
+          return level0 ? [{ tileOffsetX, tileOffsetY, heights: level0 }] : [];
+        }),
+      ) ?? centerMapData.tileHeights[0];
+    this.prepareCenterTerrain(heights, {
       minX,
       maxX,
       minY,
@@ -2649,10 +2658,11 @@ export class SceneCompositor {
   protected buildGridLines(queue: RenderQueue, projection: Projection2D, viewport?: Viewport): void {
     const bounds = this.getGridBounds();
     const margin = 3;
-    let minX = Math.max(0, (bounds?.minX ?? 0) - margin);
-    let maxX = Math.min(GRID_SIZE - 1, (bounds?.maxX ?? GRID_SIZE - 1) + margin);
-    let minY = Math.max(0, (bounds?.minY ?? 0) - margin);
-    let maxY = Math.min(GRID_SIZE - 1, (bounds?.maxY ?? GRID_SIZE - 1) + margin);
+    const space = getTileSpaceBounds();
+    let minX = Math.max(space.minX, (bounds?.minX ?? 0) - margin);
+    let maxX = Math.min(space.maxX, (bounds?.maxX ?? GRID_SIZE - 1) + margin);
+    let minY = Math.max(space.minY, (bounds?.minY ?? 0) - margin);
+    let maxY = Math.min(space.maxY, (bounds?.maxY ?? GRID_SIZE - 1) + margin);
 
     if (viewport) {
       const vpMargin = 2;
@@ -3026,7 +3036,7 @@ export class SceneCompositor {
     tileIndicatorConfig: TileIndicatorConfig,
   ): void {
     if (target[0] === playerPos[0] && target[1] === playerPos[1]) return;
-    if (target[0] < 0 || target[0] >= GRID_SIZE || target[1] < 0 || target[1] >= GRID_SIZE) return;
+    if (!isInTileSpace(target[0], target[1])) return;
 
     const destinationConfig = tileIndicatorConfig.destinationTile;
     if (destinationConfig.enabled) {
@@ -3064,7 +3074,7 @@ export class SceneCompositor {
     playerPos: Coordinate,
     tileIndicatorConfig: TileIndicatorConfig,
   ): void {
-    if (hovered[0] < 0 || hovered[0] >= GRID_SIZE || hovered[1] < 0 || hovered[1] >= GRID_SIZE) return;
+    if (!isInTileSpace(hovered[0], hovered[1])) return;
     if (targetTile && hovered[0] === targetTile[0] && hovered[1] === targetTile[1]) return;
     if (hovered[0] === playerPos[0] && hovered[1] === playerPos[1]) return;
 
@@ -4143,7 +4153,7 @@ export class SceneCompositor {
     } else {
       const commands: RenderCommand[] = [];
 
-      if (playerTile[0] >= 0 && playerTile[0] < GRID_SIZE && playerTile[1] >= 0 && playerTile[1] < GRID_SIZE) {
+      if (isInTileSpace(playerTile[0], playerTile[1])) {
         const trueTileConfig = tileIndicatorConfig.trueTile;
         if (trueTileConfig.enabled) {
           const trueTileHsl = this.hexToPackedHsl(trueTileConfig.color);
@@ -4199,10 +4209,7 @@ export class SceneCompositor {
       if (
         targetTile &&
         (targetTile[0] !== playerTile[0] || targetTile[1] !== playerTile[1]) &&
-        targetTile[0] >= 0 &&
-        targetTile[0] < GRID_SIZE &&
-        targetTile[1] >= 0 &&
-        targetTile[1] < GRID_SIZE
+        isInTileSpace(targetTile[0], targetTile[1])
       ) {
         const destinationConfig = tileIndicatorConfig.destinationTile;
         if (destinationConfig.enabled) {
@@ -4240,10 +4247,7 @@ export class SceneCompositor {
         hoveredTile &&
         (hoveredTile[0] !== playerTile[0] || hoveredTile[1] !== playerTile[1]) &&
         (!targetTile || hoveredTile[0] !== targetTile[0] || hoveredTile[1] !== targetTile[1]) &&
-        hoveredTile[0] >= 0 &&
-        hoveredTile[0] < GRID_SIZE &&
-        hoveredTile[1] >= 0 &&
-        hoveredTile[1] < GRID_SIZE
+        isInTileSpace(hoveredTile[0], hoveredTile[1])
       ) {
         const hoverConfig = tileIndicatorConfig.hoverTile;
         if (hoverConfig.enabled) {

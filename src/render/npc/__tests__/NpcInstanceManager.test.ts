@@ -2675,3 +2675,30 @@ describe('NpcInstanceManager animated mesh scratch', () => {
     expect(Array.from(opaqueOf(b).positions)).toEqual(Array.from(small.type.baseMeshCommands[0].positions));
   });
 });
+
+describe('NpcInstanceManager hidden and transforming NPCs', () => {
+  it('draws no instance for a hidden NPC, and builds a fresh one when it shows again', () => {
+    const manager = new NpcInstanceManager();
+    registerType(manager, 9000, 1, 32);
+    const npc = makeSnapshot({ id: 'mob', npcTypeId: 9000, position: [12, 14], size: 1 });
+    manager.syncInstances([npc], 1);
+    const first = manager['instanceRegistry'].get('mob');
+    expect(first).toBeDefined();
+    manager.syncInstances([{ ...npc, hidden: true }], 1);
+    expect(manager['instanceRegistry'].has('mob')).toBe(false);
+    manager.syncInstances([npc], 1);
+    const shown = manager['instanceRegistry'].get('mob');
+    expect(shown).toBeDefined();
+    expect(shown).not.toBe(first);
+  });
+
+  it('rebuilds the instance when the same actor changes type', () => {
+    const manager = new NpcInstanceManager();
+    registerType(manager, 9000, 1, 32);
+    registerType(manager, 9001, 1, 32);
+    const npc = makeSnapshot({ id: 'mob', npcTypeId: 9000, position: [12, 14], size: 1 });
+    manager.syncInstances([npc], 1);
+    manager.syncInstances([{ ...npc, npcTypeId: 9001 }], 1);
+    expect(manager['instanceRegistry'].get('mob')?.npcTypeId).toBe(9001);
+  });
+});

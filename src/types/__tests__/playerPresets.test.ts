@@ -24,7 +24,7 @@ describe('shipped preset equipment coverage', () => {
     expect(Object.keys(EQUIPMENT_PRESETS.inferno)[0]).toBe('max_tbow');
   });
 
-  it('resolves every initially equipped slot in all 31 real encounter presets', () => {
+  it('resolves every initially equipped slot in all 37 real encounter presets', () => {
     const unresolved: string[] = [];
     let realPresetCount = 0;
 
@@ -40,7 +40,7 @@ describe('shipped preset equipment coverage', () => {
       }
     }
 
-    expect(realPresetCount).toBe(31);
+    expect(realPresetCount).toBe(37);
     expect(unresolved).toEqual([]);
   });
 

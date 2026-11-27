@@ -30,6 +30,10 @@ export interface MechanicsConfig {
   zukSetTimer?: boolean;
   zukShieldSafeTiles?: boolean;
   solHereditAttacks?: boolean;
+  zulrahAttacks?: boolean;
+  zulrahClouds?: boolean;
+  zulrahSnakelings?: boolean;
+  zulrahVenom?: boolean;
   solHereditSand?: boolean;
   solHereditBeams?: boolean;
   solHereditTelegraph?: boolean;
@@ -82,6 +86,10 @@ export const BOOLEAN_MECHANICS_KEYS = [
   'zukSetTimer',
   'zukShieldSafeTiles',
   'solHereditAttacks',
+  'zulrahAttacks',
+  'zulrahClouds',
+  'zulrahSnakelings',
+  'zulrahVenom',
   'solHereditSand',
   'solHereditBeams',
   'solHereditTelegraph',
@@ -245,6 +253,8 @@ export interface NpcSnapshot {
   targetableFromTick?: TickNumber;
   /** Never targetable: not clickable for the actor's whole life (see `NpcActor.untargetable`). */
   untargetable?: true;
+  /** Not drawn this tick (see `NpcActor.hidden`). */
+  hidden?: true;
   /** The despawn timer bar completes this many ticks before `despawnTick`. */
   despawnTimerLeadTicks?: number;
   /** Health bar stays up while the NPC is targetable, not only after a hit. */

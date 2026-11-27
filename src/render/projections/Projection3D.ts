@@ -1,3 +1,4 @@
+import { isInTileSpace } from '../../core/constants';
 import type { Camera3D, Projection2D, Viewport } from '../core/camera';
 import { getRasterDimensions } from '../core/raster';
 import type { TileCoord, Vec2, Vec3 } from '../core/types';
@@ -291,15 +292,15 @@ export class Projection3D implements Projection2D, Camera3D {
 
   private getTerrainHeightAt(tileX: number, tileY: number): number {
     if (!this.terrainHeights) return 0;
-    const clampedX = Math.max(0, Math.min(64, Math.floor(tileX)));
-    const clampedY = Math.max(0, Math.min(64, Math.floor(tileY)));
+    const clampedX = Math.max(0, Math.min(this.terrainHeights.length - 1, Math.floor(tileX)));
+    const clampedY = Math.max(0, Math.min((this.terrainHeights[0]?.length ?? 65) - 1, Math.floor(tileY)));
     return this.terrainHeights[clampedX]?.[clampedY] ?? 0;
   }
 
   private getTerrainHeightInterpolated(x: number, y: number): number {
     if (!this.terrainHeights) return 0;
-    const tileX = Math.max(0, Math.min(63, Math.floor(x)));
-    const tileY = Math.max(0, Math.min(63, Math.floor(y)));
+    const tileX = Math.max(0, Math.min(this.terrainHeights.length - 2, Math.floor(x)));
+    const tileY = Math.max(0, Math.min((this.terrainHeights[0]?.length ?? 65) - 2, Math.floor(y)));
     const fracX = Math.max(0, Math.min(1, x - tileX));
     const fracY = Math.max(0, Math.min(1, y - tileY));
     const hSW = this.terrainHeights[tileX]?.[tileY] ?? 0;
@@ -582,7 +583,7 @@ export class Projection3D implements Projection2D, Camera3D {
       const hitY = ray.origin.y + ray.direction.y * t;
       const tileX = Math.floor(hitX);
       const tileY = Math.floor(hitY);
-      if (tileX < 0 || tileX > 63 || tileY < 0 || tileY > 63) return null;
+      if (!isInTileSpace(tileX, tileY)) return null;
       return { x: tileX, y: tileY };
     }
 
@@ -598,7 +599,7 @@ export class Projection3D implements Projection2D, Camera3D {
       const tileX = Math.floor(x);
       const tileY = Math.floor(y);
 
-      if (tileX < 0 || tileX > 63 || tileY < 0 || tileY > 63) continue;
+      if (!isInTileSpace(tileX, tileY)) continue;
 
       const terrainZ = -this.getTerrainHeightAt(tileX, tileY) / 128;
 

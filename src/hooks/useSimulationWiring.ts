@@ -1699,8 +1699,8 @@ export function useSimulationWiring({
           const currentState = engine.getState();
           const moveTarget = targetTileRef.current ?? currentState.playerPosition;
           engine.advanceTick(moveTarget);
-          // A busy player's clicks are dropped, so its walk does not resume once the cutscene ends.
-          if (engine.wasLastTickInputLocked()) targetTileRef.current = null;
+          // A busy or stunned player's clicks are dropped, so its walk does not resume afterwards.
+          if (engine.wasLastTickInputLocked() || engine.wasLastTickStunned()) targetTileRef.current = null;
           const newState = engine.getState();
           if (schedule.countdownKey !== null && newState.currentTick > currentState.currentTick) {
             consumedCountdownKeyRef.current = schedule.countdownKey;

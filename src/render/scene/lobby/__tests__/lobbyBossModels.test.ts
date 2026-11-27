@@ -122,6 +122,7 @@ describe('applyLobbyBossTransforms', () => {
       { baseX: 0, baseZ: 172 },
       { baseX: -15, baseZ: 57 },
       { baseX: 7, baseZ: 16 },
+      { baseX: -22, baseZ: -40 },
     ];
     LOBBY_BOSS_NPCS.forEach((boss, i) => {
       naturalSizes[boss.npcTypeId] = i === 0 ? 7 : 5;

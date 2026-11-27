@@ -28,8 +28,9 @@ export function getTerrainHeight(terrainHeights: Int32Array[] | null, x: number,
 export function getTerrainHeightInterpolated(terrainHeights: Int32Array[] | null, x: number, y: number): number {
   if (!terrainHeights) return 0;
 
-  const tileX = Math.max(0, Math.min(63, Math.floor(x)));
-  const tileY = Math.max(0, Math.min(63, Math.floor(y)));
+  // The last tile whose north-east corner is in the grid: 63 for one map square's 65x65 heights.
+  const tileX = Math.max(0, Math.min(terrainHeights.length - 2, Math.floor(x)));
+  const tileY = Math.max(0, Math.min((terrainHeights[0]?.length ?? 65) - 2, Math.floor(y)));
   const fracX = Math.max(0, Math.min(1, x - tileX));
   const fracY = Math.max(0, Math.min(1, y - tileY));
 
@@ -59,4 +60,44 @@ export function getLocCenterHeight(
 
   const avgHeight = (h1 + h2 + h3 + h4) / 4;
   return -avgHeight / 128;
+}
+
+/**
+ * One height grid for a scene built from several map squares: the core square's heights at the grid
+ * origin, and each square north or east of it (`tileOffsetX/Y` >= 0) at its tile offset, so actors on
+ * those squares stand on their own terrain (Zulrah's island runs into the square north of its core).
+ * Squares south or west of the core cannot extend a grid that starts at 0, and are left out, as
+ * before. With only the core square this returns its own grid unchanged.
+ *
+ * A square's grid is one wider than its 64 tiles: its last column and row are the shared edge, and
+ * the map data leaves them 0. Where a neighbour lies beyond that edge, the neighbour's first column or
+ * row (real terrain) fills it instead.
+ */
+export function composeTerrainHeights(
+  squares: readonly { readonly tileOffsetX: number; readonly tileOffsetY: number; readonly heights: Int32Array[] }[],
+): Int32Array[] | null {
+  const usable = squares.filter((square) => square.tileOffsetX >= 0 && square.tileOffsetY >= 0);
+  const core = usable.find((square) => square.tileOffsetX === 0 && square.tileOffsetY === 0);
+  if (!core) return null;
+  if (usable.length === 1) return core.heights;
+  const occupied = new Set(usable.map((square) => `${square.tileOffsetX},${square.tileOffsetY}`));
+  const width = Math.max(...usable.map((square) => square.tileOffsetX + square.heights.length));
+  const height = Math.max(...usable.map((square) => square.tileOffsetY + (square.heights[0]?.length ?? 0)));
+  const grid = Array.from({ length: width }, () => new Int32Array(height));
+  for (const { tileOffsetX, tileOffsetY, heights } of usable) {
+    const lastX = heights.length - 1;
+    const eastTaken = occupied.has(`${tileOffsetX + lastX},${tileOffsetY}`);
+    for (let x = 0; x < heights.length; x++) {
+      const column = heights[x];
+      const target = grid[tileOffsetX + x];
+      if (!column || !target || (x === lastX && eastTaken)) continue;
+      const lastY = column.length - 1;
+      const northTaken = occupied.has(`${tileOffsetX},${tileOffsetY + lastY}`);
+      for (let y = 0; y < column.length; y++) {
+        if (y === lastY && northTaken) continue;
+        target[tileOffsetY + y] = column[y] ?? 0;
+      }
+    }
+  }
+  return grid;
 }

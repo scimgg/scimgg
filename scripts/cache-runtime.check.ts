@@ -114,6 +114,7 @@ const ENCOUNTER_DYNAMIC_COVERAGE: Readonly<Record<string, readonly string[]>> = 
     'sol modifier quartet archer',
     'sol modifier quartet seer',
   ],
+  zulrah: fightAndDeath('zulrah'),
 };
 
 const recorder = new ArchiveReadRecorder();

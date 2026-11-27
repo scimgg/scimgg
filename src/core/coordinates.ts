@@ -1,5 +1,5 @@
 import type { Coordinate, TileString } from '../types/simulation';
-import { GRID_SIZE, isInArena } from './constants';
+import { isInArena, isInTileSpace } from './constants';
 
 export function strToCoord(tile: TileString): Coordinate {
   const parts = tile.split(',');
@@ -25,7 +25,7 @@ export function chebyshevDistance(a: Coordinate, b: Coordinate): number {
 
 export function isValidCoordinate(coord: Coordinate): boolean {
   const [x, y] = coord;
-  return x >= 0 && x < GRID_SIZE && y >= 0 && y < GRID_SIZE;
+  return isInTileSpace(x, y);
 }
 
 export function isValidArenaCoordinate(coord: Coordinate): boolean {

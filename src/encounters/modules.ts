@@ -42,6 +42,9 @@ import { YAMA_CONTRACTS } from './yamaP3/contracts';
 import { buildYamaControls } from './yamaP3/controls';
 import { YamaEncounter } from './yamaP3/YamaEncounter';
 import { ZUK_EXCLUDED_STATIC_LOC_IDS } from './zuk/constants';
+import { ZULRAH_MAP_SQUARE, ZULRAH_MAP_SQUARE_OFFSETS } from './zulrah/constants';
+import { buildZulrahControls } from './zulrah/controls';
+import { ZULRAH_PLAYER_START, ZulrahEncounter } from './zulrah/ZulrahEncounter';
 
 export interface EncounterCoreModule {
   readonly kind: string;
@@ -94,6 +97,14 @@ function createInfernoEncounter(options?: Record<string, unknown>): Encounter {
     throw new TypeError(`Encounter 'inferno' accepts no constructor options; got: ${unsupported.join(', ')}`);
   }
   return new InfernoEncounter();
+}
+
+function createZulrahEncounter(options?: Record<string, unknown>): Encounter {
+  const unsupported = Object.keys(options ?? {});
+  if (unsupported.length > 0) {
+    throw new TypeError(`Encounter 'zulrah' accepts no constructor options; got: ${unsupported.join(', ')}`);
+  }
+  return new ZulrahEncounter();
 }
 
 function createSolHereditEncounter(options?: Record<string, unknown>): Encounter {
@@ -230,6 +241,28 @@ export const ENCOUNTER_CORE_MODULES: readonly EncounterCoreModule[] = [
     // up (behind a pillar, say); wave 1 also gets it after its landing. Wave 69 opens on its fixed
     // start facing Zuk.
     countdownMovement: (mechanics) => resolveInfernoRunSetup(mechanics).startWave !== ZUK_WAVE,
+  },
+  {
+    kind: 'zulrah',
+    factory: createZulrahEncounter,
+    descriptor: {
+      kind: 'zulrah',
+      displayName: 'Zulrah',
+      description: 'Zulrah at Zul-Andra: all four rotations, with its ranged, magic, jad and tail phases.',
+      mapSquare: ZULRAH_MAP_SQUARE,
+      mapSquareOffsets: ZULRAH_MAP_SQUARE_OFFSETS,
+      playerStart: [...ZULRAH_PLAYER_START],
+      loadsMapLocs: true,
+      isWorkInProgress: true,
+      collision: { mode: 'auto', seed: [...ZULRAH_PLAYER_START] },
+      victory: {
+        eyebrow: 'Triumphant',
+        title: 'VICTORY',
+        narrative: 'ZULRAH DEFEATED',
+        accent: 'gold',
+      },
+    },
+    controls: buildZulrahControls(),
   },
 ];
 

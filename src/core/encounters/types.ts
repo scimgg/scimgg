@@ -151,6 +151,14 @@ export interface EncounterEngineRules {
    * every NPC keep running. Read once at the start of each tick, after encounter commands.
    */
   playerInputLocked?: EncounterDynamic<boolean>;
+  /**
+   * While true for a tick, the player is stunned: it cannot move or attack (that tick's attack and
+   * pick-up inputs are dropped, the attack target is cleared and it does not walk), but prayer, food,
+   * potion and gear inputs still go through. The wiki's stun status: stuns "disable a player's ability
+   * to perform several game actions such as attacking and moving"
+   * (https://oldschool.runescape.wiki/w/Stun_(status)). Read once at the start of each tick.
+   */
+  playerStunned?: EncounterDynamic<boolean>;
 }
 
 /** Clickable equipment-panel slots, including ammunition stored outside PlayerEquipment. */

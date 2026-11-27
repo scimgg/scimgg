@@ -33,6 +33,7 @@ import { type EquipmentHitEffectsSnapshot, resolveEquipmentHitEffects } from './
 import { endPowerOfDeathOnDamage, powerOfDeathMeleeMultiplier } from './player/specialAttacks/instantSpecial';
 import { appliesOnAccurateHit, applySpecialAttackEffects } from './player/specialAttacks/postHitEffects';
 import type { OnKillEffect, SpecialAttackEffect } from './player/specialAttacks/types';
+import { recoilDamage, wearsRecoilRing } from './recoil';
 import { notifyNpcOfPlayerAttack } from './retaliation';
 
 /** No encounter multipliers in force. See {@link PendingHitDamageMultipliers}. */
@@ -849,6 +850,40 @@ export class CombatSystem {
   }
 
   /**
+   * A recoil ring on the player reflects part of a damaging NPC hit back at its attacker, as its own
+   * typeless player hit (/w/Ring_of_recoil). It cannot exceed the attacker's remaining HP, so a
+   * 1-HP snakeling dies to any hit that lands.
+   */
+  private applyRecoil(
+    world: WorldState,
+    source: ActorBase,
+    target: ActorBase,
+    damage: number,
+    bridge: CombatBridge,
+  ): void {
+    if (!this.isNpcActor(source) || !this.isPlayerActor(target) || !source.alive) return;
+    if (!wearsRecoilRing(target)) return;
+    const reflected = Math.min(recoilDamage(damage), source.vitals.hp);
+    if (reflected <= 0) return;
+    this.applyResolvedHit(
+      world,
+      target,
+      source,
+      {
+        style: 'typeless',
+        attackKind: 'typeless',
+        rolledDamage: reflected,
+        accuracySucceeded: true,
+        impactDelayTicks: 0,
+      },
+      bridge,
+      undefined,
+      undefined,
+      'fixed',
+    );
+  }
+
+  /**
    * Tick this NPC's burn clock, in its turn. One splat per pulse, valued at the number of stacks
    * burning — "each time the entity will take damage equal to the number of burn stacks they
    * currently have" (/w/Burn). The captures agree: `hit id=74` carries values 1 to 5, never a
@@ -1077,6 +1112,8 @@ export class CombatSystem {
 
     bridge.onDamageApplied?.(damageApplied);
 
+    this.applyRecoil(world, source, target, damageApplied.effectiveDamage, bridge);
+
     if (attack.postHitEffects && this.isPlayerActor(source) && this.isNpcActor(target)) {
       // A hit that CONNECTED is not the same as one that dealt damage: the player's minimum-1 rule
       // runs before `outgoingDamageMultiplier`, so a damping encounter can floor a landed hit to 0.
@@ -1282,11 +1319,16 @@ export class CombatSystem {
       target.equipment.shield === ELYSIAN_SPIRIT_SHIELD_ID
         ? applyElysianDamageMitigation(cappedDamage, this.random())
         : cappedDamage;
+    const hitCap = this.isNpcActor(target) ? target.incomingHitCap : undefined;
+    const capReplacedDamage =
+      hitCap !== undefined && mitigatedDamage > hitCap.above
+        ? hitCap.min + Math.floor(this.random() * (hitCap.max - hitCap.min + 1))
+        : mitigatedDamage;
     // A hit on an NPC deals and shows at most its remaining HP: Colosseum captures, every player
     // hit on a 1-HP Bee swarm splats 1 (17/17), and no Fremennik warbander's splats exceed its HP (30/30).
     const effectiveDamage = this.isNpcActor(target)
-      ? Math.min(mitigatedDamage, Math.max(0, hpBefore))
-      : mitigatedDamage;
+      ? Math.min(capReplacedDamage, Math.max(0, hpBefore))
+      : capReplacedDamage;
 
     const isProtected = bridge.infiniteHealth && target.kind === 'player';
     if (!isProtected && this.isPlayerActor(target)) {

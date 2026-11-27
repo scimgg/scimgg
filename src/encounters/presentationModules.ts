@@ -16,6 +16,7 @@ import { yamaAudioRules } from '../audio/yamaAudioRules';
 import { zukAudioRules } from '../audio/zukAudioRules';
 import { SOL_NPC_ID } from '../npcs/colosseum/constants';
 import { ZUK_NPC_ID, ZUK_SEQS } from '../npcs/inferno/constants';
+import { ZULRAH_RANGED_NPC_ID, ZULRAH_SEQS } from '../npcs/zulrah/constants';
 import type { BossPortraitConfig } from '../render/preview/bossPortraitFraming';
 import { OSRS_DEFAULT_PITCH } from '../render/projections/Projection3D';
 import type { EncounterRenderConfig } from '../render/scene/encounterRenderConfig';
@@ -24,6 +25,7 @@ import type { SceneBuilderFactory } from '../render/scene/sceneBuilderFactory';
 import { createSolHereditSceneBuilder } from '../render/scene/solHereditSceneBuilder';
 import { createYamaSceneBuilder } from '../render/scene/yamaSceneBuilder';
 import { createZukSceneBuilder } from '../render/scene/zukSceneBuilder';
+import { createZulrahSceneBuilder } from '../render/scene/zulrahSceneBuilder';
 import { YAMA_NPC_ID } from '../rs/model/NpcModelLoader';
 import type { Coordinate, MechanicsConfig } from '../types/simulation';
 import { FIRST_INFERNO_WAVE, INFERNO_PRACTICE_START_TILE, WAVE_67_JAD_TILE, ZUK_WAVE } from './inferno/constants';
@@ -32,6 +34,7 @@ import { INFERNO_RENDER_CONFIG } from './inferno/renderConfig';
 import { ENCOUNTER_CORE_MODULES, encounterKindsOf } from './modules';
 import { SOL_HEREDIT_RENDER_CONFIG } from './solHeredit/renderConfig';
 import { YAMA_ENCOUNTER_RENDER_CONFIG } from './yamaP3/renderConfig';
+import { ZULRAH_RENDER_CONFIG } from './zulrah/renderConfig';
 
 /** Orbit camera the scene opens on. Omit to accept the default south-facing view. */
 export interface EncounterCameraConfig {
@@ -229,6 +232,25 @@ export const ENCOUNTER_PRESENTATION_MODULES: readonly EncounterPresentationModul
         idleSeqId: ZUK_SEQS.zuk.idle,
         // Raise the bust out of the bottom fade, with headroom for the idle's upward movement.
         framing: { yaw: -30, pitch: -12, focusHeight: 0.79, span: 0.58 },
+      },
+    },
+  },
+  {
+    kind: 'zulrah',
+    sceneBuilder: (opts) => createZulrahSceneBuilder(opts),
+    renderConfig: ZULRAH_RENDER_CONFIG,
+    // Facing north from the island's base, toward Zulrah's middle spot. Simulator policy.
+    defaultCamera: { yaw: 0, pitch: -40, zoom: 200 },
+    presentation: {
+      title: 'Zulrah',
+      tagline: "Zul-Andra · Zulrah's Shrine",
+      setupContext: 'Rotations 1–4',
+      blurb: 'Zulrah at Zul-Andra: all four rotations, with its ranged, magic, jad and tail phases.',
+      wikiUrl: 'https://oldschool.runescape.wiki/w/Zulrah/Strategies',
+      portrait: {
+        npcTypeId: ZULRAH_RANGED_NPC_ID,
+        idleSeqId: ZULRAH_SEQS.idle,
+        framing: { yaw: -30, pitch: -12, focusHeight: 0.8, span: 0.6 },
       },
     },
   },

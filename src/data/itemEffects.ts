@@ -293,6 +293,14 @@ export const ITEM_ACTIONS: Readonly<Record<number, ItemActionDef>> = {
 
   ...doseChainByStep(5952, 2, 229, 'potion', 3, () => [{ op: 'cure_poison', immunityTicks: 1200 }]),
 
+  // Anti-venoms cure venom and poison outright. The engine keeps one immunity timer for both, so each
+  // takes its venom immunity, the one that matters against venom sources:
+  // https://oldschool.runescape.wiki/w/Venom: anti-venom 36-54 s (45 s taken), anti-venom+ 216 s,
+  // extended anti-venom+ 378 s per dose.
+  ...doseChainByStep(12905, 2, 229, 'potion', 3, () => [{ op: 'cure_poison', immunityTicks: 75 }]),
+  ...doseChainByStep(12913, 2, 229, 'potion', 3, () => [{ op: 'cure_poison', immunityTicks: 360 }]),
+  ...doseChainByStep(29824, 3, 229, 'potion', 3, () => [{ op: 'cure_poison', immunityTicks: 630 }]),
+
   // https://oldschool.runescape.wiki/w/Extended_stamina_potion: 40% energy and four minutes per dose.
   ...doseChainByStep(31638, 3, 229, 'potion', 3, () => [
     { op: 'restore_run', amount: 4000 },

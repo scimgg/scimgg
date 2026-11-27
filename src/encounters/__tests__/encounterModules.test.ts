@@ -52,7 +52,7 @@ const YAMA_VARIANT_KINDS = [
 ] as const;
 
 /** Every kind that owns a descriptor, i.e. is selectable in the picker in its own right. */
-const BASE_KINDS = ['yama_p3', 'lobby', 'sol_heredit', 'inferno'] as const;
+const BASE_KINDS = ['yama_p3', 'lobby', 'sol_heredit', 'inferno', 'zulrah'] as const;
 const BETA_ENCOUNTERS = [{ kind: 'sol_heredit', displayName: 'Sol Heredit', actorId: 'lobby-npc-2' }] as const;
 
 describe('encounter registration invariants', () => {
@@ -379,6 +379,7 @@ describe('encounter catalog invariants', () => {
         ['yama', 'yama_p3'],
         ['sol-heredit', 'sol_heredit'],
         ['inferno', 'inferno'],
+        ['zulrah', 'zulrah'],
       ]),
     );
   });
@@ -477,7 +478,7 @@ describe('encounter catalog invariants', () => {
       expect(pitch, module.kind).toBeLessThanOrEqual(0);
       expect(span, module.kind).toBeGreaterThan(0);
     }
-    expect(portrayed.sort()).toEqual(['inferno', 'sol_heredit', 'yama_p3']);
+    expect(portrayed.sort()).toEqual(['inferno', 'sol_heredit', 'yama_p3', 'zulrah']);
   });
 
   it('collects every npc clip a render config declares', () => {

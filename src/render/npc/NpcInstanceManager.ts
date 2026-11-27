@@ -592,6 +592,9 @@ export class NpcInstanceManager {
     const seenIds = new Set<string>();
 
     for (const npc of npcs) {
+      // A hidden NPC has no model: dropping it here removes its instance, and it is rebuilt (with its
+      // spawn clip) when it shows again.
+      if (npc.hidden) continue;
       seenIds.add(npc.id);
       const typeData = this.typeRegistry.get(npc.npcTypeId);
       // A death animation that starts after the killing tick (a queued death) keeps the NPC standing as
@@ -618,6 +621,9 @@ export class NpcInstanceManager {
           : npc.previousPosition[0] !== npc.position[0] || npc.previousPosition[1] !== npc.position[1],
       );
 
+      // An NPC that changed type (a transformation) gets a fresh instance of its new model.
+      const current = this.instanceRegistry.get(npc.id);
+      if (current && current.npcTypeId !== npc.npcTypeId) this.removePresentation(npc.id);
       const existing = this.instanceRegistry.get(npc.id);
       const instance = existing ?? this.createInstance(npc, typeData);
       if (!existing) {

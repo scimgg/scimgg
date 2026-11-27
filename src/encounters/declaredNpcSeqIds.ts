@@ -6,6 +6,7 @@ import type { EncounterRenderConfig } from '../render/scene/encounterRenderConfi
 import { INFERNO_RENDER_CONFIG } from './inferno/renderConfig';
 import { SOL_HEREDIT_RENDER_CONFIG } from './solHeredit/renderConfig';
 import { YAMA_ENCOUNTER_RENDER_CONFIG } from './yamaP3/renderConfig';
+import { ZULRAH_RENDER_CONFIG } from './zulrah/renderConfig';
 
 /**
  * Every render config in `ENCOUNTER_PRESENTATION_MODULES`, keyed by kind. Listed by hand because
@@ -15,6 +16,7 @@ export const ENCOUNTER_RENDER_CONFIGS: ReadonlyMap<string, EncounterRenderConfig
   ['yama_p3', YAMA_ENCOUNTER_RENDER_CONFIG],
   ['sol_heredit', SOL_HEREDIT_RENDER_CONFIG],
   ['inferno', INFERNO_RENDER_CONFIG],
+  ['zulrah', ZULRAH_RENDER_CONFIG],
 ]);
 
 /**

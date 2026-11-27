@@ -707,10 +707,282 @@ const INFERNO_PRESETS: Record<string, EncounterPreset> = {
   naked: NO_EQUIPMENT_FALLBACK,
 };
 
+/**
+ * Zulrah. Every set is one of the wiki's own loadouts (https://oldschool.runescape.wiki/w/Zulrah/Strategies,
+ * Inventory Setups, read 2026-11-27), kept slot for slot in its published order, like a community
+ * replica, except the Twisted bow set, which is the Ranged Only loadout with the Ranged equipment
+ * tab's top row. Substitutions, because the catalog lacks the item:
+ * - "Cheap food" and sharks: Anglerfish (the wiki's "rest Shark or better");
+ * - Zul-andra teleport and Teleport to house tablets: left empty (no teleports in the simulator);
+ * - Crystal halberd (not yet verified in the simulator): the Melee tab's next special, Dragon halberd;
+ * - Twinflame staff (not yet supported): Staff of the Dead, which the Magic tab lists in the same row
+ *   (weapon3, "[fire]"), on the same fire spells.
+ * Zulrah "has no melee defence in any form" and "can only be reached with a halberd-type weapon"
+ * (Melee); every spot the simulator puts Zulrah is within the halberd's two tiles of the island.
+ */
+const ANGLERFISH = { id: 13441 };
+const KARAMBWAN = { id: 3144 };
+const PRAYER_POTION = { id: 2434 }; // The wiki's "Cheap prayer"
+const EXTENDED_ANTI_VENOM = { id: 29824 };
+const ZULRAH_RANGED_ONLY_INVENTORY = parseInventoryFromSetup([
+  { id: 12926 }, // Toxic blowpipe
+  PRAYER_POTION,
+  EXTENDED_ANTI_VENOM,
+  { id: 23733 }, // Divine ranging potion(4)
+  PRAYER_POTION,
+  PRAYER_POTION,
+  KARAMBWAN,
+  KARAMBWAN,
+  ...Array.from({ length: 15 }, () => ANGLERFISH), // Slots 9-23: "Cheap food"
+  { id: 2552 }, // Ring of dueling(8)
+  null, // Zul-andra teleport
+  { id: 27281 }, // Divine rune pouch
+  { id: 25818 }, // Book of the Dead
+  { id: RUNE.death }, // Death rune
+]);
+const ZULRAH_RANGED_ONLY_SUPPLIES = {
+  equippedAmmo: { id: 22947 }, // Rada's blessing 4
+  quiverAmmo: null,
+  runePouch: {
+    kind: 'divine',
+    slots: [{ id: RUNE.fire }, { id: RUNE.blood }, { id: RUNE.cosmic }, { id: RUNE.soul }],
+  },
+  blowpipe: { id: 11230 }, // Dragon dart (assumed; the loadout does not show the darts)
+  selectedSpell: null,
+  spellbook: 'arceuus',
+} as const satisfies CombatSupplies;
+
+const ZULRAH_PRESETS: Record<string, EncounterPreset> = {
+  max_noxious: {
+    // Loadout "Zulrah (melee)" (Melee Only). Ring of suffering (ri) worn and the Bellator ring carried:
+    // the Melee tab's ring1 lists them together, the suffering ring "as swap when snakelings spawn".
+    name: 'Max (Noxious Halberd)',
+    equipment: {
+      head: 30750, // Oathplate helm
+      cape: 21295, // Infernal cape
+      amulet: 29801, // Amulet of rancour
+      weapon: 29796, // Noxious halberd (two-handed; its special and venom passive are not simulated)
+      body: 30753, // Oathplate chest
+      legs: 30756, // Oathplate legs
+      hands: 22981, // Ferocious gloves
+      boots: 31097, // Avernic treads (max)
+      ring: 20657, // Ring of suffering (ri)
+    },
+    inventory: parseInventoryFromSetup([
+      { id: 3204 }, // Dragon halberd (the loadout's Crystal halberd is not yet verified here)
+      PRAYER_POTION,
+      EXTENDED_ANTI_VENOM,
+      { id: 23685 }, // Divine super combat potion(4)
+      PRAYER_POTION,
+      PRAYER_POTION,
+      KARAMBWAN,
+      KARAMBWAN,
+      ...Array.from({ length: 15 }, () => ANGLERFISH), // Slots 9-23: "Cheap food"
+      null, // Teleport to house
+      null, // Zul-andra teleport
+      { id: 25818 }, // Book of the Dead
+      { id: 28316 }, // Bellator ring (swapped with the worn Ring of suffering)
+      { id: 27281 }, // Divine rune pouch
+    ]),
+    supplies: {
+      equippedAmmo: { id: 22947 }, // Rada's blessing 4
+      quiverAmmo: null,
+      runePouch: ARCEUUS_DIVINE_RUNE_POUCH, // The loadout's Fire, Blood, Aether, Death
+      blowpipe: null,
+      selectedSpell: null,
+      spellbook: 'arceuus',
+    },
+  },
+  max_hybrid: {
+    // Loadout "Zulrah (max hybrid)" (Max Magic & Ranged): Eye of Ayak worn, Twisted bow switch.
+    name: 'Max Hybrid (Eye of Ayak / Twisted Bow)',
+    equipment: {
+      head: 21018, // Ancestral hat
+      cape: 21791, // Imbued saradomin cape
+      amulet: 12002, // Occult necklace
+      weapon: 31113, // Eye of Ayak
+      body: 21021, // Ancestral robe top
+      shield: 27251, // Elidinis' ward (f)
+      legs: 21024, // Ancestral robe bottom
+      hands: 31106, // Confliction gauntlets
+      boots: 31097, // Avernic treads (max)
+      ring: 20657, // Ring of suffering (ri)
+    },
+    inventory: parseInventoryFromSetup([
+      { id: 20997 }, // Twisted bow
+      { id: 27238 }, // Masori body (f)
+      { id: 27241 }, // Masori chaps (f)
+      { id: 33639 }, // Necklace of rupture
+      { id: 28951 }, // Dizana's quiver
+      { id: 27235 }, // Masori mask (f)
+      { id: 26235 }, // Zaryte vambraces
+      ANGLERFISH,
+      { id: 12926 }, // Toxic blowpipe
+      KARAMBWAN,
+      ANGLERFISH,
+      { id: 23733 }, // Divine ranging potion(4)
+      ANGLERFISH,
+      KARAMBWAN,
+      ANGLERFISH,
+      EXTENDED_ANTI_VENOM,
+      ANGLERFISH,
+      KARAMBWAN,
+      ANGLERFISH,
+      PRAYER_POTION,
+      ANGLERFISH,
+      KARAMBWAN,
+      { id: 2552 }, // Ring of dueling(8)
+      { id: 25818 }, // Book of the Dead
+      null, // Zul-andra teleport
+      { id: 27641 }, // Saturated heart
+      { id: 13136 }, // Desert amulet 4
+      { id: 27281 }, // Divine rune pouch
+    ]),
+    supplies: {
+      equippedAmmo: { id: 22947 }, // Rada's blessing 4
+      quiverAmmo: { id: 33595 }, // Seeking dragon arrow, in Dizana's quiver
+      runePouch: {
+        kind: 'divine',
+        slots: [{ id: RUNE.fire }, { id: RUNE.blood }, { id: RUNE.cosmic }, null],
+      },
+      blowpipe: { id: 11230 }, // Dragon dart (assumed; the loadout does not show the darts)
+      selectedSpell: null,
+      spellbook: 'arceuus',
+    },
+  },
+  void_hybrid: {
+    // Loadout "Zulrah (hybrid)" (Void Mage and Ranged), on fire spells with a blowpipe switch.
+    name: 'Void Hybrid (Staff of the Dead)',
+    equipment: {
+      head: 11663, // Void mage helm
+      cape: 21791, // Imbued saradomin cape
+      amulet: 12002, // Occult necklace
+      weapon: 11791, // Staff of the dead (the loadout's Twinflame staff is not yet supported)
+      body: 13072, // Elite void top
+      shield: 11924, // Malediction ward
+      legs: 13073, // Elite void robe
+      hands: 8842, // Void knight gloves
+      boots: 6920, // Infinity boots
+      ring: 20657, // Ring of suffering (ri)
+    },
+    inventory: parseInventoryFromSetup([
+      { id: 11664 }, // Void ranger helm
+      { id: 12926 }, // Toxic blowpipe
+      { id: 23733 }, // Divine ranging potion(4)
+      { id: 27629 }, // Forgotten brew(4)
+      { id: 22109 }, // Ava's assembler
+      { id: 19547 }, // Necklace of anguish
+      EXTENDED_ANTI_VENOM,
+      PRAYER_POTION,
+      ANGLERFISH,
+      KARAMBWAN,
+      PRAYER_POTION,
+      PRAYER_POTION,
+      KARAMBWAN,
+      KARAMBWAN,
+      ...Array.from({ length: 11 }, () => ANGLERFISH), // Slots 15-25: sharks
+      null, // Zul-andra teleport
+      { id: 12791 }, // Rune pouch
+      { id: 2552 }, // Ring of dueling(8)
+    ]),
+    supplies: {
+      equippedAmmo: { id: 22947 }, // Rada's blessing 4
+      quiverAmmo: null,
+      // The loadout's Air and Blood, plus Fire, which the Twinflame staff would have supplied.
+      runePouch: { kind: 'standard', slots: [{ id: RUNE.air }, { id: RUNE.blood }, { id: RUNE.fire }] },
+      blowpipe: { id: 11230 }, // Dragon dart (assumed; the loadout does not show the darts)
+      selectedSpell: 'Fire Wave',
+      spellbook: 'standard',
+    },
+  },
+  magic_only: {
+    // Loadout "Zulrah (magic)" (Magic Only): Tome of fire on fire spells.
+    name: 'Magic Only (Staff of the Dead)',
+    equipment: {
+      head: 4708, // Ahrim's hood
+      cape: 21791, // Imbued saradomin cape
+      amulet: 12002, // Occult necklace
+      weapon: 11791, // Staff of the dead (the loadout's Twinflame staff is not yet supported)
+      body: 4712, // Ahrim's robetop
+      shield: 20714, // Tome of fire
+      legs: 4714, // Ahrim's robeskirt
+      hands: 19544, // Tormented bracelet
+      boots: 6920, // Infinity boots
+      ring: 20657, // Ring of suffering (ri)
+    },
+    inventory: parseInventoryFromSetup([
+      ...Array.from({ length: 7 }, () => [ANGLERFISH, KARAMBWAN]).flat(), // Slots 1-14: shark, karambwan
+      ANGLERFISH,
+      EXTENDED_ANTI_VENOM,
+      ANGLERFISH,
+      KARAMBWAN,
+      ANGLERFISH,
+      PRAYER_POTION,
+      ANGLERFISH,
+      KARAMBWAN,
+      ANGLERFISH,
+      PRAYER_POTION,
+      null, // Zul-andra teleport
+      { id: 27641 }, // Saturated heart
+      { id: 2552 }, // Ring of dueling(8)
+      { id: 12791 }, // Rune pouch
+    ]),
+    supplies: {
+      equippedAmmo: { id: 22947 }, // Rada's blessing 4
+      quiverAmmo: null,
+      runePouch: { kind: 'standard', slots: [{ id: RUNE.air }, { id: RUNE.blood }, null] },
+      blowpipe: null,
+      selectedSpell: 'Fire Wave', // Air and blood from the pouch, fire from the Tome of fire
+      spellbook: 'standard',
+    },
+  },
+  ranged_bowfa: {
+    // Loadout "Zulrah (ranged)" (Ranged Only): Bow of Faerdhinen in crystal armour.
+    name: 'Ranged Only (Bow of Faerdhinen)',
+    equipment: {
+      head: 23971, // Crystal helm
+      cape: 22109, // Ava's assembler
+      amulet: 33639, // Necklace of rupture
+      weapon: 25865, // Bow of Faerdhinen
+      body: 23975, // Crystal body
+      legs: 23979, // Crystal legs
+      hands: 7462, // Barrows gloves
+      boots: 19933, // Saradomin d'hide boots
+      ring: 20657, // Ring of suffering (ri)
+    },
+    inventory: ZULRAH_RANGED_ONLY_INVENTORY,
+    supplies: ZULRAH_RANGED_ONLY_SUPPLIES,
+  },
+  ranged_tbow: {
+    // The Ranged Only loadout's inventory with the Ranged equipment tab's top row: its bullets name
+    // "Twisted bow or Bow of Faerdhinen", and weapon1 is the Twisted bow.
+    name: 'Ranged Only (Twisted Bow)',
+    equipment: {
+      head: 27235, // Masori mask (f)
+      cape: 28951, // Dizana's quiver
+      amulet: 33639, // Necklace of rupture
+      weapon: 20997, // Twisted bow
+      body: 27238, // Masori body (f)
+      legs: 27241, // Masori chaps (f)
+      hands: 26235, // Zaryte vambraces
+      boots: 31097, // Avernic treads (max)
+      ring: 20657, // Ring of suffering (ri)
+    },
+    inventory: ZULRAH_RANGED_ONLY_INVENTORY,
+    supplies: {
+      ...ZULRAH_RANGED_ONLY_SUPPLIES,
+      equippedAmmo: { id: 33595 }, // Seeking dragon arrow (ammo1)
+      quiverAmmo: { id: 33595 }, // Seeking dragon arrow, in Dizana's quiver
+    },
+  },
+  naked: NO_EQUIPMENT_FALLBACK,
+};
+
 export const EQUIPMENT_PRESETS: Record<string, Record<string, EncounterPreset>> = {
   lobby: {
     naked: NO_EQUIPMENT_FALLBACK,
   },
+  zulrah: ZULRAH_PRESETS,
   zuk: INFERNO_PRESETS,
   inferno: INFERNO_PRESETS,
   sol_heredit: {

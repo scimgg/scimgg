@@ -83,8 +83,19 @@ export interface NpcActor<State extends object = object> extends ActorBase {
   readonly state?: State;
   role?: NpcRole;
   formulaStats?: NpcFormulaStats;
+  /**
+   * Not drawn while set: the NPC stays in the world (hits already in flight still land on it) but has
+   * no model on screen, as Zulrah between diving and resurfacing. Pair it with
+   * {@link targetableFromTick} so nothing can target what cannot be seen.
+   */
+  hidden?: boolean;
   /** Minimum Defence level after drains; absent means no encounter-specific cap. */
   defenceDrainFloor?: number;
+  /**
+   * A hit landing on this NPC above `above` is replaced by a uniform draw in `[min, max]` (Zulrah:
+   * over 50 becomes 45-50). Applied at impact, before the remaining-HP clamp. Absent means no cap.
+   */
+  incomingHitCap?: { readonly above: number; readonly min: number; readonly max: number };
   spawnTick?: TickNumber;
   despawnTick?: TickNumber;
   /** Encounter-owned respawn lifecycle retains this corpse until revival or explicit despawn. */

@@ -11,6 +11,7 @@ import {
 import { applyMonsterStatOverrideToFormulaStats } from '../data/monsterData';
 import { hasPrayerRestorationEnhancement } from '../data/prayerRestoration';
 import { DEATH_CHARGE_SPELL, MARK_OF_DARKNESS_SPELL } from '../data/spellRunes';
+import { VENOM_IMMUNE_HEAD_IDS } from '../data/venomImmunity';
 import { gracefulRegenBonusPercent } from '../data/weightReducingClothing';
 import { baseEncounterKind } from '../encounters/catalog';
 import type { ObjTypeLoader } from '../rs/config/objtype/ObjTypeLoader';
@@ -439,6 +440,8 @@ export class SimulationEngine {
   private pendingEquipmentSlotClicks: EquipmentClickSlot[] = [];
   /** Whether the last advanced tick had the player busy (`EncounterEngineRules.playerInputLocked`). */
   private lastTickInputLocked = false;
+  /** Whether the last advanced tick had the player stunned (`EncounterEngineRules.playerStunned`). */
+  private lastTickStunned = false;
   /** Run at the start of the next tick; see {@link queueEncounterCommand}. */
   private pendingEncounterCommands: EncounterCommand[] = [];
   private completionOwnership: EncounterCompletionOwnership = 'encounter-owned';
@@ -587,6 +590,11 @@ export class SimulationEngine {
    */
   public wasLastTickInputLocked(): boolean {
     return this.lastTickInputLocked;
+  }
+
+  /** Whether the last advanced tick had the player stunned (`EncounterEngineRules.playerStunned`). */
+  public wasLastTickStunned(): boolean {
+    return this.lastTickStunned;
   }
 
   private buildNpcDefinitionContext(): NpcDefinitionContext {
@@ -1321,6 +1329,16 @@ export class SimulationEngine {
       player.pendingItemPickup = null;
       clearPlayerAttackIntent(player);
     }
+    // A stunned player cannot move or attack, but can still pray, eat, drink and switch gear.
+    const stunned = !inputLocked && resolveDynamic(rules?.playerStunned, this.buildEngineContext()) === true;
+    this.lastTickStunned = stunned;
+    if (stunned) {
+      player.pendingInputOps = player.pendingInputOps.filter(
+        (op) => op.type !== 'attack_target' && op.type !== 'pickup_ground_item',
+      );
+      player.pendingItemPickup = null;
+      clearPlayerAttackIntent(player);
+    }
 
     // BAND 2 — INPUT. Every client op for this tick, in click order.
     this.processInputBand(nextTick);
@@ -1371,7 +1389,7 @@ export class SimulationEngine {
 
     let movementResult: MovementResult;
     const attackNpc = player.attackTarget ? this.worldState.actors.get(player.attackTarget) : undefined;
-    if (inputLocked) {
+    if (inputLocked || stunned) {
       movementResult = { position: [...player.position] as Coordinate, stepTiles: [] };
     } else if (attackNpc !== undefined && canPlayerStartAttackOn(player, attackNpc) && attackNpc.kind === 'npc') {
       const npc = attackNpc as NpcActor;
@@ -3768,6 +3786,7 @@ export class SimulationEngine {
     this.failedCondition = null;
     this.prepotApplied = false;
     this.lastTickInputLocked = false;
+    this.lastTickStunned = false;
     this.pendingNpcDefeats = [];
     // A command queued against the old run must not land in the new one.
     this.pendingEncounterCommands = [];
@@ -4223,6 +4242,11 @@ export class SimulationEngine {
     const player = this.player();
     const currentVarp = player.poisonState.poisonVarp;
     if (currentVarp < 0 || currentVarp >= VENOM_THRESHOLD) {
+      return;
+    }
+    // A worn serpentine helm (or its recolours) grants immunity to venom and poison; it does not cure
+    // what is already there (https://oldschool.runescape.wiki/w/Serpentine_helm).
+    if (player.equipment.head !== undefined && VENOM_IMMUNE_HEAD_IDS.has(player.equipment.head)) {
       return;
     }
 

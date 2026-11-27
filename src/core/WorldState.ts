@@ -319,6 +319,7 @@ export function toSimulationState(world: WorldState, engineSnapshot: EngineSnaps
       despawnTick: npc.despawnTick,
       ...(npc.targetableFromTick === undefined ? {} : { targetableFromTick: npc.targetableFromTick }),
       ...(npc.untargetable ? { untargetable: true } : {}),
+      ...(npc.hidden ? { hidden: true } : {}),
       ...(npc.despawnTimerLeadTicks === undefined ? {} : { despawnTimerLeadTicks: npc.despawnTimerLeadTicks }),
       ...(npc.alwaysShowHealthBar ? { alwaysShowHealthBar: true } : {}),
       ...(npc.healthBarWhenUntargetable ? { healthBarWhenUntargetable: true } : {}),

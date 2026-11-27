@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { PLAYER_LANDING_MIN } from '../../../encounters/yamaP3/constants';
 import { YamaEncounter } from '../../../encounters/yamaP3/YamaEncounter';
+import { ZULRAH_PLAYER_START, ZulrahEncounter } from '../../../encounters/zulrah/ZulrahEncounter';
 import type { Coordinate } from '../../../types/simulation';
 import { ReplayRecorder } from '../../ReplayRecorder';
 import { SimulationEngine } from '../../SimulationEngine';
@@ -25,6 +26,7 @@ import type { Encounter } from '../types';
 
 const ENCOUNTERS: readonly { readonly label: string; readonly make: () => Encounter; readonly start: Coordinate }[] = [
   { label: 'Yama P3', make: () => new YamaEncounter(undefined, 0), start: PLAYER_LANDING_MIN },
+  { label: 'Zulrah', make: () => new ZulrahEncounter(0), start: ZULRAH_PLAYER_START },
 ];
 
 /** Every value reachable from `value`, so a nested offender cannot hide. */

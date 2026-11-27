@@ -1,4 +1,5 @@
 import { SOL_NPC_ID } from '../../npcs/colosseum/constants';
+import { ZULRAH_RANGED_NPC_ID } from '../../npcs/zulrah/constants';
 
 export interface PortalDefinition {
   position: [number, number];
@@ -45,6 +46,14 @@ export const LOBBY_BOSS_NPCS: LobbyBossNpcDefinition[] = [
     facingAngle: 336,
     available: true,
   },
+  {
+    actorId: 'lobby-npc-3',
+    npcTypeId: ZULRAH_RANGED_NPC_ID,
+    // Mirrors Yama across the lobby center, on the open south side, facing north toward the center.
+    position: [30, 12],
+    facingAngle: 1024,
+    available: true,
+  },
 ];
 
 export const LOBBY_PORTALS: PortalDefinition[] = [
@@ -73,5 +82,10 @@ export const LOBBY_NPC_ENCOUNTERS: Record<string, LobbyEncounterCard> = {
     encounterKind: 'sol_heredit',
     displayName: 'Sol Heredit',
     description: 'The final wave of the Fortis Colosseum.',
+  },
+  'lobby-npc-3': {
+    encounterKind: 'zulrah',
+    displayName: 'Zulrah',
+    description: 'Zulrah at Zul-Andra: all four rotations, with its ranged, magic, jad and tail phases.',
   },
 };

@@ -49,6 +49,27 @@ export function getArenaBounds(): ArenaBounds | null {
   return _arenaConfig.bounds;
 }
 
+/**
+ * The tiles the simulation and its picking may use: the core map square (0 to GRID_SIZE - 1 on each
+ * axis), widened to cover the arena's bounds when the arena reaches past it. An arena built from
+ * several map squares (`mapSquareOffsets`) can lie partly outside the core square: Zulrah's island
+ * runs from map square 35_47 into 35_48, local y 64-70.
+ */
+export function getTileSpaceBounds(): { minX: number; maxX: number; minY: number; maxY: number } {
+  const bounds = _arenaConfig.bounds;
+  return {
+    minX: Math.min(0, bounds?.minX ?? 0),
+    maxX: Math.max(GRID_SIZE - 1, bounds?.maxX ?? 0),
+    minY: Math.min(0, bounds?.minY ?? 0),
+    maxY: Math.max(GRID_SIZE - 1, bounds?.maxY ?? 0),
+  };
+}
+
+export function isInTileSpace(x: number, y: number): boolean {
+  const space = getTileSpaceBounds();
+  return x >= space.minX && x <= space.maxX && y >= space.minY && y <= space.maxY;
+}
+
 export function setWalkableTiles(tiles: Set<string>): void {
   _arenaConfig = buildArenaConfig({ walkableTiles: tiles });
 }
