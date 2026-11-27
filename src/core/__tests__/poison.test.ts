@@ -3,7 +3,8 @@ import { type EffectOp, getPrepotEffects, ITEM_ACTIONS, isPrepottable } from '..
 import type { PoisonState } from '../../types/playerState';
 import { createDefaultPoisonState, createDefaultStats, POISON_TICK_INTERVAL } from '../../types/playerState';
 import { createDefaultPrayerState } from '../../types/simulation';
-import { applyEffectOp, type ItemActionState } from '../itemActions';
+import { applyEffectOp, applyEffects, type ItemActionState } from '../itemActions';
+import { applyPlayerPoison, VENOM_IMMUNITY_CUTOFF, VENOM_THRESHOLD } from '../poison';
 import { tickPoisonState } from '../timers';
 
 function createPoisonState(overrides: Partial<PoisonState> = {}): PoisonState {
@@ -123,7 +124,7 @@ describe('Poison/Venom System', () => {
   describe('cure_poison effect', () => {
     it('cures active poison and grants immunity', () => {
       const state = createTestState({ poisonState: createPoisonState({ poisonVarp: 50 }) });
-      const op: EffectOp = { op: 'cure_poison', immunityTicks: 600 };
+      const op: EffectOp = { op: 'cure_poison', immunitySteps: 20 };
 
       const result = applyEffectOp(op, state);
 
@@ -132,7 +133,7 @@ describe('Poison/Venom System', () => {
 
     it('grants immunity when not poisoned', () => {
       const state = createTestState({ poisonState: createPoisonState({ poisonVarp: 0 }) });
-      const op: EffectOp = { op: 'cure_poison', immunityTicks: 600 };
+      const op: EffectOp = { op: 'cure_poison', immunitySteps: 20 };
 
       const result = applyEffectOp(op, state);
 
@@ -141,53 +142,171 @@ describe('Poison/Venom System', () => {
 
     it('replaces shorter immunity with the cure immunity duration', () => {
       const state = createTestState({ poisonState: createPoisonState({ poisonVarp: -5 }) });
-      const op: EffectOp = { op: 'cure_poison', immunityTicks: 600 };
+      const op: EffectOp = { op: 'cure_poison', immunitySteps: 20 };
 
       const result = applyEffectOp(op, state);
 
       expect(result.poisonState.poisonVarp).toBe(-20);
     });
 
-    it('downgrades venom to equivalent poison then cures to immunity', () => {
-      const state = createTestState({ poisonState: createPoisonState({ poisonVarp: 1_000_000 }) });
-      const downgradeResult = applyEffectOp({ op: 'reduce_poison', amount: 0 }, state);
+    it('only converts venom to poison at the same damage, and a second dose cures it', () => {
+      const state = createTestState({
+        poisonState: createPoisonState({ poisonVarp: 1_000_004, poisonTickCounter: 7 }),
+        currentTick: 50,
+      });
+      const op: EffectOp = { op: 'cure_poison', immunitySteps: 20 };
 
-      expect(downgradeResult.poisonState.poisonVarp).toBe(30);
-      expect(Math.ceil(downgradeResult.poisonState.poisonVarp / 5)).toBe(6);
+      const first = applyEffectOp(op, state);
 
-      const cureResult = applyEffectOp({ op: 'cure_poison', immunityTicks: 600 }, state);
-
-      expect(cureResult.poisonState.poisonVarp).toBe(-20);
-    });
-
-    it('preserves venom damage when downgrading before cure', () => {
-      const state = createTestState({ poisonState: createPoisonState({ poisonVarp: 1_000_004 }) });
-      const downgradeResult = applyEffectOp({ op: 'reduce_poison', amount: 0 }, state);
-
-      expect(downgradeResult.poisonState.poisonVarp).toBe(70);
-      expect(Math.ceil(downgradeResult.poisonState.poisonVarp / 5)).toBe(14);
-
-      const cureResult = applyEffectOp({ op: 'cure_poison', immunityTicks: 600 }, state);
-
-      expect(cureResult.poisonState.poisonVarp).toBe(-20);
-    });
-
-    it('converts immunity ticks to poison varp units with ceiling division', () => {
-      const state = createTestState();
-      const op: EffectOp = { op: 'cure_poison', immunityTicks: 1200 };
-
-      const result = applyEffectOp(op, state);
-
-      expect(result.poisonState.poisonVarp).toBe(-40);
-      expect(result.poisonState.poisonVarp).toBe(-Math.ceil(1200 / POISON_TICK_INTERVAL));
+      expect(first.poisonState).toEqual({ poisonVarp: 70, poisonTickCounter: 7, startedTick: null });
+      expect(Math.ceil(first.poisonState.poisonVarp / 5)).toBe(14);
+      expect(applyEffectOp(op, first).poisonState.poisonVarp).toBe(-20);
     });
 
     it('creates an immune state that blocks future poison application attempts', () => {
       const state = createTestState();
-      const result = applyEffectOp({ op: 'cure_poison', immunityTicks: 600 }, state);
+      const result = applyEffectOp({ op: 'cure_poison', immunitySteps: 20 }, state);
 
       expect(result.poisonState.poisonVarp).toBeLessThan(0);
-      expect(result.poisonState.poisonVarp).toBe(-20);
+      expect(applyPlayerPoison(result.poisonState, 5, undefined, 1)).toBe(result.poisonState);
+    });
+  });
+
+  describe('each poison cure on a clean, a poisoned and an envenomed player', () => {
+    // Venom 1_000_004 hits 14 next, so an antipoison leaves poison 70 (ceil(70 / 5) = 14).
+    it.each([
+      ['Sanfew serum', 10925, -20, -20, 70],
+      ['Antidote++', 5952, -40, -40, 70],
+      ['Anti-venom', 12905, -41, -41, -41],
+      ['Anti-venom+', 12913, -50, -50, -50],
+      ['Extended anti-venom+', 29824, -59, -59, -59],
+    ])('%s (%i): clean -> %i, poisoned -> %i, envenomed -> %i', (_name, itemId, clean, poisoned, envenomed) => {
+      const drink = (poisonVarp: number) =>
+        applyEffects(ITEM_ACTIONS[itemId].effects, createTestState({ poisonState: createPoisonState({ poisonVarp }) }))
+          .poisonState.poisonVarp;
+
+      expect([drink(0), drink(50), drink(1_000_004)]).toEqual([clean, poisoned, envenomed]);
+    });
+
+    it('leaves the wiki venom immunities as steps below the cutoff', () => {
+      const venomImmuneSteps = (itemId: number) =>
+        Math.max(
+          0,
+          VENOM_IMMUNITY_CUTOFF - applyEffects(ITEM_ACTIONS[itemId].effects, createTestState()).poisonState.poisonVarp,
+        );
+
+      // 18 s each: Sanfew none, Antidote++ 36 s, anti-venom 54 s, anti-venom+ 216 s, extended 378 s.
+      expect([10925, 5952, 12905, 12913, 29824].map(venomImmuneSteps)).toEqual([0, 2, 3, 12, 21]);
+    });
+  });
+
+  describe('a cure under a stronger immunity', () => {
+    it.each([
+      ['Sanfew serum at anti-venom+ immunity', { op: 'cure_poison', immunitySteps: 20 }, -50],
+      ['Antidote++ at anti-venom+ immunity', { op: 'cure_poison', immunitySteps: 40 }, -50],
+      ['anti-venom at extended anti-venom+ immunity', { op: 'cure_venom', immunitySteps: 41 }, -59],
+      // Owner-approved policy: a weaker potion leaves a longer running immunity alone.
+      ['anti-venom+ at a running extended anti-venom+ immunity', { op: 'cure_venom', immunitySteps: 50 }, -55],
+    ] as const)('%s keeps it, and its countdown', (_name, op, poisonVarp) => {
+      const state = createTestState({
+        poisonState: createPoisonState({ poisonVarp, poisonTickCounter: 7, startedTick: 3 }),
+        currentTick: 50,
+      });
+
+      const result = applyEffectOp(op, state);
+
+      expect(result).toBe(state);
+      expect(result.poisonState.poisonVarp < VENOM_IMMUNITY_CUTOFF).toBe(true);
+    });
+
+    it('keeps the running step clock when the immunity changes', () => {
+      const state = createTestState({
+        poisonState: createPoisonState({ poisonVarp: -39, poisonTickCounter: 7, startedTick: 3 }),
+        currentTick: 50,
+      });
+
+      const result = applyEffectOp({ op: 'cure_venom', immunitySteps: 50 }, state);
+
+      expect(result.poisonState).toEqual({ poisonVarp: -50, poisonTickCounter: 7, startedTick: 3 });
+    });
+
+    it('resets a running extended anti-venom+ immunity to full on a re-sip, keeping the step clock', () => {
+      // Reported by the project owner from play: a re-sip resets to -59. The clock's phase holds across
+      // a drink (private gameplay capture zulrah-packet-data-2.txt, sip t3222, next step t3232).
+      const state = createTestState({
+        poisonState: createPoisonState({ poisonVarp: -45, poisonTickCounter: 7, startedTick: 3 }),
+        currentTick: 50,
+      });
+
+      const result = applyEffects(ITEM_ACTIONS[29824].effects, state);
+
+      expect(result.poisonState).toEqual({ poisonVarp: -59, poisonTickCounter: 7, startedTick: 3 });
+    });
+
+    it('starts the step clock with a full cycle only from a clean counter', () => {
+      const state = createTestState({
+        poisonState: createPoisonState({ poisonVarp: 0, poisonTickCounter: 7, startedTick: 3 }),
+        currentTick: 50,
+      });
+
+      const result = applyEffectOp({ op: 'cure_venom', immunitySteps: 50 }, state);
+
+      expect(result.poisonState).toEqual({ poisonVarp: -50, poisonTickCounter: POISON_TICK_INTERVAL, startedTick: 50 });
+    });
+  });
+
+  describe('applyPlayerPoison', () => {
+    const TICK = 40;
+    const fresh = { poisonTickCounter: POISON_TICK_INTERVAL, startedTick: TICK };
+    const at = (poisonVarp: number) => createPoisonState({ poisonVarp, poisonTickCounter: 7, startedTick: 3 });
+
+    it('refuses venom below the venom cutoff of -38', () => {
+      const state = at(-39);
+
+      expect(applyPlayerPoison(state, VENOM_THRESHOLD, undefined, TICK)).toBe(state);
+    });
+
+    it.each([-38, -1])('envenoms at %i, through poison-only immunity, on the running step clock', (poisonVarp) => {
+      expect(applyPlayerPoison(at(poisonVarp), VENOM_THRESHOLD, undefined, TICK)).toEqual(at(VENOM_THRESHOLD));
+    });
+
+    it('envenoms from 0 with a full first cycle', () => {
+      expect(applyPlayerPoison(at(0), VENOM_THRESHOLD, undefined, TICK)).toEqual({
+        poisonVarp: VENOM_THRESHOLD,
+        ...fresh,
+      });
+    });
+
+    it('refuses poison under any immunity, and poisons from 0 with a full first cycle', () => {
+      const state = at(-1);
+
+      expect(applyPlayerPoison(state, 30, undefined, TICK)).toBe(state);
+      expect(applyPlayerPoison(at(0), 30, undefined, TICK)).toEqual({ poisonVarp: 30, ...fresh });
+    });
+
+    it('upgrades a poison to venom without restarting its cycle, and keeps the greater poison', () => {
+      expect(applyPlayerPoison(at(30), VENOM_THRESHOLD, undefined, TICK)).toEqual(at(VENOM_THRESHOLD));
+      expect(applyPlayerPoison(at(30), 5, undefined, TICK)).toEqual(at(30));
+    });
+
+    it('leaves an existing venom alone', () => {
+      const state = at(VENOM_THRESHOLD + 4);
+
+      expect(applyPlayerPoison(state, VENOM_THRESHOLD, undefined, TICK)).toBe(state);
+      expect(applyPlayerPoison(state, 30, undefined, TICK)).toBe(state);
+    });
+
+    it.each([12931, 13197, 13199])('blocks venom and poison while head %i is worn, without curing', (head) => {
+      for (const poisonVarp of [0, -1, 30]) {
+        const state = at(poisonVarp);
+        expect(applyPlayerPoison(state, VENOM_THRESHOLD, head, TICK)).toBe(state);
+        expect(applyPlayerPoison(state, 30, head, TICK)).toBe(state);
+      }
+    });
+
+    it('lets poison and venom through an uncharged serpentine helm (12929)', () => {
+      expect(applyPlayerPoison(at(0), VENOM_THRESHOLD, 12929, TICK).poisonVarp).toBe(VENOM_THRESHOLD);
+      expect(applyPlayerPoison(at(0), 30, 12929, TICK).poisonVarp).toBe(30);
     });
   });
 
@@ -291,12 +410,19 @@ describe('Poison/Venom System', () => {
   describe('prepot integration', () => {
     it('treats sanfew serum as prepottable because of cure_poison', () => {
       expect(isPrepottable(ITEM_ACTIONS[10925])).toBe(true);
-      expect(getPrepotEffects(ITEM_ACTIONS[10925].effects)).toEqual([{ op: 'cure_poison', immunityTicks: 600 }]);
+      expect(getPrepotEffects(ITEM_ACTIONS[10925].effects)).toEqual([{ op: 'cure_poison', immunitySteps: 20 }]);
     });
 
     it('treats antidote++ as prepottable because of cure_poison', () => {
       expect(isPrepottable(ITEM_ACTIONS[5952])).toBe(true);
-      expect(getPrepotEffects(ITEM_ACTIONS[5952].effects)).toEqual([{ op: 'cure_poison', immunityTicks: 1200 }]);
+      expect(getPrepotEffects(ITEM_ACTIONS[5952].effects)).toEqual([{ op: 'cure_poison', immunitySteps: 40 }]);
+    });
+
+    it('treats the anti-venoms as prepottable because of cure_venom', () => {
+      for (const itemId of [12905, 12913, 29824]) {
+        expect(isPrepottable(ITEM_ACTIONS[itemId])).toBe(true);
+        expect(getPrepotEffects(ITEM_ACTIONS[itemId].effects).map((effect) => effect.op)).toEqual(['cure_venom']);
+      }
     });
 
     it('does not treat guthix rest as prepottable because reduce_poison is excluded', () => {

@@ -1,6 +1,6 @@
+import { z } from 'zod';
 import { type NpcActor, submergeNpc } from '../../core/actors/NpcActor';
 import type { ArenaConfig } from '../../core/arena/ArenaConfig';
-import { getDefaultArenaConfig, isWalkableTile } from '../../core/constants';
 import { ACTIVE_ENCOUNTER_OUTCOME, type EncounterOutcome } from '../../core/encounters/outcome';
 import type { EncounterSnapshotContext, ZulrahSnapshot } from '../../core/encounters/snapshot';
 import type {
@@ -12,11 +12,12 @@ import type {
   EncounterTickResult,
   EnvironmentalDamage,
 } from '../../core/encounters/types';
+import { markNpcDead } from '../../core/npcDeath';
 import { NpcDefinitionCollection, type NpcDefinitionContext } from '../../core/npcs';
 import { mulberry32 } from '../../core/rng';
 import { getMonsterHp } from '../../data/monsterData';
 import { emitInfernoVisual } from '../../npcs/inferno/visualEvents';
-import { SNAKELING, ZULRAH_CLOUD, ZULRAH_RANGED_NPC_ID } from '../../npcs/zulrah/constants';
+import { SNAKELING, ZULRAH_CLOUD, ZULRAH_RANGED_NPC_ID, zulrahCloudOrbLandTicks } from '../../npcs/zulrah/constants';
 import {
   createSnakeling,
   type SnakelingStyle,
@@ -24,15 +25,17 @@ import {
   snakelingExpireTick,
 } from '../../npcs/zulrah/snakeling';
 import { createZulrahActor, getZulrahState, transformZulrah, zulrahDefinition } from '../../npcs/zulrah/zulrah';
+import { getBoundsFromRegion } from '../../rs/collision/WalkabilityAnalyzer';
 import type { Coordinate, MechanicsConfig } from '../../types/simulation';
 import {
-  fillCloudSites,
+  cloudCenter,
   isInCloud,
   liveClouds,
-  pickCloudSites,
-  ZULRAH_FILL_BARRAGES,
+  randomCloudBarrage,
   type ZulrahCloud,
+  zulrahCloudSequence,
 } from './clouds';
+import { zulrahIslandTiles } from './constants';
 import {
   buildZulrahControls,
   ZULRAH_ATTACKS_KEY,
@@ -46,6 +49,7 @@ import {
   nextZulrahPosition,
   ZULRAH_DIVE_TICKS,
   ZULRAH_EMERGE_TICKS,
+  ZULRAH_FORM_CHANGE_TICKS,
   ZULRAH_OPENING_PAUSE_TICKS,
   ZULRAH_OPENING_POSITION,
   ZULRAH_OPENING_RISE_TICKS,
@@ -59,6 +63,7 @@ import {
   zulrahPhaseActions,
   zulrahPhaseAt,
 } from './rotation';
+import { randomSnakelingSite, zulrahSnakelingSequence } from './snakelingOrbs';
 import type { ZulrahStage } from './snapshot';
 
 /** Zulrah is one actor for the whole fight; each form change transforms it in place. */
@@ -68,10 +73,10 @@ export const ZULRAH_ACTOR_ID = 'zulrah';
 export const ZULRAH_PLAYER_START: Coordinate = [28, 61];
 const VICTORY_COMPLETION_DELAY_TICKS = 4;
 /**
- * Tanzanite's magic share. Simulator policy: the wiki says only "uses magic much more frequently"
- * (https://oldschool.runescape.wiki/w/Zulrah/Strategies).
+ * Tanzanite's magic share, drawn per attack. Private gameplay captures zulrah-packet-data-1.txt to -4.txt: 33 magic of
+ * 50 blue attacks (95% interval about 0.51–0.79), with no forced switch, per-phase script or prayer dependence seen.
  */
-const TANZANITE_MAGIC_CHANCE = 0.75;
+const TANZANITE_MAGIC_CHANCE = 2 / 3;
 
 type PhaseRuntime = {
   /** Phases surfaced since the fight began, counting from 0. */
@@ -79,6 +84,8 @@ type PhaseRuntime = {
   position: ZulrahPosition;
   /** Cloud barrages spat so far this phase. */
   cloudBarrages: number;
+  /** Where this phase's snakeling orbs have been aimed, in order. */
+  snakelingSites: Coordinate[];
   actorId: string;
   stage: ZulrahStage;
   /** Tick the current stage ends: emerge → active, idle phase → dive, dive → next form. */
@@ -86,18 +93,39 @@ type PhaseRuntime = {
   hp: number;
 };
 
+/** A replay's seed record: exactly the 32-bit encounter seed, as `getSeeds` writes it. */
+const seedsSchema = z.object({ encounterSeed: z.number().int().min(0).max(0xffffffff) }).strict();
+
 /** Keep the rotation and cloud-site draws on their own streams, apart from the attack rolls. */
 const ROTATION_STREAM_SALT = 0x5a55_4c52;
 const CLOUD_STREAM_SALT = 0x434c_4f55;
 const SNAKELING_STREAM_SALT = 0x534e_414b;
 
+/** What lands from a sink on `sinkTick` until the next form's first turn (E+3) waits for that turn. */
+function heldUntil(sinkTick: number): number {
+  return sinkTick + ZULRAH_FORM_CHANGE_TICKS + ZULRAH_SURFACE_PAUSE_TICKS;
+}
+
+/**
+ * The tick the current phase dives, once its last turn is taken: when that turn's last projectile has
+ * landed and its turn clock has run out. So 3 ticks after a last attack or tail hit, and 4 after a last
+ * cloud barrage or snakeling orb (private gameplay capture zulrah-packet-data-1.txt, all 11 dives that
+ * followed an action, e.g. t270 to t273, t329 to t333, t475 to t479, tail hit t549 to t552). Null
+ * while turns remain.
+ */
+function diveTick(actor: NpcActor): number | null {
+  const state = getZulrahState(actor);
+  if (!state || state.actions.length > 0 || state.pendingTail) return null;
+  return Math.max(state.lastImpactTick ?? Number.NEGATIVE_INFINITY, actor.combat.nextActionTick);
+}
+
 /** A snakeling orb in flight: where it lands, when, and what comes out. */
 type PendingSnakeling = { readonly tile: Coordinate; readonly landTick: number; readonly style: SnakelingStyle };
 
 /**
- * Zulrah: the four rotations with ranged, magic, jad and tail phases. Zulrah is one actor that dives,
- * stays hidden underwater, and transforms into its next form at its next spot (`transformZulrah`), so
- * its HP and any hits still in flight carry across forms.
+ * Zulrah: the four rotations with ranged, magic, jad and tail phases. Zulrah is one actor that dives
+ * and transforms into its next form at its next spot (`transformZulrah`), so its HP and any hits still
+ * in flight carry across forms.
  */
 export class ZulrahEncounter implements Encounter {
   public readonly kind = 'zulrah';
@@ -197,12 +225,11 @@ export class ZulrahEncounter implements Encounter {
     });
   }
 
+  /** Restores exactly the seeds given (a replay), throwing on a malformed record; none, a fresh fight. */
   reset(seeds?: Record<string, unknown>): void {
-    const seed = seeds?.encounterSeed;
-    this.encounterSeed =
-      typeof seed === 'number' && Number.isInteger(seed) && seed >= 0 && seed <= 0xffffffff
-        ? seed
-        : Math.floor(Math.random() * 0x100000000);
+    this.encounterSeed = seedsSchema.parse(
+      seeds ?? { encounterSeed: Math.floor(Math.random() * 0x100000000) },
+    ).encounterSeed;
     this.random = mulberry32(this.encounterSeed);
     this.rotationRandom = mulberry32(this.encounterSeed ^ ROTATION_STREAM_SALT);
     this.cloudRandom = mulberry32(this.encounterSeed ^ CLOUD_STREAM_SALT);
@@ -250,10 +277,19 @@ export class ZulrahEncounter implements Encounter {
     return this.npcDefinitions.tick(actor, this.toDefinitionContext(ctx));
   }
 
-  /** A snakeling that has lingered `SNAKELING.lifetimeTicks` dies off. */
+  /**
+   * A snakeling that has lingered `SNAKELING.lifetimeTicks` dies off as a killed one dies, without a
+   * hit: SNAKEBOSS_PET_DEATH on its expiry tick, then removal (private gameplay capture
+   * zulrah-packet-data-2.txt, death 51 ticks after appearing, e.g. t3096 to t3147). Dying, it neither
+   * acts nor can be attacked. The engine's scripted death, as for Zuk's minions.
+   */
   removeNpcIfDue(actor: NpcActor, ctx: EncounterContext): void {
     const expireTick = snakelingExpireTick(actor);
-    if (expireTick !== null && ctx.tick >= expireTick) ctx.despawnNpc(actor.id);
+    if (expireTick === null || ctx.tick < expireTick || !actor.alive) return;
+    actor.vitals.hp = 0;
+    markNpcDead(actor, ctx.tick);
+    this.npcDefinitions.notifyDeathStarted(actor, this.toDefinitionContext(ctx));
+    ctx.tickEvents.emit({ type: 'actor_died', actorId: actor.id });
   }
 
   /** Advances the phase machine once the tick's attacks are out. */
@@ -277,20 +313,11 @@ export class ZulrahEncounter implements Encounter {
         if (phase.stageEndTick !== null && ctx.tick >= phase.stageEndTick) {
           phase.stage = 'active';
           phase.stageEndTick = null;
-          // Reported from play: after a form change she plays her attack animation with no attack
-          // (the "bob"), the visual cue that she can be clicked again. Not on the opening rise, and
-          // not as the melee (magma) form, which only plays it for a cloud or snakeling spit.
-          if (actor && phase.index > 0 && getZulrahState(actor)?.form !== 'magma') {
-            emitInfernoVisual(ctx.tickEvents, {
-              animations: [{ actorId: actor.id, clipId: 'attack', delayCycles: 0 }],
-              projectiles: [],
-              graphics: [],
-            });
-          }
         }
         break;
       case 'active':
         if (this.isPhaseDone(actor, ctx.tick)) this.startDive(actor, ctx);
+        else if (actor && this.isPhaseDone(actor, ctx.tick + 1)) this.closeForDive(actor, ctx, ctx.tick + 1);
         break;
       case 'diving':
         if (phase.stageEndTick !== null && ctx.tick >= phase.stageEndTick) this.goUnderwater(ctx);
@@ -367,8 +394,14 @@ export class ZulrahEncounter implements Encounter {
     return 'ZulrahAttack';
   }
 
+  /**
+   * The pre-cache arena: the island's own walkable tiles, until the cache bake (real collision,
+   * pillars included) replaces it. Not the global default, which the cache sets to Yama's arena.
+   * Simulator policy, as Sol Heredit's: the player can move on the island from the first tick.
+   */
   getArenaConfig(): ArenaConfig {
-    return getDefaultArenaConfig();
+    const walkableTiles = zulrahIslandTiles();
+    return { bounds: getBoundsFromRegion(walkableTiles), walkableTiles, collisionMap: null };
   }
 
   private initialPhase(): PhaseRuntime {
@@ -376,6 +409,7 @@ export class ZulrahEncounter implements Encounter {
       index: 0,
       position: ZULRAH_OPENING_POSITION,
       cloudBarrages: 0,
+      snakelingSites: [],
       actorId: ZULRAH_ACTOR_ID,
       stage: 'emerging',
       stageEndTick: ZULRAH_OPENING_RISE_TICKS,
@@ -385,15 +419,49 @@ export class ZulrahEncounter implements Encounter {
 
   private isPhaseDone(actor: NpcActor | null, tick: number): boolean {
     if (!actor) return true;
-    const state = getZulrahState(actor);
-    if (!state || state.actions.length > 0 || state.pendingTail) return false;
-    // Dive once the last turn's effect has landed, so the dive never hides a hit still in the air.
-    return tick >= (state.lastImpactTick ?? tick);
+    const dive = diveTick(actor);
+    return dive !== null && tick >= dive;
+  }
+
+  /**
+   * When an orb's effect (a cloud, a snakeling) lands: on its landing tick, unless that is the dive
+   * tick, when it waits for the next form's first turn (private gameplay capture
+   * zulrah-packet-data-1.txt: snakeling orbs t329, t385, t440, t506 and the second cloud orb of t475).
+   */
+  private effectTick(actor: NpcActor, landTick: number): number {
+    return landTick === diveTick(actor) ? heldUntil(landTick) : landTick;
+  }
+
+  /**
+   * From the sink tick S Zulrah refuses new attacks until 4 ticks after the emerge (private gameplay
+   * capture zulrah-packet-data-4.txt: clicks with the weapon ready refused on S, t2012 and t2074, and on
+   * E+3, t2080, attacking on E+4, t2081). The player's hits due from S on are dropped: no damage and no
+   * splat (simulator policy, pending a capture that settles it: hits due on S never splat there, t2010,
+   * t2093, t2130 and t2276, while one due on S-1 does, t2180; what the E+3 splats after them mean is an
+   * open question). Closed at the end of S-1, so a hit due on S is gone before S's hit band, and an
+   * attack on S-1 is still made but wasted; Zulrah stays targetable, with its health bar, until S. Nothing
+   * can start in the window, so dropping the queued hits once is enough. Called again on S itself, for a
+   * dive with no tick before it.
+   *
+   * Recoil is kept and held, like an orb landing on the dive, to the next form's first turn (E+3), with
+   * its damage: private gameplay captures zulrah-packet-data-1.txt (a hit on the sink, t273, its recoil of
+   * 2 on t279) and zulrah-packet-data-2.txt (t3036, 3 on t3042), 2 of 2. A recoil due in the window is
+   * queued by then: Zulrah's last hit lands on S at the latest, in the player band, before this runs.
+   */
+  private closeForDive(actor: NpcActor, ctx: EncounterContext, sinkTick: number): void {
+    actor.attackBlockedUntilTick = sinkTick + ZULRAH_FORM_CHANGE_TICKS + ZULRAH_EMERGE_TICKS;
+    const held = heldUntil(sinkTick);
+    for (const hit of ctx.world.pendingHits) {
+      if (hit.recoil === true && hit.targetId === actor.id) hit.impactTick = Math.max(hit.impactTick, held);
+    }
+    const player = ctx.world.getPlayer();
+    if (player) ctx.world.removePendingHitsBySourceOnTarget(player.id, actor.id, (hit) => hit.recoil === true);
   }
 
   private startDive(actor: NpcActor | null, ctx: EncounterContext): void {
     const diveEnd = ctx.tick + ZULRAH_DIVE_TICKS;
     if (actor) {
+      this.closeForDive(actor, ctx, ctx.tick);
       submergeNpc(actor, diveEnd + 1);
       emitInfernoVisual(ctx.tickEvents, {
         animations: [{ actorId: actor.id, clipId: 'dive', delayCycles: 0 }],
@@ -406,8 +474,8 @@ export class ZulrahEncounter implements Encounter {
   }
 
   /**
-   * The dive is over: Zulrah is underwater, so it is not drawn and cannot be targeted, but it stays in
-   * the world, so hits already in flight still land.
+   * SINKFAST has played out: Zulrah is not drawn for the tick before it emerges and cannot be targeted.
+   * It stays in the world; the player's hits at it were dropped at the sink (`closeForDive`).
    */
   private goUnderwater(ctx: EncounterContext): void {
     const zulrah = ctx.world.getNpc(this.phase.actorId);
@@ -441,6 +509,7 @@ export class ZulrahEncounter implements Encounter {
       index: this.phase.index + 1,
       position,
       cloudBarrages: 0,
+      snakelingSites: [],
       actorId: this.phase.actorId,
       stage: 'emerging',
       stageEndTick: ctx.tick + ZULRAH_EMERGE_TICKS,
@@ -490,26 +559,6 @@ export class ZulrahEncounter implements Encounter {
     }
   }
 
-  /**
-   * Where a snakeling orb lands. Simulator policy: a walkable tile 1-3 tiles from the player that no
-   * orb is already headed for, drawn at random.
-   */
-  private pickSnakelingTile(player: Coordinate): Coordinate | null {
-    const taken = new Set(this.pendingSnakelings.map((orb) => `${orb.tile[0]},${orb.tile[1]}`));
-    const candidates: Coordinate[] = [];
-    const { landingMinDistance: min, landingMaxDistance: max } = SNAKELING;
-    for (let dx = -max; dx <= max; dx++) {
-      for (let dy = -max; dy <= max; dy++) {
-        const distance = Math.max(Math.abs(dx), Math.abs(dy));
-        if (distance < min || distance > max) continue;
-        const tile: Coordinate = [player[0] + dx, player[1] + dy];
-        if (isWalkableTile(tile[0], tile[1]) && !taken.has(`${tile[0]},${tile[1]}`)) candidates.push(tile);
-      }
-    }
-    if (candidates.length === 0) return null;
-    return candidates[Math.floor(this.snakelingRandom() * candidates.length)] ?? null;
-  }
-
   private createNpcDefinitions(): NpcDefinitionCollection {
     return new NpcDefinitionCollection([
       zulrahDefinition.register({
@@ -519,32 +568,30 @@ export class ZulrahEncounter implements Encounter {
         stunPlayer: (untilTick) => {
           this.stunUntilTick = Math.max(this.stunUntilTick, untilTick);
         },
-        launchCloudBarrage: (_actor, context) => {
+        launchCloudBarrage: (actor, context) => {
           if (!this.cloudsEnabled) return [];
-          const player = context.world.getPlayer();
-          if (!player) return [];
-          const phase = zulrahPhaseAt(this.phase.position);
-          const barrages = [...(phase.before ?? []), ...(phase.after ?? [])].filter((s) => s === 'cloud').length;
+          // The phase's captured or inferred sequence, else the fallback (`clouds.ts`).
           const index = this.phase.cloudBarrages++;
-          const sites =
-            barrages === ZULRAH_FILL_BARRAGES
-              ? fillCloudSites(index)
-              : pickCloudSites(player.position, this.cloudRandom);
-          const landTick = context.tick + ZULRAH_CLOUD.flightTicks;
-          for (const center of sites) {
+          const barrage = zulrahCloudSequence(this.phase.position)?.[index] ?? randomCloudBarrage(this.cloudRandom);
+          const sites = barrage.map(cloudCenter);
+          sites.forEach((center, orb) => {
+            const landTick = this.effectTick(actor, context.tick + zulrahCloudOrbLandTicks(orb));
             this.clouds.push({ center, landTick, expireTick: landTick + ZULRAH_CLOUD.durationTicks });
-          }
+          });
           return sites;
         },
-        launchSnakelingOrb: (_actor, context) => {
+        launchSnakelingOrb: (actor, context) => {
           if (!this.snakelingsEnabled) return null;
-          const player = context.world.getPlayer();
-          if (!player) return null;
-          const tile = this.pickSnakelingTile(player.position);
-          if (!tile) return null;
+          // The phase's captured sequence, else the fallback (`snakelingOrbs.ts`).
+          const sites = this.phase.snakelingSites;
+          const captured = zulrahSnakelingSequence(this.phase.position)?.[sites.length];
+          const site = captured ?? randomSnakelingSite(this.snakelingRandom, sites);
+          sites.push(site);
+          const tile: Coordinate = [site[0], site[1]];
           // Simulator policy: each style equally likely; the wiki says only that each has one.
           const style: SnakelingStyle = this.snakelingRandom() < 0.5 ? 'melee' : 'magic';
-          this.pendingSnakelings.push({ tile, landTick: context.tick + SNAKELING.orbFlightTicks, style });
+          const landTick = this.effectTick(actor, context.tick + SNAKELING.orbFlightTicks);
+          this.pendingSnakelings.push({ tile, landTick, style });
           return tile;
         },
       }),

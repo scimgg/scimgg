@@ -1,13 +1,18 @@
-import { isNpcTargetable, type NpcActor } from '../../core/actors/NpcActor';
+import type { NpcActor } from '../../core/actors/NpcActor';
 import type { PlayerActor } from '../../core/actors/PlayerActor';
 import { calculateProjectileEndTime } from '../../core/combat/hitDelay';
 import { isNpcActionReady, scheduleNpcAction } from '../../core/combat/npcActionClock';
-import { type AttackPlan, projectileDistance, resolveAttackRequest } from '../../core/combat/npcAttackRequest';
+import {
+  type AttackPlan,
+  canNpcAttack,
+  projectileDistance,
+  resolveAttackRequest,
+} from '../../core/combat/npcAttackRequest';
 import { contextAttackDecisions, contextDecisions } from '../../core/decisionRandom';
 import type { EncounterTickResult, EnvironmentalDamage } from '../../core/encounters/types';
 import { canNpcActThisTurn, canReceiveNewAttack } from '../../core/npcDeath';
 import { createNpcDefinition, type NpcDefinitionContext } from '../../core/npcs';
-import { VENOM_THRESHOLD } from '../../core/timers';
+import { VENOM_THRESHOLD } from '../../core/poison';
 import { getMonsterFormulaStats } from '../../data/monsterData';
 import type { Coordinate, TickNumber } from '../../types/simulation';
 import { emitInfernoVisual } from '../inferno/visualEvents';
@@ -19,6 +24,7 @@ import {
   ZULRAH_CLOUD,
   ZULRAH_CLOUD_ORB_SPOTANIM_ID,
   ZULRAH_HIT_CAP,
+  ZULRAH_LOS_GIVE_UP_TICKS,
   ZULRAH_MAGIC_SPOTANIM_ID,
   ZULRAH_MAX_HIT,
   ZULRAH_NPC_ID_BY_FORM,
@@ -26,9 +32,11 @@ import {
   ZULRAH_RANGED_SPOTANIM_ID,
   ZULRAH_SIZE,
   ZULRAH_SNAKELING_ORB_SPOTANIM_ID,
+  ZULRAH_SURFACE_FACING_TILE,
   ZULRAH_TAIL,
   ZULRAH_TAIL_SAFE_TILES,
   type ZulrahForm,
+  zulrahCloudOrbLandTicks,
 } from './constants';
 
 /**
@@ -53,18 +61,19 @@ export type ZulrahActorState = {
   actions: ZulrahAction[];
   /** Ranged/magic attacks and tails made, for the jad alternation. */
   attacksMade: number;
-  /** Tick the last turn's effect lands (a hit, a tail, a cloud); the encounter waits for it before diving. */
+  /**
+   * Tick the last turn's effect lands (a hit, a cloud, a snakeling), or `ZULRAH_TAIL.diveTicks` after a
+   * slam lands; the encounter waits for it before diving.
+   */
   lastImpactTick: TickNumber | null;
   /** The tail in progress: the tile it locked when the stare began, and the tick it lands. */
   pendingTail: { readonly target: Coordinate; readonly landTick: TickNumber } | null;
+  /** Consecutive ticks a due attack has waited for line of sight (`waitForSight`). */
+  blockedTicks: number;
 };
 
 export type ZulrahDefinitionConfig = {
-  /**
-   * Tanzanite's chance to pick magic. The wiki gives no number, only "will randomly attack with
-   * both Magic and Ranged attacks, although it uses magic much more frequently"
-   * (https://oldschool.runescape.wiki/w/Zulrah/Strategies). Simulator policy: 0.75.
-   */
+  /** Tanzanite's chance to pick magic on each attack; the encounter's `TANZANITE_MAGIC_CHANCE`, from the captures. */
   readonly tanzaniteMagicChance: number;
   readonly attacksEnabled: () => boolean;
   /** Whether attacks may envenom (`ZULRAH_VENOM`). */
@@ -93,9 +102,9 @@ export type CreateZulrahActorInput = {
   readonly hp: number;
   readonly maxHp: number;
   readonly spawnTick: TickNumber;
-  /** Ticks after `spawnTick` before it can be targeted or act (the emerge). */
+  /** Ticks after `spawnTick` before it can be targeted (the emerge). */
   readonly emergeTicks: number;
-  /** Further ticks after the emerge before its first turn. */
+  /** Ticks after `spawnTick` before its first turn; `emergeTicks` when absent. */
   readonly firstTurnDelayTicks?: number;
 };
 
@@ -132,21 +141,21 @@ const EMPTY: EncounterTickResult = { environmentalDamages: [] };
 export const zulrahDefinition = createNpcDefinition<ZulrahActorState, ZulrahDefinitionConfig>({
   id: 'zulrah',
   move: false,
-  // Reported from play: Zulrah faces south until the player first hits it, then tracks the player
-  // (docs/encounters/zulrah-open-questions.md). The target is the renderer's cue to track.
-  onDamageResolved: ({ actor, damage }) => {
-    if (damage.sourceId === 'player') actor.combat.targetId = 'player';
-  },
   tick: ({ actor, config, context }) => {
     const state = actor.state;
     const player = context.world.getPlayer();
     const damages = landTail(actor, state, config, context);
     if (state.pendingTail || state.actions.length === 0) return { environmentalDamages: damages };
     if (!canNpcActThisTurn(actor, context.tick) || !actor.alive) return { environmentalDamages: damages };
-    if (!isNpcTargetable(actor, context.tick) || !isNpcActionReady(actor.combat, context.tick))
-      return { environmentalDamages: damages };
+    // Its first turn after a form change (emerge + 3) comes before it can be targeted (emerge + 4).
+    if (actor.hidden || !isNpcActionReady(actor.combat, context.tick)) return { environmentalDamages: damages };
     if (!player || !canReceiveNewAttack(player)) return { environmentalDamages: damages };
 
+    if (state.actions[0] === 'attack' && !canNpcAttack(actor, player, PLANS.range)) {
+      waitForSight(actor, state, context);
+      return { environmentalDamages: damages };
+    }
+    state.blockedTicks = 0;
     const action = state.actions.shift();
     switch (action) {
       case 'attack': {
@@ -180,14 +189,9 @@ function takeAttack(
   player: PlayerActor,
 ): EncounterTickResult {
   scheduleNpcAction(actor.combat, context.tick, ZULRAH_ATTACK_SPEED_TICKS);
-  // An attack is aimed at the player: drop any bearing a cloud barrage left.
+  // An attack turn faces the player, dropping the bearing a surfacing or a spit left (private gameplay
+  // capture zulrah-packet-data-1.txt, e.g. t258; also t301, where the turn made no attack).
   delete actor.actionFacing;
-  if (!config.attacksEnabled()) {
-    // Spends the turn without the attack, so the phase keeps its length.
-    state.lastImpactTick = context.tick;
-    return EMPTY;
-  }
-  // Reported from play: it faces south until the player hits it or it first attacks, then tracks the player.
   actor.combat.targetId = 'player';
   const style = selectStyle(actor, state, config, context);
   const attack = resolveAttackRequest({
@@ -198,12 +202,16 @@ function takeAttack(
     plan: PLANS[style],
   });
   if (!attack) throw new TypeError(`Missing formula stats for ${actor.id}`);
-  // Every ranged or magic attack that does not miss envenoms, prayer or not (`ZULRAH_VENOM`).
-  const venom = config.venomEnabled() && attack.accuracySucceeded;
   state.attacksMade += 1;
   state.lastImpactTick = context.tick + attack.impactDelayTicks;
   actor.combat.attackStyle = style;
   actor.combat.lastAttackTick = context.tick;
+  // With attacks off the turn is still taken in full, after the same sight wait, and its style and rolls
+  // are still drawn from the encounter's stream, so turning attacks back on mid-fight continues with the
+  // rolls an all-on run would make. Only the attack, its damage, venom and visual are dropped.
+  if (!config.attacksEnabled()) return EMPTY;
+  // Every ranged or magic attack that does not miss envenoms, prayer or not (`ZULRAH_VENOM`).
+  const venom = config.venomEnabled() && attack.accuracySucceeded;
   emitInfernoVisual(context.tickEvents, {
     animations: [{ actorId: actor.id, clipId: 'attack', delayCycles: 0 }],
     projectiles: [projectileCue(actor, player, style)],
@@ -242,6 +250,30 @@ function selectStyle(
   }
 }
 
+/**
+ * A due ranged or magic attack waits while Zulrah cannot see the player, retrying every tick; the
+ * first tick it can see the player it attacks, and its 3-tick clock restarts from there. The check is
+ * the engine's NPC reach (`canNpcAttack`): the ray runs from the player's tile to the nearest tile of
+ * Zulrah's footprint, and Zulrah's turn comes before the player moves, so it sees where the player
+ * ended the previous tick. Measured in private gameplay captures, whose hidden and visible tiles
+ * (docs/encounters/zulrah-facts-spec.md) this ray reproduces on the pinned cache's pillars; the reverse
+ * ray, Zulrah to player, would hide (24,64) from the south spot, where zulrah-packet-data-2.txt shows
+ * attacks (t3074, t3077).
+ *
+ * Simulator policy (approved, unverified): blocked on `ZULRAH_LOS_GIVE_UP_TICKS` consecutive ticks,
+ * it drops the phase's remaining attacks, and its next turn (an `after` special) or its dive comes on
+ * the following tick. Zulrah faces the player while it waits (zulrah-packet-data-2.txt t3071-t3073).
+ */
+function waitForSight(actor: NpcActor, state: ZulrahActorState, context: NpcDefinitionContext): void {
+  delete actor.actionFacing;
+  actor.combat.targetId = 'player';
+  state.blockedTicks += 1;
+  if (state.blockedTicks < ZULRAH_LOS_GIVE_UP_TICKS) return;
+  state.blockedTicks = 0;
+  while (state.actions[0] === 'attack') state.actions.shift();
+  scheduleNpcAction(actor.combat, context.tick, 1);
+}
+
 /** A tail whose stare has run its course lands: damage and a stun if the player is still under it. */
 function landTail(
   actor: NpcActor,
@@ -273,6 +305,9 @@ function landTail(
       attackType: 'typeless',
       source: 'Zulrah tail',
       playerPosition: [...player.position],
+      // A slam is recoiled like an attack, the tick after it (private gameplay capture
+      // zulrah-packet-data-1.txt, slams t242, t249 and t549, recoil each next tick).
+      attackerId: actor.id,
     },
   ];
 }
@@ -285,29 +320,46 @@ function startTail(
   context: NpcDefinitionContext,
   player: PlayerActor,
 ): void {
-  const landTick = context.tick + ZULRAH_TAIL.stareTicks;
+  state.attacksMade += 1;
+  // The side sets the stare's length.
+  const side = zulrahTailSide(actor, player.position);
+  const stareTicks = ZULRAH_TAIL.stareTicks[side];
+  const landTick = context.tick + stareTicks;
   state.pendingTail = { target: [player.position[0], player.position[1]], landTick };
   // Zulrah stares at the locked tile, not at the player: it holds this bearing until the slam.
   actor.actionFacing = facingToward(actor, state.pendingTail.target);
-  state.attacksMade += 1;
-  state.lastImpactTick = landTick;
+  state.lastImpactTick = landTick + ZULRAH_TAIL.diveTicks;
   actor.combat.lastAttackTick = context.tick;
   // Holds the clock until the tail lands; the landing reschedules the next stare.
-  scheduleNpcAction(actor.combat, context.tick, ZULRAH_TAIL.stareTicks);
+  scheduleNpcAction(actor.combat, context.tick, stareTicks);
   if (config.attacksEnabled()) {
-    // Its first attack turns it from south to the player (see `takeAttack`); the stare bearing above
-    // still wins until the slam lands.
+    // Tracks the player once the slam lands; the stare bearing above wins until then.
     actor.combat.targetId = 'player';
     emitInfernoVisual(context.tickEvents, {
-      // Which side the game whips from is not sourced: simulator policy alternates, left first
-      // (docs/encounters/zulrah-open-questions.md).
-      animations: [
-        { actorId: actor.id, clipId: state.attacksMade % 2 === 1 ? 'tailLeft' : 'tailRight', delayCycles: 0 },
-      ],
+      animations: [{ actorId: actor.id, clipId: side, delayCycles: 0 }],
       projectiles: [],
       graphics: [],
     });
   }
+}
+
+/**
+ * The side the tail whips from, by where the player stands as the stare starts (its tile at the start
+ * of the tick, since Zulrah's turn comes before the player moves): west of Zulrah's center column,
+ * TAIL_LEFT; east of it, TAIL_RIGHT. INFERENCE from private gameplay captures, 14 of 18 stares
+ * (zulrah-packet-data-1.txt t236, t535, t543 and zulrah-packet-data-2.txt t3105, t3113 left, the player
+ * west; zulrah-packet-data-2.txt t3003, t3010, t3242, t3249, zulrah-packet-data-3.txt t878 and
+ * zulrah-packet-data-4.txt t2066, t2187, t2194, t2243 right, the player east). The exceptions:
+ * zulrah-packet-data-1.txt t244 whipped right at a player just knocked back west to (22, 68);
+ * zulrah-packet-data-3.txt t885 left at a player on (32, 62); zulrah-packet-data-4.txt t2058 left at a
+ * player on (29, 62), which got right at t2187, and t2250 left at a player on (32, 69).
+ * Simulator policy: a player in the center column gets TAIL_LEFT.
+ */
+export function zulrahTailSide(
+  zulrah: Pick<NpcActor, 'position' | 'size'>,
+  player: Coordinate,
+): 'tailLeft' | 'tailRight' {
+  return player[0] > zulrah.position[0] + Math.floor(zulrah.size / 2) ? 'tailRight' : 'tailLeft';
 }
 
 /** Spits a barrage: the encounter places the clouds, this sends an orb to each. */
@@ -318,30 +370,34 @@ function spitClouds(
   context: NpcDefinitionContext,
 ): void {
   scheduleNpcAction(actor.combat, context.tick, ZULRAH_ATTACK_SPEED_TICKS);
-  state.lastImpactTick = context.tick + ZULRAH_CLOUD.flightTicks;
-  const tiles = config.launchCloudBarrage(actor, context);
-  if (tiles.length === 0) return;
-  // Reported from play: Zulrah turns to each barrage as it spits, rather than watching the player. It
-  // holds that bearing until its next attack (`takeAttack`) or form change clears it.
-  const aim: Coordinate = [
-    tiles.reduce((sum, tile) => sum + tile[0], 0) / tiles.length,
-    tiles.reduce((sum, tile) => sum + tile[1], 0) / tiles.length,
-  ];
-  actor.actionFacing = facingToward(actor, aim);
-  const endDelayCycles = ZULRAH_CLOUD.flightTicks * 30;
+  state.lastImpactTick = context.tick + zulrahCloudOrbLandTicks(ZULRAH_CLOUD.perBarrage - 1);
+  const centers = config.launchCloudBarrage(actor, context);
+  const [first] = centers;
+  if (!first) return;
+  // Zulrah faces the first cloud's center as it spits, and holds that bearing until its next attack or
+  // form change (private gameplay capture zulrah-packet-data-1.txt, every barrage, e.g. t313).
+  actor.actionFacing = facingToward(actor, first);
   emitInfernoVisual(context.tickEvents, {
     animations: [{ actorId: actor.id, clipId: 'attack', delayCycles: 0 }],
-    projectiles: tiles.map((tile) => ({
-      spotAnimId: ZULRAH_CLOUD_ORB_SPOTANIM_ID,
-      sourcePosition: npcProjectileSource(actor),
-      target: { kind: 'tile', position: [tile[0], tile[1]] },
-      startDelayCycles: 20,
-      endDelayCycles,
-      slope: 32,
-      startOffset: 64,
-      startHeight: 220,
-      endHeight: 0,
-    })),
+    // Each orb flies at its cloud LOC's south-west tile (the same capture, t313 to t316).
+    projectiles: centers.map((center, index) => {
+      const flight = ZULRAH_CLOUD.orbFlights[index];
+      if (!flight) throw new RangeError(`A barrage has ${ZULRAH_CLOUD.orbFlights.length} orbs, not ${centers.length}`);
+      return {
+        spotAnimId: ZULRAH_CLOUD_ORB_SPOTANIM_ID,
+        sourcePosition: npcProjectileSource(actor),
+        target: {
+          kind: 'tile' as const,
+          position: [center[0] - ZULRAH_CLOUD.radius, center[1] - ZULRAH_CLOUD.radius] as const,
+        },
+        startDelayCycles: flight.startCycles,
+        endDelayCycles: flight.endCycles,
+        slope: 32,
+        startOffset: 64,
+        startHeight: 220,
+        endHeight: 0,
+      };
+    }),
     graphics: [],
   });
 }
@@ -357,8 +413,8 @@ function spitSnakelingOrb(
   state.lastImpactTick = context.tick + SNAKELING.orbFlightTicks;
   const tile = config.launchSnakelingOrb(actor, context);
   if (!tile) return;
-  // Reported from play: like a cloud barrage, it turns to where the orb lands rather than watching the
-  // player, and holds that bearing until its next attack or form change.
+  // It faces the orb's target tile, and holds that bearing until its next attack or form change
+  // (private gameplay capture zulrah-packet-data-1.txt, every snakeling orb, e.g. t323).
   actor.actionFacing = facingToward(actor, tile);
   emitInfernoVisual(context.tickEvents, {
     animations: [{ actorId: actor.id, clipId: 'attack', delayCycles: 0 }],
@@ -367,8 +423,8 @@ function spitSnakelingOrb(
         spotAnimId: ZULRAH_SNAKELING_ORB_SPOTANIM_ID,
         sourcePosition: npcProjectileSource(actor),
         target: { kind: 'tile', position: [tile[0], tile[1]] },
-        startDelayCycles: 20,
-        endDelayCycles: SNAKELING.orbFlightTicks * 30,
+        startDelayCycles: SNAKELING.orbStartCycles,
+        endDelayCycles: SNAKELING.orbEndCycles,
         slope: 32,
         startOffset: 64,
         startHeight: 220,
@@ -377,6 +433,11 @@ function spitSnakelingOrb(
     ],
     graphics: [],
   });
+}
+
+/** The bearing Zulrah surfaces on at `position`, toward `ZULRAH_SURFACE_FACING_TILE`. */
+function surfaceFacing(position: Coordinate): number {
+  return facingToward({ position, size: ZULRAH_SIZE }, ZULRAH_SURFACE_FACING_TILE);
 }
 
 /** OSRS angle (0 south, 512 west, 1024 north, 1536 east) from the NPC's centre to a tile's centre. */
@@ -434,13 +495,14 @@ export function createZulrahActor(input: CreateZulrahActorInput) {
     spawnTick: input.spawnTick,
     targetableFromTick,
     history: new Map<TickNumber, Coordinate>(),
+    actionFacing: surfaceFacing(input.position),
     combat: {
       attackSpeed: ZULRAH_ATTACK_SPEED_TICKS,
       attackRange: 20,
       attackStyle: input.form === 'tanzanite' ? 'magic' : 'range',
-      nextActionTick: targetableFromTick,
-      // No target until the player first hits it or it first attacks, so it faces south (`facing: 0`)
-      // rather than tracking the player; see `onDamageResolved` and `takeAttack`.
+      nextActionTick: input.spawnTick + (input.firstTurnDelayTicks ?? input.emergeTicks),
+      // No target until its first attack (`takeAttack`); until its first action it holds
+      // `ZULRAH_SURFACE_FACING_TILE`.
       targetId: null,
       lastAttackTick: null,
       animations: { idle: null, walk: null, run: null, attack: null, death: null },
@@ -456,13 +518,14 @@ export function createZulrahActor(input: CreateZulrahActorInput) {
     attacksMade: 0,
     lastImpactTick: null,
     pendingTail: null,
+    blockedTicks: 0,
   });
 }
 
 /**
  * Turns the one Zulrah actor into its next form at its next spot, as the game does: Zulrah is a single
  * NPC that changes type (W: it "changes forms by diving into the swamp and resurfacing somewhere
- * else"). Keeping the actor keeps its HP and every hit already in flight at it.
+ * else"). Keeping the actor keeps its HP; the encounter drops the player's hits at it from the sink.
  */
 export function transformZulrah(actor: NpcActor, input: Omit<CreateZulrahActorInput, 'id' | 'hp' | 'maxHp'>): void {
   const state = zulrahDefinition.getState(actor);
@@ -478,9 +541,9 @@ export function transformZulrah(actor: NpcActor, input: Omit<CreateZulrahActorIn
   actor.spawnTick = input.spawnTick;
   actor.targetableFromTick = targetableFromTick;
   actor.hidden = false;
-  delete actor.actionFacing;
+  actor.actionFacing = surfaceFacing(input.position);
   actor.combat.attackStyle = input.form === 'tanzanite' ? 'magic' : 'range';
-  actor.combat.nextActionTick = targetableFromTick + (input.firstTurnDelayTicks ?? 0);
+  actor.combat.nextActionTick = input.spawnTick + (input.firstTurnDelayTicks ?? input.emergeTicks);
   actor.combat.lastAttackTick = null;
   state.form = input.form;
   state.mode = input.mode;
@@ -489,6 +552,7 @@ export function transformZulrah(actor: NpcActor, input: Omit<CreateZulrahActorIn
   state.attacksMade = 0;
   state.lastImpactTick = null;
   state.pendingTail = null;
+  state.blockedTicks = 0;
 }
 
 export function getZulrahState(actor: NpcActor): ZulrahActorState | null {

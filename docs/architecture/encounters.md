@@ -159,7 +159,15 @@ Two engine rules let an encounter run a cutscene without a hand-made player path
 `EncounterEngineRules.playerInputLocked` (a busy tick drops that tick's inputs, clears the attack
 target and does not walk; the live loop drops the walk target clicked meanwhile) and
 `EncounterContext.teleportPlayer` (a scripted placement and facing, from an NPC-band hook). Timers,
-prayers and pending hits run on. The Inferno's wave-69 intro uses both.
+prayers and pending hits run on. The Inferno's wave-69 intro uses both. The lock is read once, at
+the start of the tick.
+
+`EncounterEngineRules.playerStunned` is the narrower stun: the player cannot walk or attack (attack
+and pick-up inputs are dropped and the attack target cleared, and the live loop drops the walk
+target), but prayer, food, potion and gear inputs go through. It is read at the start of the tick
+and again just before the player moves, after the hazards, NPC band, player hit queue and timers,
+so a stun an NPC applies in its turn blocks that same tick's walk and attack; the inputs already
+run that tick stand. Zulrah's tail uses it. It is ignored while `playerInputLocked` holds.
 
 ## Practice controls
 

@@ -31,7 +31,10 @@ const formType = (npcTypeId: number) => ({
     tailLeft: ZULRAH_SEQS.tailLeft,
     tailRight: ZULRAH_SEQS.tailRight,
   },
+  // A dead boss stays in the snapshot, so its death clip is opted in, as Zuk's is; the corpse lasts
+  // the clip's own length. Seq and timing UNVERIFIED: neither capture has a kill.
   deathSeqId: ZULRAH_SEQS.death,
+  bossDeathAnimationEnabled: true,
 });
 
 const snakelingType = (npcTypeId: number) => ({

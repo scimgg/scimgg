@@ -16,6 +16,15 @@ export const ZULRAH_SIZE = 5;
 /** Attack speed 3 ticks: wiki infobox. */
 export const ZULRAH_ATTACK_SPEED_TICKS = 3;
 
+/**
+ * Consecutive ticks a due ranged or magic attack waits for line of sight before Zulrah gives up the
+ * phase's remaining attacks (`waitForSight` in zulrah.ts). Simulator policy, approved by the project
+ * owner and unverified: it reproduces private gameplay capture zulrah-packet-data-2.txt's east phase
+ * (blocked from t3137, dive t3145) but not two in zulrah-packet-data-1.txt (blocked from t301, dive
+ * t307; blocked from t363, first special t373).
+ */
+export const ZULRAH_LOS_GIVE_UP_TICKS = 8;
+
 /** Ranged and magic max hit 41: wiki infobox. */
 export const ZULRAH_MAX_HIT = 41;
 
@@ -29,37 +38,53 @@ export const ZULRAH_HIT_CAP = { above: 50, min: 45, max: 50 } as const;
  * The magma form's tail. The wiki: Zulrah stares at the player's position "for several seconds"
  * before whipping its tail there (Strategies, Forms); 20-30 typeless damage and a stun "for several
  * seconds" if the player has not moved away; it "can be avoided by moving two tiles away" (Zulrah,
- * Fight overview). The rest is simulator policy:
- * - the target is the player's tile when the stare starts;
- * - it lands 6 ticks (3.6 s) after the stare starts;
- * - it hits the 3x3 around the target, so two tiles away is the first safe distance;
- * - the stun is 5 ticks. A stunned player cannot move or attack but can pray, eat and switch gear
- *   (the engine's `playerStunned`), following the wiki's stun status: stuns disable "attacking and
- *   moving" (https://oldschool.runescape.wiki/w/Stun_(status)).
+ * Fight overview). Measured in private gameplay captures:
+ * - TAIL_LEFT lands 6 ticks after the stare starts and TAIL_RIGHT 5 (zulrah-packet-data-2.txt: right
+ *   t3003 to t3008, t3010 to t3015, t3242 to t3247; left t3105 to t3111, t3113 to t3119;
+ *   zulrah-packet-data-1.txt: left t236 to t242, right t244 to t249);
+ * - the next stare starts 2 ticks after a slam lands (zulrah-packet-data-2.txt t3008 to t3010, t3111 to
+ *   t3113, t3247 to t3249);
+ * - the phase dives 3 ticks after its last slam (t3015 to t3018, t3119 to t3122; zulrah-packet-data-1.txt
+ *   t249 to t252, t549 to t552);
+ * - a hit on tick t stuns the player through t+6 and it moves again on t+7, without a knockback
+ *   (zulrah-packet-data-2.txt t3015: "You're stunned!" t3016-t3021, first move t3022). With a knockback,
+ *   which is not modeled, it is a tick longer (t3119 to t3127; zulrah-packet-data-1.txt t549 to t557).
+ * The side follows the player's position (`zulrahTailSide` in zulrah.ts). Simulator policy: the target
+ * is the player's tile when the stare starts; it hits the 3x3 around the target, so two tiles away is
+ * the first safe distance. A stunned
+ * player cannot move or attack but can pray, eat and switch gear (the engine's `playerStunned`;
+ * zulrah-packet-data-1.txt shows eating while stunned at t245), following the wiki's stun status: stuns
+ * disable "attacking and moving" (https://oldschool.runescape.wiki/w/Stun_(status)).
  */
 /**
- * The stunned player's graphic: STUNNED, spotanim 80 (RuneLite gameval SpotanimID), the generic
- * circling-birds stun. That Zulrah's tail uses it is not sourced; open question.
+ * The stunned player's graphic: spotanim 245 `stunned_thieving`, at height 124 (private gameplay
+ * capture zulrah-packet-data-1.txt, ticks 242, 249 and 549).
  */
-export const PLAYER_STUNNED_SPOTANIM_ID = 80;
+export const PLAYER_STUNNED_SPOTANIM_ID = 245;
 
 export const ZULRAH_TAIL = {
-  stareTicks: 6,
+  /** Ticks from the stare's start to the slam, by the side it whips from. */
+  stareTicks: { tailLeft: 6, tailRight: 5 },
   radius: 1,
   damage: [20, 30] as [number, number],
-  stunTicks: 5,
+  stunTicks: 7,
   /** Ticks after a slam lands before the next stare begins. */
-  recoveryTicks: 3,
+  recoveryTicks: 2,
+  /** Ticks after the phase's last slam lands before Zulrah dives. */
+  diveTicks: 3,
 } as const;
 
 /**
- * Tiles the tail cannot reach while Zulrah is at its middle spot (SW corner 26,64): the three walkable
- * tiles tucked behind each pillar (pillars at 25,63 and 31,63), reported from play. West pillar: its
- * west 24,63, south-west 24,62 and south 25,62; the east pillar mirrors them. The slam still lands; a
- * player standing here takes no damage and no stun.
+ * Tiles the tail cannot reach while Zulrah is at its middle spot (SW corner 26,65, its tracked tile
+ * in private gameplay captures; `ZULRAH_SPOTS.middle`): the three walkable tiles tucked behind each
+ * pillar (pillars at 25,63 and 31,63), reported from play. West pillar: its west 24,63, south-west
+ * 24,62 and south 25,62; the east pillar mirrors them. The slam still lands; a player standing here
+ * takes no damage and no stun. Captured for 32,62 only: the player stood there through a TAIL_RIGHT
+ * and a TAIL_LEFT (private gameplay capture zulrah-packet-data-3.txt, stares t878 and t885, slams t883
+ * and t891) and took neither hit nor stun.
  */
 export const ZULRAH_TAIL_SAFE_TILES: Readonly<{ zulrah: Coordinate; tiles: readonly Coordinate[] }> = {
-  zulrah: [26, 64],
+  zulrah: [26, 65],
   tiles: [
     [24, 63],
     [24, 62],
@@ -86,19 +111,32 @@ export const SNAKELING_VENOM_CHANCE = 0.25;
 /**
  * Venom clouds. The wiki: Zulrah spawns them "via a barrage of dark-green orbs"; standing in a
  * cloud's "3x3 area" deals "varying damage per tick"; the clouds "do not envenom the player"
- * (https://oldschool.runescape.wiki/w/Zulrah/Strategies, Special attacks and Venom clouds). It gives
- * no counts, durations or damage figures, so these are simulator policy:
- * - 2 clouds per barrage, landing 3 ticks after it is spat;
- * - each lasts 30 ticks (18 s);
- * - 1-5 typeless damage on every tick the player stands in at least one.
+ * (https://oldschool.runescape.wiki/w/Zulrah/Strategies, Special attacks and Venom clouds). The
+ * private gameplay capture zulrah-packet-data-1.txt measures the rest of the timing (t313: orbs
+ * 40-90 and 45-120 cycles, clouds at t316 and t317, removed at t346 and t347; 17/17 clouds last 30):
+ * - each barrage is 2 orbs, each aimed at its cloud LOC's south-west tile;
+ * - the first orb lands 3 ticks after the spit and the second 4, each cloud appearing as its orb lands;
+ * - each cloud lasts 30 ticks (18 s).
+ * Simulator policy: 1-5 typeless damage on every tick the player stands in at least one.
  */
 export const ZULRAH_CLOUD = {
   perBarrage: 2,
-  flightTicks: 3,
+  /** Each orb's flight in client cycles, first orb first; it lands `floor(endCycles / 30)` ticks later. */
+  orbFlights: [
+    { startCycles: 40, endCycles: 90 },
+    { startCycles: 45, endCycles: 120 },
+  ],
   durationTicks: 30,
   radius: 1,
   damage: [1, 5] as [number, number],
 } as const;
+
+/** Ticks from a barrage's spit to orb `index` landing. */
+export function zulrahCloudOrbLandTicks(index: number): number {
+  const flight = ZULRAH_CLOUD.orbFlights[index];
+  if (!flight) throw new RangeError(`No cloud orb ${index}`);
+  return Math.floor(flight.endCycles / 30);
+}
 
 /**
  * SNAKEBOSS_POISONCLOUD (RuneLite gameval ObjectID, same commit): in the pinned cache a 3x3 loc with no
@@ -106,11 +144,10 @@ export const ZULRAH_CLOUD = {
  */
 export const ZULRAH_CLOUD_LOC_ID = 11700;
 
-/** The cloud barrage's dark-green orb: SNAKEBOSS_ORB, by policy (see the projectile note below). */
-export const ZULRAH_CLOUD_ORB_SPOTANIM_ID = 1044;
+/** The cloud barrage's dark-green orb: SNAKEBOSS_DOUBLE_ORB (see the projectile note below). */
+export const ZULRAH_CLOUD_ORB_SPOTANIM_ID = 1045;
 
 /** The snakeling orb: SNAKEBOSS_EGG (RuneLite gameval SpotanimID). */
-
 export const ZULRAH_SNAKELING_ORB_SPOTANIM_ID = 1047;
 
 /** The magic snakeling's bolt: SNAKEBOSS_MINION_SPELL (RuneLite gameval SpotanimID). */
@@ -121,23 +158,29 @@ export const SNAKELING_MAGIC_SPOTANIM_ID = 1230;
  * same commit; the wiki infobox lists them in that order, https://oldschool.runescape.wiki/w/Snakeling). Each "attacks
  * with either magic or melee, but never both"; 1 HP, size 1, attack speed 3, max hit 15 melee (stab)
  * and 13 magic; protection prayers block them; they die with Zulrah or after "more than 40 seconds"
- * (Zulrah/Strategies, Special attacks). Simulator policy: the orb lands 3 ticks after it is spat, 1-3
- * tiles from the player; the style is a 50/50 draw; the first attack comes 3 ticks after landing; magic
- * reaches 7 tiles.
+ * (Zulrah/Strategies, Special attacks). The orb flies 40-120 cycles and the snakeling appears on its
+ * target tile as it lands, 4 ticks after the spit (private gameplay capture zulrah-packet-data-1.txt,
+ * 13/13 orbs that landed before a dive, e.g. t232 to t236). One left alone dies 51 ticks after it
+ * appears, well short of the wiki's 40 seconds (zulrah-packet-data-2.txt, SNAKEBOSS_PET_DEATH t3096 to
+ * t3147, t3105 to t3156, t3181 to t3232, t3193 to t3244; zulrah-packet-data-1.txt has two at 50, t435
+ * to t485 and t438 to t488; zulrah-packet-data-3.txt one at 52, t929 to t981, and one at 53, t935 to
+ * t988). The orb lands on one of nine fixed sites (`encounters/zulrah/snakelingOrbs.ts`). Simulator
+ * policy: the style is a 50/50 draw; the first attack comes 3 ticks after landing; magic reaches 7
+ * tiles.
  */
 export const SNAKELING_MELEE_NPC_ID = 2045;
 export const SNAKELING_MAGIC_NPC_ID = 2046;
 export const SNAKELING = {
-  orbFlightTicks: 3,
-  /** 40 seconds at 0.6 s a tick, rounded up. */
-  lifetimeTicks: 67,
+  orbStartCycles: 40,
+  orbEndCycles: 120,
+  orbFlightTicks: 4,
+  /** Ticks from appearing to dying off. */
+  lifetimeTicks: 51,
   firstAttackDelayTicks: 3,
   attackSpeedTicks: 3,
   magicRange: 7,
   meleeMaxHit: 15,
   magicMaxHit: 13,
-  landingMinDistance: 1,
-  landingMaxDistance: 3,
 } as const;
 
 /**
@@ -183,23 +226,30 @@ export const ZULRAH_SEQS = {
 /**
  * Projectile spotanims. RuneLite gameval (SpotanimID.java, same commit) names them 1044 SNAKEBOSS_ORB,
  * 1045 SNAKEBOSS_DOUBLE_ORB, 1046 SNAKEBOSS_FIREBALL and 1047 SNAKEBOSS_EGG; 1230 is
- * SNAKEBOSS_MINION_SPELL. EGG is the snakeling orb (the wiki's "white orbs"; 1047 is 1044's model
- * recoloured white). Which of ORB and DOUBLE_ORB is the ranged attack and which the cloud barrage's
- * "dark-green orbs" is not settled by any source: simulator policy takes DOUBLE_ORB (1045) as the
- * ranged attack and ORB (1044) as the cloud orb, and FIREBALL (1046) as magic.
- * docs/encounters/zulrah-open-questions.md.
+ * SNAKEBOSS_MINION_SPELL. EGG is the snakeling orb (the wiki's "white orbs"). The private gameplay
+ * capture zulrah-packet-data-1.txt settles the rest: ORB (1044) is the ranged attack (t258, at the
+ * player, blocked to 0 by Protect from Missiles at t261), DOUBLE_ORB (1045) the cloud barrage's pair
+ * of orbs at tiles (t313, clouds at t316/t317), and FIREBALL (1046) the magic attack.
  */
-export const ZULRAH_RANGED_SPOTANIM_ID = 1045;
+export const ZULRAH_RANGED_SPOTANIM_ID = 1044;
 export const ZULRAH_MAGIC_SPOTANIM_ID = 1046;
 
 /**
- * Flight timing, simulator policy: the wiki says Zulrah's damage is rolled when the attack is
- * generated and gives no flight times, so both styles use the generic magic-spell shape
- * (`PROJ_ANIM_TIMINGS.magic_spell`).
+ * Both attacks fly 40-90 cycles at any distance, so each hit lands 3 ticks after its attack (private
+ * gameplay capture zulrah-packet-data-1.txt, all 38 ranged and magic launches, e.g. t258 to t261).
  */
 export const ZULRAH_PROJECTILE_TIMING = {
-  delay: 51,
-  lengthAdjustment: -5,
-  stepMultiplier: 10,
-  progress: 64,
+  delay: 40,
+  lengthAdjustment: 50,
+  stepMultiplier: 0,
+  progress: 0,
 } as const satisfies ProjAnimTiming;
+
+/**
+ * Zulrah faces this tile, the island's base south of the middle spot, every time it emerges between
+ * forms, until its first action (private gameplay captures zulrah-packet-data-1.txt, 12/12 emergences,
+ * e.g. t255, and zulrah-packet-data-2.txt, 10/10, e.g. t3000). From the middle spot that bearing is
+ * south, which is also the opening rise's spawn angle; it holds that until its first action, even once
+ * hit (zulrah-packet-data-2.txt: added facing south on t2973, hit on t2981, first barrage on t2984).
+ */
+export const ZULRAH_SURFACE_FACING_TILE: Coordinate = [28, 62];

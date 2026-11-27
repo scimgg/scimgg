@@ -1,6 +1,7 @@
 import type React from 'react';
 import { useState } from 'react';
 import { SOULREAPER_MAX_STACKS } from '../core/combat/player/soulreaper';
+import { VENOM_THRESHOLD } from '../core/poison';
 import type { ReplayClickType } from '../core/ReplayRecorder';
 import { MINIMAP, MOBILE } from '../resourcePack';
 import {
@@ -472,7 +473,7 @@ export const MinimapOrbs: React.FC<MinimapOrbsProps> = ({
   }));
 
   const isPoisoned = poisonVarp !== undefined && poisonVarp > 0;
-  const isVenomed = poisonVarp !== undefined && poisonVarp >= 1000000;
+  const isVenomed = poisonVarp !== undefined && poisonVarp >= VENOM_THRESHOLD;
 
   return (
     <div style={{ position: 'absolute', inset: 0, zIndex: 30, pointerEvents: 'none', overflow: 'visible' }}>

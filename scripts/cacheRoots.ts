@@ -156,7 +156,6 @@ export function collectCacheRoots(usage?: CacheUsage): CacheRoots {
     }
     for (const npc of config.preloadNpcTypes ?? []) {
       add(roots.npcs, npc.npcTypeId, `${kind} render config preloadNpcTypes`);
-      add(roots.seqs, npc.walkSeqId, `${kind} render config npc ${npc.npcTypeId} walkSeqId`);
     }
     for (const id of config.spotAnimIds ?? []) {
       add(roots.spotAnims, id, `${kind} render config spotAnimIds`);

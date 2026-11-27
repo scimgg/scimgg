@@ -1,3 +1,4 @@
+import type { IncomingHitCap } from '../actors/NpcActor';
 import { visitDamageSpecOutcomes } from './damageSpecMass';
 import { collectFutureDependencies, dependencyKey } from './playerAttackProjectionDependencies';
 import type {
@@ -142,21 +143,21 @@ function projectHit(step: ProjectionStep): ProjectionStepResult {
 
   const recordOutcome = (branch: Branch, outcome: HitOutcome): void => {
     const applicationBaseDamage = outcome.accuracySucceeded ? Math.max(1, outcome.rolledDamage) : 0;
-    const appliedDamage = applyDamage(applicationBaseDamage, step.application);
+    const applied = capTargetHit(applyDamage(applicationBaseDamage, step.application), step.application.targetHitCap);
     if (outcome.accuracySucceeded) {
       accuracyProbability += outcome.probability;
     }
     expectedRolledDamage += outcome.probability * outcome.rolledDamage;
-    expectedAppliedDamage += outcome.probability * appliedDamage;
+    expectedAppliedDamage += outcome.probability * applied.expected;
     maximumRolledDamage = Math.max(maximumRolledDamage, outcome.rolledDamage);
-    maximumAppliedDamage = Math.max(maximumAppliedDamage, appliedDamage);
+    maximumAppliedDamage = Math.max(maximumAppliedDamage, applied.maximum);
 
     const nextBranch: Branch = {
       probability: outcome.probability,
       priorAccuracy: [...branch.priorAccuracy, outcome.accuracySucceeded],
       priorDamage: [...branch.priorDamage, outcome.rolledDamage],
       maximumRolledTotal: branch.maximumRolledTotal + outcome.rolledDamage,
-      maximumAppliedTotal: branch.maximumAppliedTotal + appliedDamage,
+      maximumAppliedTotal: branch.maximumAppliedTotal + applied.maximum,
       selectedBranch: branch.selectedBranch,
     };
     const key = dependencyKey(
@@ -295,6 +296,18 @@ function applyDamage(damage: number, application: PlayerDamageApplication): numb
   return Math.floor(
     Math.floor(damage * application.outgoingDamageMultiplier) * application.specialAttackDamageMultiplier,
   );
+}
+
+/**
+ * The target's hit cap, in `CombatSystem.applyDamage`'s order for a player's hit on an NPC: after the
+ * application multipliers and before the remaining-HP clamp, which the projection does not model
+ * (nor an NPC's protection prayer between them; Elysian mitigation is for player targets only). A
+ * capped hit is a uniform draw in `[min, max]` there, so here it contributes that draw's mean, and
+ * `max` at most, without reading any RNG.
+ */
+function capTargetHit(damage: number, cap: IncomingHitCap | undefined): { expected: number; maximum: number } {
+  if (cap === undefined || damage <= cap.above) return { expected: damage, maximum: damage };
+  return { expected: (cap.min + cap.max) / 2, maximum: cap.max };
 }
 
 function getPriorAccuracy(priorAccuracy: readonly boolean[], index: number): boolean {

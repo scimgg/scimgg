@@ -1,3 +1,4 @@
+import type { IncomingHitCap } from '../actors/NpcActor';
 import type { DamageType } from '../actors/types';
 import type { AttackKind } from '../events/types';
 import type { CalcGap } from './combatGaps';
@@ -176,6 +177,11 @@ export type PlannedHit = {
 export type PlayerDamageApplication = {
   readonly outgoingDamageMultiplier: number;
   readonly specialAttackDamageMultiplier: number;
+  /**
+   * The target's `NpcActor.incomingHitCap`, read by the projection only: `CombatSystem` applies the
+   * cap itself at impact, from the target.
+   */
+  readonly targetHitCap?: IncomingHitCap;
 };
 
 export type PlayerAttackCalculationDiagnostics = {

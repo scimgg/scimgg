@@ -304,6 +304,40 @@ describe('selectInfoboxes', () => {
     expect(antipoison!.text).toBe('5:51');
   });
 
+  describe('poison and venom immunity, one box at a time as in RuneLite', () => {
+    const immunityBoxes = (poisonVarp: number) =>
+      selectInfoboxes(createMinimalState({ poisonVarp, poisonTickCounter: 15 }), NO_TICK_COUNTER).filter(
+        (box) => box.id === 'antivenom' || box.id === 'antipoison',
+      );
+
+    it.each([
+      // Anti-venom: the steps left above the -38 cutoff, then the running step's 15 ticks.
+      [-41, 'antivenom', 2 * 30 + 15],
+      [-39, 'antivenom', 15],
+      // Antipoison once venom is no longer blocked: every step left to 0.
+      [-38, 'antipoison', 37 * 30 + 15],
+      [-1, 'antipoison', 15],
+    ] as const)('shows only %i as %s with %i ticks left', (poisonVarp, id, ticks) => {
+      const boxes = immunityBoxes(poisonVarp);
+      expect(boxes).toHaveLength(1);
+      expect(boxes[0]).toMatchObject({ id, ticksRemaining: ticks, sampledAtTick: 10 });
+    });
+
+    it('paints the anti-venom box with Anti-venom(4) and says what it blocks', () => {
+      const [box] = immunityBoxes(-41);
+      expect(box).toMatchObject({
+        itemId: 12905, // Anti-venom(4)
+        text: '0:45', // 75 ticks * 0.6s
+        tooltipTitle: 'Anti-venom',
+        tooltipDetail: 'Venom immunity (0:45 remaining)',
+      });
+    });
+
+    it.each([0, 1, 50, 1_000_000])('shows neither box at %i', (poisonVarp) => {
+      expect(immunityBoxes(poisonVarp)).toEqual([]);
+    });
+  });
+
   describe('surge potion cooldown', () => {
     const withSurgeCooldown = (surgePotionCooldownTicks: number) =>
       selectInfoboxes(

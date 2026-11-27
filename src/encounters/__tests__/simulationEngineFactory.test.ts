@@ -261,6 +261,24 @@ describe('unified encounter setup', () => {
     expect(isWalkableTile(29, 36)).toBe(false);
   });
 
+  it.each([
+    {},
+    { encounterSeed: 'x' },
+    { encounterSeed: -1 },
+    { encounterSeed: 7, extra: 1 },
+  ])('cannot rebuild a recorded Zulrah run whose seed record is malformed %j', (seeds) => {
+    const recorded = newRun({
+      encounterConfig: { kind: 'zulrah', mechanics: { infiniteHealth: true } },
+    }).getRunConfig();
+    expect(recorded.encounter.seeds).toEqual({ encounterSeed: expect.any(Number) });
+    expect(createSimulationEngineFromRunConfig(recorded, null)?.getRunConfig().encounter.seeds).toEqual(
+      recorded.encounter.seeds,
+    );
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    expect(createSimulationEngineFromRunConfig({ ...recorded, encounter: { kind: 'zulrah', seeds } }, null)).toBeNull();
+  });
+
   it('refuses a recorded Zuk run whose bootstrap carries unsupported constructor options', () => {
     const source = newRun().getRunConfig();
     if (!source.bootstrap) throw new TypeError('Expected a recorded bootstrap');
@@ -437,6 +455,30 @@ describe('createSimulationEngineFromRunConfig', () => {
     }
     expect(diffResumableState(original.getState(), rebuilt.getState())).toEqual([]);
     expect(work.getStats()).toEqual({ actions: 1, ticks: 1, npcTicks: 2, spawns: 2 });
+  });
+
+  it('keeps a version-14 recording (before next-tick recoil and the one poison counter) playable but refuses its takeover', () => {
+    const original = newRun({ equipment: { ring: 20657 } }); // Ring of suffering (ri).
+    const config = original.getRunConfig();
+    expect(config.bootstrap?.version).toBe(15);
+    const recorder = new ReplayRecorder();
+    const position = original.getState().playerPosition;
+    recorder.startRun(config);
+    recorder.recordFrame(0, position, original.getState(), []);
+    for (let tick = 1; tick <= 6; tick++) {
+      original.advanceTick(position);
+      recorder.recordFrame(tick, position, original.getState(), original.getLastTickEvents());
+    }
+    const { frames } = recorder.exportData();
+    expect(reconstructReplayPrefix(config, frames, 6, null)).not.toBeNull();
+    if (!config.bootstrap) throw new Error('Missing bootstrap');
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const recorded14: EngineRunConfig = { ...config, bootstrap: { ...config.bootstrap, version: 14 } };
+
+    // Playback needs only the frames, which are untouched; takeover is refused.
+    expect(frames).toHaveLength(7);
+    expect(createSimulationEngineFromRunConfig(recorded14, null)).toBeNull();
+    expect(reconstructReplayPrefix(recorded14, frames, 6, null)).toBeNull();
   });
 
   it('lands a live encounter command on the same tick when the replay rebuilds it', () => {

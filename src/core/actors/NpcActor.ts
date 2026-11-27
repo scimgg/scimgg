@@ -62,6 +62,13 @@ export interface NpcPoison {
   readonly nextPulseTick: number;
 }
 
+/** See {@link NpcActor.incomingHitCap}. */
+export interface IncomingHitCap {
+  readonly above: number;
+  readonly min: number;
+  readonly max: number;
+}
+
 export interface NpcDefinitionIdentity {
   readonly id: string;
 }
@@ -95,7 +102,7 @@ export interface NpcActor<State extends object = object> extends ActorBase {
    * A hit landing on this NPC above `above` is replaced by a uniform draw in `[min, max]` (Zulrah:
    * over 50 becomes 45-50). Applied at impact, before the remaining-HP clamp. Absent means no cap.
    */
-  incomingHitCap?: { readonly above: number; readonly min: number; readonly max: number };
+  incomingHitCap?: IncomingHitCap;
   spawnTick?: TickNumber;
   despawnTick?: TickNumber;
   /** Encounter-owned respawn lifecycle retains this corpse until revival or explicit despawn. */

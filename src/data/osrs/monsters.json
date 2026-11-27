@@ -1,6 +1,243 @@
 [
   {
     "ids": [
+      2042
+    ],
+    "name": "Zulrah",
+    "version": "Serpentine",
+    "size": 5,
+    "levels": {
+      "hitpoints": 500,
+      "attack": 1,
+      "strength": 1,
+      "defence": 300,
+      "magic": 300,
+      "ranged": 300
+    },
+    "offensive": {
+      "attack": 0,
+      "strength": 0,
+      "magic": 50,
+      "magicDamage": 20,
+      "ranged": 50,
+      "rangedStrength": 20
+    },
+    "defensive": {
+      "stab": 0,
+      "slash": 0,
+      "crush": 0,
+      "magic": -45,
+      "ranged": 0,
+      "rangedLight": 50,
+      "rangedStandard": 50,
+      "rangedHeavy": 50,
+      "flatArmour": 0
+    },
+    "attributes": [],
+    "elementalWeakness": {
+      "element": "fire",
+      "percent": 50
+    },
+    "attackSpeed": 3,
+    "immunities": {
+      "burn": null,
+      "cannon": false,
+      "thrall": false,
+      "poison": 100,
+      "venom": 100,
+      "freeze": 0
+    }
+  },
+  {
+    "ids": [
+      2043
+    ],
+    "name": "Zulrah",
+    "version": "Magma",
+    "size": 5,
+    "levels": {
+      "hitpoints": 500,
+      "attack": 1,
+      "strength": 1,
+      "defence": 300,
+      "magic": 300,
+      "ranged": 300
+    },
+    "offensive": {
+      "attack": 0,
+      "strength": 0,
+      "magic": 50,
+      "magicDamage": 20,
+      "ranged": 50,
+      "rangedStrength": 20
+    },
+    "defensive": {
+      "stab": 0,
+      "slash": 0,
+      "crush": 0,
+      "magic": 0,
+      "ranged": 0,
+      "rangedLight": 300,
+      "rangedStandard": 300,
+      "rangedHeavy": 300,
+      "flatArmour": 0
+    },
+    "attributes": [],
+    "elementalWeakness": {
+      "element": "fire",
+      "percent": 50
+    },
+    "attackSpeed": 3,
+    "immunities": {
+      "burn": null,
+      "cannon": false,
+      "thrall": false,
+      "poison": 100,
+      "venom": 100,
+      "freeze": 0
+    }
+  },
+  {
+    "ids": [
+      2044
+    ],
+    "name": "Zulrah",
+    "version": "Tanzanite",
+    "size": 5,
+    "levels": {
+      "hitpoints": 500,
+      "attack": 1,
+      "strength": 1,
+      "defence": 300,
+      "magic": 300,
+      "ranged": 300
+    },
+    "offensive": {
+      "attack": 0,
+      "strength": 0,
+      "magic": 50,
+      "magicDamage": 20,
+      "ranged": 50,
+      "rangedStrength": 20
+    },
+    "defensive": {
+      "stab": 0,
+      "slash": 0,
+      "crush": 0,
+      "magic": 300,
+      "ranged": 0,
+      "rangedLight": 0,
+      "rangedStandard": 0,
+      "rangedHeavy": 0,
+      "flatArmour": 0
+    },
+    "attributes": [],
+    "elementalWeakness": {
+      "element": "fire",
+      "percent": 50
+    },
+    "attackSpeed": 3,
+    "immunities": {
+      "burn": null,
+      "cannon": false,
+      "thrall": false,
+      "poison": 100,
+      "venom": 100,
+      "freeze": 0
+    }
+  },
+  {
+    "ids": [
+      2045
+    ],
+    "name": "Snakeling",
+    "version": "Melee",
+    "size": 1,
+    "levels": {
+      "hitpoints": 1,
+      "attack": 140,
+      "strength": 138,
+      "defence": 1,
+      "magic": 1,
+      "ranged": 1
+    },
+    "offensive": {
+      "attack": 120,
+      "strength": 0,
+      "magic": 0,
+      "magicDamage": 0,
+      "ranged": 0,
+      "rangedStrength": 0
+    },
+    "defensive": {
+      "stab": -40,
+      "slash": -40,
+      "crush": -40,
+      "magic": -40,
+      "ranged": 0,
+      "rangedLight": -40,
+      "rangedStandard": -40,
+      "rangedHeavy": -40,
+      "flatArmour": 0
+    },
+    "attributes": [],
+    "attackSpeed": 3,
+    "immunities": {
+      "burn": null,
+      "cannon": false,
+      "thrall": false,
+      "poison": 100,
+      "venom": 100,
+      "freeze": 0
+    }
+  },
+  {
+    "ids": [
+      2046
+    ],
+    "name": "Snakeling",
+    "version": "Magic",
+    "size": 1,
+    "levels": {
+      "hitpoints": 1,
+      "attack": 1,
+      "strength": 1,
+      "defence": 1,
+      "magic": 185,
+      "ranged": 1
+    },
+    "offensive": {
+      "attack": 0,
+      "strength": 0,
+      "magic": 80,
+      "magicDamage": -20,
+      "ranged": 0,
+      "rangedStrength": 0
+    },
+    "defensive": {
+      "stab": -40,
+      "slash": -40,
+      "crush": -40,
+      "magic": -40,
+      "ranged": 0,
+      "rangedLight": -40,
+      "rangedStandard": -40,
+      "rangedHeavy": -40,
+      "flatArmour": 0
+    },
+    "attributes": [],
+    "attackSpeed": 3,
+    "immunities": {
+      "burn": null,
+      "cannon": false,
+      "thrall": false,
+      "poison": 100,
+      "venom": 100,
+      "freeze": 0
+    }
+  },
+  {
+    "ids": [
       7691
     ],
     "name": "Jal-Nib",
@@ -1091,234 +1328,6 @@
       "thrall": false,
       "poison": 0,
       "venom": 0,
-      "freeze": 0
-    }
-  },
-  {
-    "ids": [
-      2042
-    ],
-    "name": "Zulrah",
-    "size": 5,
-    "levels": {
-      "hitpoints": 500,
-      "attack": 1,
-      "strength": 1,
-      "defence": 300,
-      "magic": 300,
-      "ranged": 300
-    },
-    "offensive": {
-      "attack": 0,
-      "strength": 0,
-      "magic": 50,
-      "magicDamage": 20,
-      "ranged": 50,
-      "rangedStrength": 20
-    },
-    "defensive": {
-      "stab": 0,
-      "slash": 0,
-      "crush": 0,
-      "magic": -45,
-      "ranged": 50,
-      "rangedLight": 50,
-      "rangedStandard": 50,
-      "rangedHeavy": 50,
-      "flatArmour": 0
-    },
-    "attributes": [],
-    "elementalWeakness": {
-      "element": "fire",
-      "percent": 50
-    },
-    "attackSpeed": 3,
-    "immunities": {
-      "burn": "Normal",
-      "cannon": false,
-      "thrall": false,
-      "poison": 100,
-      "venom": 100,
-      "freeze": 0
-    }
-  },
-  {
-    "ids": [
-      2043
-    ],
-    "name": "Zulrah",
-    "size": 5,
-    "levels": {
-      "hitpoints": 500,
-      "attack": 1,
-      "strength": 1,
-      "defence": 300,
-      "magic": 300,
-      "ranged": 300
-    },
-    "offensive": {
-      "attack": 0,
-      "strength": 0,
-      "magic": 50,
-      "magicDamage": 20,
-      "ranged": 50,
-      "rangedStrength": 20
-    },
-    "defensive": {
-      "stab": 0,
-      "slash": 0,
-      "crush": 0,
-      "magic": 0,
-      "ranged": 300,
-      "rangedLight": 300,
-      "rangedStandard": 300,
-      "rangedHeavy": 300,
-      "flatArmour": 0
-    },
-    "attributes": [],
-    "elementalWeakness": null,
-    "attackSpeed": 3,
-    "immunities": {
-      "burn": "Normal",
-      "cannon": false,
-      "thrall": false,
-      "poison": 100,
-      "venom": 100,
-      "freeze": 0
-    }
-  },
-  {
-    "ids": [
-      2044
-    ],
-    "name": "Zulrah",
-    "size": 5,
-    "levels": {
-      "hitpoints": 500,
-      "attack": 1,
-      "strength": 1,
-      "defence": 300,
-      "magic": 300,
-      "ranged": 300
-    },
-    "offensive": {
-      "attack": 0,
-      "strength": 0,
-      "magic": 50,
-      "magicDamage": 20,
-      "ranged": 50,
-      "rangedStrength": 20
-    },
-    "defensive": {
-      "stab": 0,
-      "slash": 0,
-      "crush": 0,
-      "magic": 300,
-      "ranged": 0,
-      "rangedLight": 0,
-      "rangedStandard": 0,
-      "rangedHeavy": 0,
-      "flatArmour": 0
-    },
-    "attributes": [],
-    "elementalWeakness": null,
-    "attackSpeed": 3,
-    "immunities": {
-      "burn": "Normal",
-      "cannon": false,
-      "thrall": false,
-      "poison": 100,
-      "venom": 100,
-      "freeze": 0
-    }
-  },
-  {
-    "ids": [
-      2045
-    ],
-    "name": "Snakeling",
-    "size": 1,
-    "levels": {
-      "hitpoints": 1,
-      "attack": 140,
-      "strength": 138,
-      "defence": 1,
-      "magic": 1,
-      "ranged": 1
-    },
-    "offensive": {
-      "attack": 120,
-      "strength": 0,
-      "magic": 0,
-      "magicDamage": 0,
-      "ranged": 0,
-      "rangedStrength": 0
-    },
-    "defensive": {
-      "stab": -40,
-      "slash": -40,
-      "crush": -40,
-      "magic": -40,
-      "ranged": -40,
-      "rangedLight": -40,
-      "rangedStandard": -40,
-      "rangedHeavy": -40,
-      "flatArmour": 0
-    },
-    "attributes": [],
-    "elementalWeakness": null,
-    "attackSpeed": 3,
-    "immunities": {
-      "burn": "Normal",
-      "cannon": false,
-      "thrall": false,
-      "poison": 100,
-      "venom": 100,
-      "freeze": 0
-    }
-  },
-  {
-    "ids": [
-      2046
-    ],
-    "name": "Snakeling",
-    "size": 1,
-    "levels": {
-      "hitpoints": 1,
-      "attack": 140,
-      "strength": 138,
-      "defence": 1,
-      "magic": 185,
-      "ranged": 1
-    },
-    "offensive": {
-      "attack": 0,
-      "strength": 0,
-      "magic": 80,
-      "magicDamage": -20,
-      "ranged": 0,
-      "rangedStrength": 0
-    },
-    "defensive": {
-      "stab": -40,
-      "slash": -40,
-      "crush": -40,
-      "magic": -40,
-      "ranged": -40,
-      "rangedLight": -40,
-      "rangedStandard": -40,
-      "rangedHeavy": -40,
-      "flatArmour": 0
-    },
-    "attributes": [],
-    "elementalWeakness": null,
-    "attackSpeed": 3,
-    "immunities": {
-      "burn": "Normal",
-      "cannon": false,
-      "thrall": false,
-      "poison": 100,
-      "venom": 100,
       "freeze": 0
     }
   }

@@ -33,7 +33,7 @@ import { type EquipmentHitEffectsSnapshot, resolveEquipmentHitEffects } from './
 import { endPowerOfDeathOnDamage, powerOfDeathMeleeMultiplier } from './player/specialAttacks/instantSpecial';
 import { appliesOnAccurateHit, applySpecialAttackEffects } from './player/specialAttacks/postHitEffects';
 import type { OnKillEffect, SpecialAttackEffect } from './player/specialAttacks/types';
-import { recoilDamage, wearsRecoilRing } from './recoil';
+import { RECOIL_DELAY_TICKS, recoilDamage, wearsRecoilRing } from './recoil';
 import { notifyNpcOfPlayerAttack } from './retaliation';
 
 /** No encounter multipliers in force. See {@link PendingHitDamageMultipliers}. */
@@ -729,6 +729,7 @@ export class CombatSystem {
       }
 
       this.removeQueuedHit(world, pendingHit);
+      if (pendingHit.recoil === true && !target.alive) continue;
       if (!this.canReceiveAcceptedHit(target)) continue;
       if (pendingHit.sourceDeathPolicy === 'cancel-before-impact' && !runtime.source.alive) continue;
 
@@ -773,6 +774,8 @@ export class CombatSystem {
   private hasAcceptedHitQueuedFor(world: WorldState, target: NpcActor): boolean {
     return world.pendingHits.some((pendingHit) => {
       if (pendingHit.targetId !== target.id || !this.isStillDeliverable(world, pendingHit)) return false;
+      // A recoil lands nothing on a dead attacker, so it cannot bring the death forward.
+      if (pendingHit.recoil === true) return false;
       const runtime = this.requirePendingHitRuntime(pendingHit);
       return pendingHit.sourceDeathPolicy === 'persist' || runtime.source.alive;
     });
@@ -850,36 +853,35 @@ export class CombatSystem {
   }
 
   /**
-   * A recoil ring on the player reflects part of a damaging NPC hit back at its attacker, as its own
-   * typeless player hit (/w/Ring_of_recoil). It cannot exceed the attacker's remaining HP, so a
-   * 1-HP snakeling dies to any hit that lands.
+   * A recoil ring on the player reflects part of a damaging hit from an NPC back at it
+   * (/w/Ring_of_recoil): a typeless player hit queued for the next tick ({@link RECOIL_DELAY_TICKS}),
+   * marked {@link PendingHit.recoil}. Like every hit on an NPC it deals at most the NPC's remaining HP
+   * (`applyDamage`), so a 1-HP snakeling dies the tick after it hits. An attacker dead by then takes
+   * nothing, and one removed or revived is never reached (`isStillDeliverable`). Also called by the
+   * engine for environmental damage that names its attacker (`EnvironmentalDamage.attackerId`).
+   * Recoil-immune NPCs (/w/Category:Monsters_immune_to_recoil) need no check: the only one spawned, the
+   * Bee Swarm, deals environmental damage that names no attacker.
    */
-  private applyRecoil(
-    world: WorldState,
-    source: ActorBase,
-    target: ActorBase,
-    damage: number,
-    bridge: CombatBridge,
-  ): void {
-    if (!this.isNpcActor(source) || !this.isPlayerActor(target) || !source.alive) return;
-    if (!wearsRecoilRing(target)) return;
-    const reflected = Math.min(recoilDamage(damage), source.vitals.hp);
+  queueRecoil(world: WorldState, attacker: ActorBase, victim: ActorBase, damage: number): void {
+    if (!this.isNpcActor(attacker) || !this.isPlayerActor(victim) || !attacker.alive) return;
+    if (!wearsRecoilRing(victim)) return;
+    const reflected = recoilDamage(damage);
     if (reflected <= 0) return;
-    this.applyResolvedHit(
+    this.queuePendingHit(
       world,
-      target,
-      source,
       {
+        sourceId: victim.id,
+        targetId: attacker.id,
         style: 'typeless',
         attackKind: 'typeless',
+        launchTick: world.tick,
+        impactTick: world.tick + RECOIL_DELAY_TICKS,
         rolledDamage: reflected,
         accuracySucceeded: true,
-        impactDelayTicks: 0,
+        sourceDeathPolicy: 'persist',
+        recoil: true,
       },
-      bridge,
-      undefined,
-      undefined,
-      'fixed',
+      { source: victim, target: attacker },
     );
   }
 
@@ -1112,7 +1114,7 @@ export class CombatSystem {
 
     bridge.onDamageApplied?.(damageApplied);
 
-    this.applyRecoil(world, source, target, damageApplied.effectiveDamage, bridge);
+    this.queueRecoil(world, source, target, damageApplied.effectiveDamage);
 
     if (attack.postHitEffects && this.isPlayerActor(source) && this.isNpcActor(target)) {
       // A hit that CONNECTED is not the same as one that dealt damage: the player's minimum-1 rule

@@ -1075,7 +1075,7 @@ describe('INTEGRATION: New potion registrations', () => {
     expect(def3.consume).toEqual({ type: 'replace', withId: 5956 });
     expect(def2.consume).toEqual({ type: 'replace', withId: 5958 });
     expect(def1.consume).toEqual({ type: 'replace', withId: 229 });
-    expect(def4.effects).toEqual([{ op: 'cure_poison', immunityTicks: 1200 }]);
+    expect(def4.effects).toEqual([{ op: 'cure_poison', immunitySteps: 40 }]);
   });
 
   it('extended stamina (31638) should have correct chain and effects', () => {

@@ -53,7 +53,8 @@ export interface EngineRunBootstrap {
 // TzKal-Zuk is his own encounter rather than the Inferno's wave 69 (`inferno`, `runSeed`, the run
 // setup applied before the world is built). Such a recording is never re-read as an Inferno run: it
 // plays back as recorded, without takeover.
-export const ENGINE_RUN_BOOTSTRAP_VERSION = 14;
+// Version 15: recoil lands the tick after the hit, and poison and venom share one counter (`core/poison.ts`).
+export const ENGINE_RUN_BOOTSTRAP_VERSION = 15;
 
 export interface EngineRunConfig {
   completionOwnership: EncounterCompletionOwnership;

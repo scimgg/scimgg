@@ -15,10 +15,12 @@ import type {
   Encounter,
   EncounterCompletionOwnership,
   EncounterContext,
+  EncounterEngineRules,
   EncounterNpcDefeat,
   EncounterPlayerAttackContext,
   EncounterPlayerAttackInfo,
   EncounterPlayerAttackResolvedContext,
+  EncounterPlayerAttackStartedInfo,
   EncounterTickResult,
   EnvironmentalDamage,
   EquipmentClickSlot,
@@ -29,6 +31,7 @@ import { isCoreEvent } from '../core/events/types';
 import { reviveNpc } from '../core/npcDeath';
 import { createNpcStepOccupancyPredicate } from '../core/npcOccupancy';
 import { createNpcDefinition, NpcDefinitionCollection } from '../core/npcs';
+import { VENOM_THRESHOLD } from '../core/poison';
 import { SimulationEngine } from '../core/SimulationEngine';
 import type { WorldState } from '../core/WorldState';
 import { RUNE } from '../data/spellRunes';
@@ -531,6 +534,36 @@ class AutoAttackPauseProbeEncounter extends TrackingNpcEncounter {
 class SurvivingPostTickEncounter extends TrackingNpcEncounter {
   override processPostTick(): EnvironmentalDamage[] {
     return [{ baseDamage: 4, attackType: 'typeless', source: 'TookDamage' }];
+  }
+}
+
+/**
+ * Stuns the player from its NPC band on `stunTick`, through ticks `stunTick .. stunTick + stunTicks - 1`
+ * (`playerStunned`), as an NPC hit landing in that band does. Records the ticks the player attacked on.
+ */
+class StunProbeEncounter extends TrackingNpcEncounter {
+  readonly playerAttackTicks: number[] = [];
+  private stunUntilTick = 0;
+
+  constructor(
+    npc: NpcActor,
+    private readonly stunTick: number | null,
+    private readonly stunTicks = 5,
+  ) {
+    super(npc);
+  }
+
+  getEngineRules(): EncounterEngineRules {
+    return { playerStunned: (ctx) => ctx.tick < this.stunUntilTick };
+  }
+
+  completeNpcBand(ctx: EncounterContext): EnvironmentalDamage[] {
+    if (ctx.tick === this.stunTick) this.stunUntilTick = ctx.tick + this.stunTicks;
+    return [];
+  }
+
+  onPlayerAttackStarted(info: EncounterPlayerAttackStartedInfo): void {
+    this.playerAttackTicks.push(info.tick);
   }
 }
 
@@ -4662,6 +4695,94 @@ describe('SimulationEngine', () => {
     });
   });
 
+  describe('playerStunned', () => {
+    const STUN_TICK = 3;
+    const walkTarget: Coordinate = [10, 40];
+
+    function makeStunEngine(stunTick: number | null, npcPos: Coordinate = [20, 20]) {
+      const encounter = new StunProbeEncounter(createTrackingNpc(npcPos, 0), stunTick);
+      const eng = new SimulationEngine({ encounter, startPos: [10, 12] });
+      return { eng, encounter, player: getWorldState(eng).getPlayer()! };
+    }
+
+    it('blocks the walk on the tick an NPC-band stun lands, through its last tick', () => {
+      const { eng, player } = makeStunEngine(STUN_TICK);
+      const moved = new Map<number, boolean>();
+      const stunned = new Map<number, boolean>();
+      for (let tick = 1; tick <= STUN_TICK + 6; tick++) {
+        const before = [...player.position];
+        eng.advanceTick(walkTarget);
+        moved.set(tick, player.position[0] !== before[0] || player.position[1] !== before[1]);
+        stunned.set(tick, eng.wasLastTickStunned());
+      }
+
+      for (const tick of [1, 2, 8, 9]) expect(moved.get(tick), `tick ${tick}`).toBe(true);
+      for (let tick = STUN_TICK; tick < STUN_TICK + 5; tick++) {
+        expect(moved.get(tick), `tick ${tick}`).toBe(false);
+        expect(stunned.get(tick), `tick ${tick}`).toBe(true);
+      }
+      expect([stunned.get(2), stunned.get(8)]).toEqual([false, false]);
+    });
+
+    it('calls off the attack and pick-up started on the tick an NPC-band stun lands', () => {
+      // The NPC is adjacent, so an unstunned player attacks on the tick the target is set.
+      const attackOn = (stunTick: number | null) => {
+        const { eng, encounter, player } = makeStunEngine(stunTick, [10, 13]);
+        eng.advanceTick([10, 12]);
+        eng.advanceTick([10, 12]);
+        eng.applyAction({ type: 'attackTarget', targetId: 'tracking-npc' });
+        eng.advanceTick([10, 12]);
+        return { attacks: encounter.playerAttackTicks, target: player.attackTarget };
+      };
+      // The player stands on the pile, so an unstunned Take resolves on the tick it is clicked.
+      const pickUpOn = (stunTick: number | null) => {
+        const { eng, player } = makeStunEngine(stunTick);
+        const world = getWorldState(eng);
+        const pileId = world.nextGroundItemId();
+        world.groundItems.push({ id: pileId, itemId: 13441, quantity: 1, position: [10, 12], droppedTick: 0 });
+        eng.advanceTick([10, 12]);
+        eng.advanceTick([10, 12]);
+        eng.applyAction({ type: 'pickupGroundItem', groundItemId: pileId });
+        eng.advanceTick([10, 12]);
+        return { piles: world.groundItems.length, pending: player.pendingItemPickup };
+      };
+
+      expect(attackOn(null)).toEqual({ attacks: [STUN_TICK], target: 'tracking-npc' });
+      expect(attackOn(STUN_TICK)).toEqual({ attacks: [], target: null });
+      expect(pickUpOn(null)).toEqual({ piles: 0, pending: null });
+      expect(pickUpOn(STUN_TICK)).toEqual({ piles: 1, pending: null });
+    });
+
+    it('drops attack and pick-up inputs during a stun, but lets prayer, food and gear through', () => {
+      const ANGLERFISH = 13441;
+      const { eng, encounter, player } = makeStunEngine(1, [10, 13]);
+      eng.setEquipment({ head: 10828 });
+      eng.setInventory([{ id: ANGLERFISH }]);
+      player.vitals.hp = 50;
+      const world = getWorldState(eng);
+      const pileId = world.nextGroundItemId();
+      world.groundItems.push({ id: pileId, itemId: ANGLERFISH, quantity: 1, position: [10, 12], droppedTick: 0 });
+      eng.advanceTick([10, 12]);
+
+      eng.applyAction({ type: 'pickupGroundItem', groundItemId: pileId });
+      eng.applyAction({ type: 'attackTarget', targetId: 'tracking-npc' });
+      eng.queueProtectionPrayer(PrayerType.ProtectMelee);
+      eng.queueItemAction(0);
+      eng.queueUnequip('head');
+      eng.advanceTick([10, 20]);
+
+      expect(eng.wasLastTickStunned()).toBe(true);
+      expect(player.position).toEqual([10, 12]);
+      expect(player.attackTarget).toBeNull();
+      expect(player.pendingItemPickup).toBeNull();
+      expect(world.groundItems.map((item) => item.id)).toEqual([pileId]);
+      expect(encounter.playerAttackTicks).toEqual([]);
+      expect(player.activePrayer).toBe(PrayerType.ProtectMelee);
+      expect(player.vitals.hp).toBeGreaterThan(50);
+      expect(player.equipment.head).toBeUndefined();
+    });
+  });
+
   describe('input band precedes the timer band', () => {
     const safePos: Coordinate = [39, 35];
     const ANTIDOTE_PLUS_PLUS_4 = 5952;
@@ -4728,6 +4849,92 @@ describe('SimulationEngine', () => {
 
       expect(player.poisonState.poisonVarp).toBe(30);
       expect(player.poisonState.poisonTickCounter).toBe(POISON_TICK_INTERVAL);
+    });
+
+    it('lets venom through once a drunk cure counts up to the venom cutoff', () => {
+      // Antidote++ sets -40 and anti-venom -41; venom lands from -38. A step is 30 ticks from the
+      // drink, and a hit lands before that tick's timer band, so it takes one tick past the step.
+      function ticksToFirstEnvenom(potionId: number): number {
+        const eng = new SimulationEngine({ encounter: new YamaEncounter(), startPos: safePos });
+        eng.setMechanicsConfig({ yamaMageRange: false, waves: false, fireballs: false, voidFlares: false });
+        eng.setInventory([{ id: potionId }]);
+        const world = getWorldState(eng);
+        const player = world.getPlayer()!;
+        eng.queueItemAction(0);
+        eng.advanceTick(safePos);
+        const drankTick = world.tick;
+        for (let i = 0; i < 4 * POISON_TICK_INTERVAL; i++) {
+          enqueueEnginePendingHit(eng, {
+            sourceId: 'yama',
+            targetId: 'player',
+            style: 'melee',
+            attackKind: 'melee_crush',
+            launchTick: world.tick,
+            impactTick: world.tick + 1,
+            rolledDamage: 0,
+            accuracySucceeded: true,
+            applyPoison: VENOM_THRESHOLD,
+          });
+          eng.advanceTick(safePos);
+          if (player.poisonState.poisonVarp >= VENOM_THRESHOLD) return world.tick - drankTick;
+        }
+        throw new Error(`venom never landed after potion ${potionId}`);
+      }
+
+      expect(ticksToFirstEnvenom(5952)).toBe(2 * POISON_TICK_INTERVAL + 1); // Antidote++
+      expect(ticksToFirstEnvenom(12905)).toBe(3 * POISON_TICK_INTERVAL + 1); // Anti-venom
+    });
+
+    it('keeps the 30-tick step clock through envenoming and drinking, as in the capture', () => {
+      // Private gameplay capture zulrah-packet-data-2.txt: a step on t3172 (-38 to -37); venom at -37
+      // on t3193; its first step on t3202; an extended anti-venom+ sip on t3222 (to -59); the next
+      // step on t3232. Every step stays on the t3172 phase.
+      const EXTENDED_ANTI_VENOM_PLUS_4 = 29824;
+      const eng = new SimulationEngine({ encounter: new YamaEncounter(), startPos: safePos });
+      eng.setMechanicsConfig({ yamaMageRange: false, waves: false, fireballs: false, voidFlares: false });
+      eng.setInventory([{ id: EXTENDED_ANTI_VENOM_PLUS_4 }]);
+      const world = getWorldState(eng);
+      const player = world.getPlayer()!;
+      // A step is due on the next tick, as on t3172.
+      player.poisonState = { poisonVarp: -38, poisonTickCounter: 1, startedTick: null };
+      const stepped = () => player.poisonState.poisonVarp;
+      const advance = (ticks: number) => {
+        for (let i = 0; i < ticks; i++) eng.advanceTick(safePos);
+      };
+      advance(1);
+      expect(stepped()).toBe(-37);
+      const stepTick = world.tick;
+
+      advance(3193 - 3172 - 1);
+      enqueueEnginePendingHit(eng, {
+        sourceId: 'yama',
+        targetId: 'player',
+        style: 'melee',
+        attackKind: 'melee_crush',
+        launchTick: world.tick,
+        impactTick: world.tick + 1,
+        rolledDamage: 0,
+        accuracySucceeded: true,
+        applyPoison: VENOM_THRESHOLD,
+      });
+      advance(1);
+      expect(world.tick - stepTick).toBe(3193 - 3172);
+      expect(stepped()).toBe(VENOM_THRESHOLD);
+
+      advance(3202 - 3193 - 1);
+      expect(stepped()).toBe(VENOM_THRESHOLD);
+      advance(1);
+      expect(stepped()).toBe(VENOM_THRESHOLD + 1);
+
+      advance(3222 - 3202 - 1);
+      eng.queueItemAction(0);
+      advance(1);
+      expect(stepped()).toBe(-59);
+      advance(3232 - 3222 - 1);
+      expect(stepped()).toBe(-59);
+      advance(1);
+      expect(world.tick - stepTick).toBe(3232 - 3172);
+      expect(stepped()).toBe(-58);
     });
 
     it('does not let a delayed heal come due after a lethal hit revive the corpse', () => {

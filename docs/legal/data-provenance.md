@@ -40,7 +40,9 @@ Retrieved from the OSRS Wiki's public Bucket API by
 
 **Endpoint:** `https://oldschool.runescape.wiki/api.php?action=bucket`
 
-**Retrieved:** 2026-09-16
+**Retrieved:** 2026-09-16, except `monsters.json`, re-synced on 2026-11-27 when Zulrah's rows were
+added (its other rows came out unchanged; `equipment.json` and `itemAliases.json` were not
+re-synced).
 
 The table lists the fields each file keeps after the transformations below, not every field the
 bucket offers. A field the sync script reads and then discards is not redistributed.

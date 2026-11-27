@@ -11,7 +11,6 @@ import {
 import { applyMonsterStatOverrideToFormulaStats } from '../data/monsterData';
 import { hasPrayerRestorationEnhancement } from '../data/prayerRestoration';
 import { DEATH_CHARGE_SPELL, MARK_OF_DARKNESS_SPELL } from '../data/spellRunes';
-import { VENOM_IMMUNE_HEAD_IDS } from '../data/venomImmunity';
 import { gracefulRegenBonusPercent } from '../data/weightReducingClothing';
 import { baseEncounterKind } from '../encounters/catalog';
 import type { ObjTypeLoader } from '../rs/config/objtype/ObjTypeLoader';
@@ -190,6 +189,7 @@ import {
 } from './npcDeath';
 import { npcFootprintsOverlap } from './npcOccupancy';
 import { NpcDefinitionCollection, type NpcDefinitionContext } from './npcs';
+import { applyPlayerPoison, VENOM_THRESHOLD } from './poison';
 import { type PrayerInputOutcome, type QueuedPrayerAction, resolvePrayerActions } from './prayerInput';
 import type { ReplayTakeoverWork } from './replayTakeover';
 import { mulberry32 } from './rng';
@@ -297,8 +297,6 @@ const NON_METAL_BODY_NAME_FRAGMENTS = [
   'hide',
   "d'hide",
 ];
-
-const VENOM_THRESHOLD = 1_000_000;
 
 export interface SimulationEngineOptions {
   replayTakeoverWork?: ReplayTakeoverWork;
@@ -1330,7 +1328,9 @@ export class SimulationEngine {
       clearPlayerAttackIntent(player);
     }
     // A stunned player cannot move or attack, but can still pray, eat, drink and switch gear.
-    const stunned = !inputLocked && resolveDynamic(rules?.playerStunned, this.buildEngineContext()) === true;
+    const isStunnedNow = (): boolean =>
+      !inputLocked && resolveDynamic(rules?.playerStunned, this.buildEngineContext()) === true;
+    let stunned = isStunnedNow();
     this.lastTickStunned = stunned;
     if (stunned) {
       player.pendingInputOps = player.pendingInputOps.filter(
@@ -1377,6 +1377,16 @@ export class SimulationEngine {
     this.processPlayerQueueBand();
     this.processPlayerTimerBand(nextTick, previousTick, specEnergyAtTickStart);
     cancelBlockedPlayerAttack(player, this.worldState);
+
+    // A stun applied since the tick started (a hazard, an NPC turn, a hit from the player's queue)
+    // already blocks this tick's walk and attack, because all of those act before the player does.
+    // The prayer, food and gear inputs the input band ran this tick stand.
+    if (!stunned && isStunnedNow()) {
+      stunned = true;
+      this.lastTickStunned = true;
+      player.pendingItemPickup = null;
+      clearPlayerAttackIntent(player);
+    }
 
     // BAND 4 — PLAYER pre-move interaction. Runs before the step below because standing
     // on the tile is a precondition, not something this tick's step can satisfy: clicking a
@@ -4061,7 +4071,7 @@ export class SimulationEngine {
   }
 
   private applyEnvironmentalDamage(damage: EnvironmentalDamage, tick: TickNumber): void {
-    this.applyDamage(
+    const effectiveDamage = this.applyDamage(
       damage.baseDamage,
       damage.attackType,
       damage.source,
@@ -4069,6 +4079,8 @@ export class SimulationEngine {
       damage.prayerReduction,
       damage.playerPosition,
     );
+    const attacker = damage.attackerId === undefined ? undefined : this.worldState.getNpc(damage.attackerId);
+    if (attacker) this.combatSystem.queueRecoil(this.worldState, attacker, this.player(), effectiveDamage);
     const lockoutTicks = damage.disablesProtectionPrayersForTicks;
     if (damage.applyPoison !== undefined && this.player().alive) this.applyPoisonToPlayer(damage.applyPoison);
     if (lockoutTicks === undefined || !this.player().alive) return;
@@ -4084,7 +4096,7 @@ export class SimulationEngine {
     prayerReduction?: PrayerReduction,
     playerPosition?: Coordinate,
     hitsplatTypeOverride?: 'damage' | 'block' | 'poison' | 'venom',
-  ): void {
+  ): number {
     const player = this.player();
     let baseDamage = Math.max(0, Math.floor(resolveDamage(rawBaseDamage, this.rollCombat)));
     const rules = this.getEncounterRules();
@@ -4198,6 +4210,7 @@ export class SimulationEngine {
     });
 
     this.syncVitalsToStats();
+    return effectiveDamage;
   }
 
   private notifyEncounterPlayerDamageTaken(info: EncounterPlayerDamageInfo): void {
@@ -4238,27 +4251,9 @@ export class SimulationEngine {
     };
   }
 
-  private applyPoisonToPlayer(poisonVarp: number): void {
+  private applyPoisonToPlayer(severity: number): void {
     const player = this.player();
-    const currentVarp = player.poisonState.poisonVarp;
-    if (currentVarp < 0 || currentVarp >= VENOM_THRESHOLD) {
-      return;
-    }
-    // A worn serpentine helm (or its recolours) grants immunity to venom and poison; it does not cure
-    // what is already there (https://oldschool.runescape.wiki/w/Serpentine_helm).
-    if (player.equipment.head !== undefined && VENOM_IMMUNE_HEAD_IDS.has(player.equipment.head)) {
-      return;
-    }
-
-    // Reset tick counter on 0→nonzero transition so the first cycle is a full 30 ticks. The
-    // timer band runs AFTER the hit that poisons, so recording the tick is what stops it
-    // spending one of those 30 on the application tick itself.
-    const resetCounter = currentVarp === 0;
-    player.poisonState = {
-      ...player.poisonState,
-      poisonVarp: Math.max(currentVarp, poisonVarp),
-      ...(resetCounter ? { poisonTickCounter: POISON_TICK_INTERVAL, startedTick: this.worldState.tick } : {}),
-    };
+    player.poisonState = applyPlayerPoison(player.poisonState, severity, player.equipment.head, this.worldState.tick);
   }
 
   public getFailedCondition(): FailCondition | null {
