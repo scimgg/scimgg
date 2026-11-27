@@ -1,6 +1,5 @@
 import type { EventAudioPlayer, FrameSoundTracker } from '../../audio';
 import type { CacheManager } from '../../cache/CacheManager';
-import { baseEncounterKind } from '../../encounters/catalog';
 import { encounterPresentationModuleForKind } from '../../encounters/presentationModules';
 import { encounterRegistry } from '../../encounters/registry';
 import { type EncounterRenderConfig, getEncounterRenderConfig } from './encounterRenderConfig';
@@ -33,6 +32,6 @@ export function createSceneBuilderForKind(kind: string, options: SceneBuilderOpt
     ...options,
     encounterRenderConfig: options.encounterRenderConfig ?? getEncounterRenderConfig(kind),
   };
-  const own = encounterPresentationModuleForKind(baseEncounterKind(kind))?.sceneBuilder;
+  const own = encounterPresentationModuleForKind(kind)?.sceneBuilder;
   return own ? own(resolved) : configureEncounterScene(new SceneCompositor(), resolved);
 }

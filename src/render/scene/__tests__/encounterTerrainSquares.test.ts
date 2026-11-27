@@ -3,7 +3,6 @@ import { resolveEncounterMapFootprint } from '../../../core/encounters/mapFootpr
 import type { MapSquareData } from '../../../rs/map/MapLoader';
 import { encounterScene, UNBOOTSTRAPPED_CACHE_MANAGER } from '../../../test/helpers/encounterScene';
 import { ColosseumSceneCompositor } from '../ColosseumSceneCompositor';
-import { withDescriptorMapBlock } from '../encounterMapBlock';
 import { getEncounterRenderConfig } from '../encounterRenderConfig';
 import { InfernoSceneCompositor } from '../InfernoSceneCompositor';
 import type { SceneCompositor } from '../SceneCompositor';
@@ -24,13 +23,6 @@ function openSquare(mapX: number, mapY: number): MapSquareData {
     tileLightOcclusions: level(() => new Uint8Array(64)),
   };
 }
-
-describe('withDescriptorMapBlock', () => {
-  it('leaves a config for a kind with no descriptor as it is', () => {
-    const config = { spotAnimIds: [1] };
-    expect(withDescriptorMapBlock(config, 'not_an_encounter')).toBe(config);
-  });
-});
 
 /** Loads `scene`'s 3D terrain, returning each square it read as `dx,dy` from `origin`. */
 async function loadedTerrainSquares(scene: SceneCompositor, origin: { x: number; y: number }): Promise<Set<string>> {

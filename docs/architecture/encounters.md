@@ -135,9 +135,10 @@ south-west tile is simulation (0, 0), and a tile with y ≥ 64 is simply in the 
 (coordinates are translated by whole squares, never flipped). `mapSquareOffsets` lists every square
 the encounter loads, relative to the origin; omitted, it is the origin alone. Each offset is an
 arena square unless it is marked `sceneryOnly: true`. An authored render config never declares map
-squares: `withDescriptorMapBlock` ([`encounterMapBlock.ts`](../../src/render/scene/encounterMapBlock.ts))
-copies the origin and squares from the descriptor for `getEncounterRenderConfig`, whose config every
-scene made by kind receives unless its caller passes one.
+squares: `getEncounterRenderConfig`
+([`encounterRenderConfig.ts`](../../src/render/scene/encounterRenderConfig.ts)) copies the origin and
+squares from the descriptor, and every scene made by kind receives its config unless its caller
+passes one.
 
 **The origin is the arena's south-west square.** Every arena offset has `dx >= 0` and `dy >= 0`,
 and some arena square sits in the origin's column and some in its row, so the arena's tiles all

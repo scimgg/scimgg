@@ -1,3 +1,4 @@
+import { resolveEncounterMapFootprint } from '../../core/encounters/mapFootprint';
 import { baseEncounterKind } from '../../encounters/catalog';
 import { encounterRegistry } from '../../encounters/registry';
 import { ENCOUNTER_RENDER_CONFIGS } from '../../encounters/renderConfigs';
@@ -7,7 +8,6 @@ import type { LocRenderOptions } from '../environment/locRenderOptions';
 import type { SceneObjectLocData } from '../graphics/SceneObjectRenderer';
 import type { SceneObjectController } from '../graphics/sceneObjectTypes';
 import type { AnimPlayMode } from '../npc/animationTypes';
-import { withDescriptorMapBlock } from './encounterMapBlock';
 
 export interface NpcRenderConfig {
   actorId: string;
@@ -114,12 +114,12 @@ export type AuthoredEncounterRenderConfig = Omit<
 
 /**
  * Render config per registered encounter kind: the authored config `ENCOUNTER_RENDER_CONFIGS` holds
- * for its base kind (a variant's parent), merged with `encounterKind`'s core descriptor map-square
- * block so `SceneCompositor` stays registry-agnostic. Undefined for a kind the registry does not run.
+ * for its base kind (a variant's parent), with the map squares of the kind's core descriptor (none
+ * added for a kind without one), so `SceneCompositor` stays registry-agnostic. Undefined for a kind
+ * the registry does not run.
  *
- * Built lazily and memoized: `withDescriptorMapBlock` reads the encounter registry, populated
- * at the composition root's own module load (`src/encounters/registry.ts`), so no import order
- * can observe it empty.
+ * Built lazily and memoized: it reads the encounter registry, populated at the composition root's
+ * own module load (`src/encounters/registry.ts`), so no import order can observe it empty.
  */
 const RESOLVED_BY_KIND = new Map<string, EncounterRenderConfig | undefined>();
 
@@ -128,7 +128,17 @@ export function getEncounterRenderConfig(encounterKind: string): EncounterRender
   const authored = encounterRegistry.hasKind(encounterKind)
     ? ENCOUNTER_RENDER_CONFIGS.get(baseEncounterKind(encounterKind))
     : undefined;
-  const resolved = authored ? withDescriptorMapBlock(authored, encounterKind) : undefined;
+  const descriptor = authored && encounterRegistry.getDescriptorForKind(encounterKind);
+  let resolved: EncounterRenderConfig | undefined = authored;
+  if (authored && descriptor) {
+    const footprint = resolveEncounterMapFootprint(descriptor);
+    resolved = {
+      ...authored,
+      terrainMapSquare: footprint.origin,
+      mapSquareOffsets: footprint.sceneOffsets,
+      arenaMapSquareOffsets: footprint.arenaOffsets,
+    };
+  }
   RESOLVED_BY_KIND.set(encounterKind, resolved);
   return resolved;
 }
