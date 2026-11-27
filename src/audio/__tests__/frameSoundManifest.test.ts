@@ -2,14 +2,20 @@ import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { SPECIAL_ATTACK_REGISTRY } from '../../core/combat/player/specialAttacks/registry';
 import { PLAYER_ANIMATION_SEQ_IDS } from '../../data/weaponAnimations';
 import { HANDWRITTEN_WEAPON_COMBAT_VISUALS } from '../../data/weaponCombatVisuals';
-import { collectDeclaredNpcSeqIds, collectDeclaredSpotAnimIds } from '../../encounters/renderConfigs';
+import {
+  collectDeclaredNpcSeqIds,
+  collectDeclaredSpotAnimIds,
+  collectLoadedNpcTypes,
+} from '../../encounters/renderConfigs';
 import type { ReplayEffectSourceFrame } from '../../render/core/replayEffectContext';
 import { PlayerGraphicController } from '../../render/effects/controllers/PlayerGraphicController';
 import { describePlayerEffects } from '../../render/effects/playerEffectDescriptors';
 import { SpotAnimRenderer } from '../../render/effects/SpotAnimRenderer';
+import { npcBaseSeqIds } from '../../render/npc/npcBaseSeqIds';
 import type { CacheInfo } from '../../rs/cache/CacheInfo';
 import { CacheSystem } from '../../rs/cache/CacheSystem';
 import { Bzip2 } from '../../rs/compression/Bzip2';
+import { ArchiveNpcTypeLoader } from '../../rs/config/npctype/NpcTypeLoader';
 import type { SeqSoundEffect, SeqType } from '../../rs/config/seqtype/SeqType';
 import { ArchiveSeqTypeLoader } from '../../rs/config/seqtype/SeqTypeLoader';
 import { readCacheZipFiles } from '../../test/helpers/cacheZipFiles';
@@ -25,6 +31,7 @@ import { FRAME_SOUND_IDS } from '../frameSoundManifest';
  */
 const noCache = skipWithoutSetup('fullCache');
 let seqs: ArchiveSeqTypeLoader;
+let npcTypes: ArchiveNpcTypeLoader;
 
 beforeAll(async () => {
   if (noCache) return;
@@ -39,6 +46,7 @@ beforeAll(async () => {
     size: 0,
   };
   seqs = new ArchiveSeqTypeLoader(info, cache.getIndex(2).getArchive(12));
+  npcTypes = new ArchiveNpcTypeLoader(info, cache.getIndex(2).getArchive(9));
 }, 120_000);
 
 /** A sequence's frame sounds as `[frame, sound ids]`, in frame order. */
@@ -67,6 +75,20 @@ describe('FRAME_SOUND_IDS', () => {
     const unchecked = [...collectDeclaredSpotAnimIds()]
       .filter(([spotAnimId]) => !checked.has(spotAnimId))
       .map(([spotAnimId, label]) => `${spotAnimId} (${label})`);
+
+    expect(unchecked, 'run `npx tsx scripts/extract-frame-sounds.ts`').toEqual([]);
+  });
+
+  // A loaded type without an idle or walk override plays its cache type's own (Sol Heredit walks on
+  // cache seq 10878, whose steps are sounds 8248 and 8143). No render config names those clips.
+  it.skipIf(noCache)("was extracted after every loaded npc type's idle and walk, cache defaults included", () => {
+    const checked = new Set(extractedFrameSounds.checkedSeqIds);
+    const unchecked: string[] = [];
+    for (const { npcTypeId, overrides, label } of collectLoadedNpcTypes()) {
+      const { idleSeqId, walkSeqId } = npcBaseSeqIds(npcTypes.load(npcTypeId), overrides);
+      if (idleSeqId >= 0 && !checked.has(idleSeqId)) unchecked.push(`${idleSeqId} (${label} idle)`);
+      if (walkSeqId >= 0 && !checked.has(walkSeqId)) unchecked.push(`${walkSeqId} (${label} walk)`);
+    }
 
     expect(unchecked, 'run `npx tsx scripts/extract-frame-sounds.ts`').toEqual([]);
   });
