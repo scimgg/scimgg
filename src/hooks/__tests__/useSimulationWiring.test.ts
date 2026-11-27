@@ -2221,6 +2221,7 @@ describe('useSimulationWiring late ticks', () => {
       advanceFrame(600);
       expect(result.current.engine.currentTick).toBe(1);
       expect(marker(result)).toBeNull();
+      expect(result.current.targetTile).toBeNull();
       advanceFrame(1200);
       advanceFrame(1800);
       expect(position(result)).toEqual(START);

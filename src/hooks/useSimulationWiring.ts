@@ -1700,7 +1700,10 @@ export function useSimulationWiring({
           const moveTarget = targetTileRef.current ?? currentState.playerPosition;
           engine.advanceTick(moveTarget);
           // A busy player's clicks are dropped, so its walk does not resume once the player is free.
-          if (engine.didLastTickDiscardWalkTarget()) targetTileRef.current = null;
+          if (engine.didLastTickDiscardWalkTarget()) {
+            targetTileRef.current = null;
+            setTargetTile(null);
+          }
           const newState = engine.getState();
           if (schedule.countdownKey !== null && newState.currentTick > currentState.currentTick) {
             consumedCountdownKeyRef.current = schedule.countdownKey;
