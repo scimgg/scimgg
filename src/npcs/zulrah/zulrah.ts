@@ -526,7 +526,7 @@ export function createZulrahActor(input: CreateZulrahActorInput) {
 /**
  * Turns the one Zulrah actor into its next form at its next spot, as the game does: Zulrah is a single
  * NPC that changes type (W: it "changes forms by diving into the swamp and resurfacing somewhere
- * else"). Keeping the actor keeps its HP and every hit already in flight at it.
+ * else"). Keeping the actor keeps its HP; the encounter drops the player's hits at it from the sink.
  */
 export function transformZulrah(actor: NpcActor, input: Omit<CreateZulrahActorInput, 'id' | 'hp' | 'maxHp'>): void {
   const state = zulrahDefinition.getState(actor);

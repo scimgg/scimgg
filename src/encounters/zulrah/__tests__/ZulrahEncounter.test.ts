@@ -1,5 +1,10 @@
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
-import { isNpcTargetable, type NpcActor } from '../../../core/actors/NpcActor';
+import {
+  canInitiateAttackOnNpc,
+  canShowNpcHealthBar,
+  isNpcTargetable,
+  type NpcActor,
+} from '../../../core/actors/NpcActor';
 import { npcHitDelayFromEndTime } from '../../../core/combat/hitDelay';
 import {
   clearResolvedArenaConfigs,
@@ -56,6 +61,8 @@ import {
 } from '../clouds';
 import { zulrahIslandTiles } from '../constants';
 import {
+  ZULRAH_EMERGE_TICKS,
+  ZULRAH_FORM_CHANGE_TICKS,
   ZULRAH_OPENING_PAUSE_TICKS,
   ZULRAH_OPENING_POSITION,
   ZULRAH_OPENING_RISE_TICKS,
@@ -82,6 +89,7 @@ import {
   ZULRAH_CAPTURE_FIRST_ATTACKABLE,
   ZULRAH_CAPTURE_FLIGHTS,
   ZULRAH_CAPTURE_FORM_CHANGES,
+  ZULRAH_CAPTURE_IMMUNITY,
   ZULRAH_CAPTURE_JAD_PROJECTILES,
   ZULRAH_CAPTURE_OPENING,
   ZULRAH_CAPTURE_PHASE_ATTACKS,
@@ -1656,6 +1664,131 @@ describe.each([
       .filter((r) => r.phaseInRotation === jadPhase && r.action === 'attack')
       .map((r) => r.projectiles[0]?.spotAnimId);
     expect(ids.slice(0, jad.length)).toEqual(jad);
+  });
+});
+
+describe('Zulrah takes no player hits from its sink until it can be attacked again (capture 4)', () => {
+  const {
+    landedOnSinkMinusOne,
+    droppedOnSink,
+    refusedFromSink,
+    firstAttackAfterEmerge,
+    deferredSplats,
+    lostAfterMove,
+  } = ZULRAH_CAPTURE_IMMUNITY;
+
+  /** Rotation 1's blue middle phase (index 2), then green south, both in a blowpipe's reach of the start. */
+  function blowpipeRun(attackSpeed: number) {
+    const run = startRun(5, { zulrahClouds: false, zulrahAttacks: false, zulrahSnakelings: false });
+    runToPhase(run, 2);
+    const zulrah = run.zulrah();
+    const player = run.world.getPlayer();
+    if (!zulrah || !player) throw new Error('No Zulrah or player');
+    run.engine.setEquipment({ weapon: 12926 });
+    player.equipmentStats = { ...createEmptyStats(), attackSpeed, attackRange: 6, rangedStrength: 40 };
+    return { run, zulrah, player };
+  }
+
+  /** Clicks Zulrah every tick through the next form's emerge + 8; the ticks of attacks, splats, the sink and the emerge. */
+  function clickThroughDive(attackSpeed: number) {
+    const { run, zulrah, player } = blowpipeRun(attackSpeed);
+    const attacks: number[] = [];
+    const splats: number[] = [];
+    let sink: number | null = null;
+    let emerge: number | null = null;
+    while (emerge === null || run.world.tick < emerge + 8) {
+      run.engine.applyAction({ type: 'attackTarget', targetId: zulrah.id });
+      run.tick();
+      const tick = run.world.tick;
+      const events = run.engine.getLastTickEvents();
+      if (events.some((e) => e.type === 'attack_started' && e.sourceId === player.id)) attacks.push(tick);
+      if (events.some((e) => e.type === 'hitsplat_spawned' && e.targetId === zulrah.id)) splats.push(tick);
+      if (sink === null && stateOf(run).stage === 'diving') sink = tick;
+      if (sink !== null && emerge === null && zulrah.spawnTick === tick) emerge = tick;
+      if (tick > 400) throw new Error('No dive');
+    }
+    if (sink === null || emerge === null) throw new Error('No dive');
+    return { attacks, splats, sink, emerge };
+  }
+
+  it('counts the captured cases: a hit landing on S-1 splats, one due on S never does', () => {
+    for (const { launch, sink, splat } of landedOnSinkMinusOne) {
+      expect(splat - sink).toBe(-1);
+      expect(launch).toBeLessThan(splat);
+    }
+    for (const { attack, sink, delay } of droppedOnSink) expect(attack + delay).toBe(sink);
+    for (const { click, sink } of refusedFromSink) expect(click - sink).toBeGreaterThanOrEqual(0);
+    for (const { refused, attack, emerge } of firstAttackAfterEmerge)
+      expect([refused - emerge, attack - emerge]).toEqual([ZULRAH_EMERGE_TICKS - 1, ZULRAH_EMERGE_TICKS]);
+    // Not modeled (open questions): the E+3 splat that followed each hit pending at S.
+    for (const { sink, splat } of deferredSplats) expect(splat - sink).toBe(ZULRAH_FORM_CHANGE_TICKS + 3);
+    for (const { launch, sink, emerge } of lostAfterMove) expect([sink - launch, emerge - sink]).toEqual([1, 3]);
+  });
+
+  it('takes a queued hit landing on S-1, and drops those landing on S or later, with no splat', () => {
+    const dry = clickThroughDive(1);
+    const run = startRun(5, { zulrahClouds: false, zulrahAttacks: false, zulrahSnakelings: false });
+    runToPhase(run, 2);
+    const zulrah = run.zulrah();
+    if (!zulrah) throw new Error('No Zulrah');
+    while (run.world.tick < dry.sink - 2) run.tick();
+    const hpBefore = zulrah.vitals.hp;
+    for (const [impact, damage] of [
+      [dry.sink - 1, 7],
+      [dry.sink, 11],
+      [dry.sink + 1, 13],
+      [dry.emerge + 3, 17],
+    ] as const) {
+      enqueueEnginePendingHit(run.engine, {
+        sourceId: 'player',
+        targetId: zulrah.id,
+        style: 'range',
+        attackKind: 'range_arrow',
+        launchTick: run.world.tick,
+        impactTick: impact,
+        rolledDamage: damage,
+        accuracySucceeded: true,
+      });
+    }
+    const splats: number[] = [];
+    while (run.world.tick < dry.emerge + 5) {
+      run.tick();
+      if (run.engine.getLastTickEvents().some((e) => e.type === 'hitsplat_spawned' && e.targetId === zulrah.id))
+        splats.push(run.world.tick);
+    }
+    expect(splats).toEqual([dry.sink - 1]);
+    expect(hpBefore - zulrah.vitals.hp).toBe(7);
+  });
+
+  it('stays targetable, with its health bar, through S-1, and refuses attacks from S', () => {
+    const dry = clickThroughDive(1);
+    const run = startRun(5, { zulrahClouds: false, zulrahAttacks: false, zulrahSnakelings: false });
+    runToPhase(run, 2);
+    const zulrah = run.zulrah();
+    if (!zulrah) throw new Error('No Zulrah');
+    while (run.world.tick < dry.sink - 1) run.tick();
+    expect(isNpcTargetable(zulrah, run.world.tick)).toBe(true);
+    expect(canShowNpcHealthBar(zulrah, run.world.tick)).toBe(true);
+    expect(canInitiateAttackOnNpc(zulrah, run.world.tick + 1)).toBe(false);
+    run.tick();
+    expect(isNpcTargetable(zulrah, run.world.tick)).toBe(false);
+  });
+
+  it.each([
+    1, 2,
+  ])('lets an attack start on S-1 but wastes it, refuses attacks from S through E+3, and attacks on E+4 (speed %i)', (speed) => {
+    const { attacks, splats, sink, emerge } = clickThroughDive(speed);
+    expect(emerge - sink).toBe(ZULRAH_FORM_CHANGE_TICKS);
+    // Started up to S-1 (every tick at speed 1)...
+    expect(attacks.filter((t) => t >= sink - 2 && t < sink).length).toBeGreaterThan(0);
+    if (speed === 1) expect(attacks).toContain(sink - 1);
+    // ...none from S through E+3, then on E+4.
+    expect(attacks.filter((t) => t >= sink && t <= emerge + 3)).toEqual([]);
+    expect(attacks).toContain(emerge + ZULRAH_EMERGE_TICKS);
+    // The blowpipe lands 2 ticks after the throw: the throws of S-2 and S-1 never splat.
+    expect(splats.filter((t) => t >= sink && t <= emerge + ZULRAH_EMERGE_TICKS + 1)).toEqual([]);
+    expect(splats).toContain(sink - 1);
+    expect(splats.some((t) => t > emerge + ZULRAH_EMERGE_TICKS)).toBe(true);
   });
 });
 

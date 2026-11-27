@@ -350,6 +350,58 @@ export const ZULRAH_CAPTURE_OPENING = {
 } as const;
 
 /**
+ * The sink-to-emerge window (capture 4 unless noted; S the sink, E = S+3 the emerge). Player hits due on
+ * S-1 land; those due on S never splat there (the blowpipe lands 2 ticks after a throw, the halberd 1);
+ * attack clicks with the weapon ready are refused from S through E+3, and the attack goes off on E+4.
+ * Each form change with a hit pending at S showed one splat on Zulrah on E+3 (`deferredSplats`, an open
+ * question); none without one did. The capture-4 blowpipe was used in melee armor and often missed
+ * (ordinary 0s, e.g. t2006, t2089), so its three E+3 0s distinguish nothing; the recoils kept their
+ * damage and the halberd, against no melee defence, showed 0. A cast due after the move was lost
+ * entirely (`lostAfterMove`).
+ */
+export const ZULRAH_CAPTURE_IMMUNITY = {
+  landedOnSinkMinusOne: [
+    { capture: 4, launch: 2179, sink: 2181, splat: 2180 },
+    // A Tumeken's shadow cast.
+    { capture: 2, launch: 2992, sink: 2997, splat: 2996 },
+  ],
+  droppedOnSink: [
+    { capture: 4, attack: 2010, delay: 2, sink: 2012 },
+    { capture: 4, attack: 2093, delay: 2, sink: 2095 },
+    { capture: 4, attack: 2130, delay: 2, sink: 2132 },
+    { capture: 4, attack: 2276, delay: 1, sink: 2277 },
+  ],
+  refusedFromSink: [
+    { capture: 4, click: 2012, sink: 2012 },
+    { capture: 4, click: 2074, sink: 2074 },
+    { capture: 3, click: 919, sink: 919 },
+    { capture: 3, click: 902, sink: 901 },
+    { capture: 4, click: 2239, sink: 2237 },
+  ],
+  firstAttackAfterEmerge: [
+    { capture: 4, emerge: 2077, refused: 2080, attack: 2081 },
+    { capture: 4, emerge: 2098, refused: 2101, attack: 2102 },
+    { capture: 4, emerge: 2205, refused: 2208, attack: 2209 },
+    { capture: 4, emerge: 2262, refused: 2265, attack: 2266 },
+  ],
+  /** A splat on E+3 with a hit pending at S. */
+  deferredSplats: [
+    // Likely ordinary misses (above).
+    { capture: 4, pending: 'blowpipe t2010', sink: 2012, splat: 2018, damage: 0 },
+    { capture: 4, pending: 'blowpipe t2093', sink: 2095, splat: 2101, damage: 0 },
+    { capture: 4, pending: 'blowpipe t2130', sink: 2132, splat: 2138, damage: 0 },
+    { capture: 4, pending: 'halberd t2276', sink: 2277, splat: 2283, damage: 0 },
+    { capture: 1, pending: 'recoil of t273', sink: 273, splat: 279, damage: 2 },
+    { capture: 2, pending: 'recoil of t3036', sink: 3036, splat: 3042, damage: 3 },
+  ],
+  /**
+   * A Tumeken's shadow cast a tick before the sink, its hit due after the move (the t3181 cast, from a
+   * nearer tile, took 5 ticks): no splat on any tick after.
+   */
+  lostAfterMove: [{ capture: 2, launch: 3186, sink: 3187, emerge: 3190 }],
+} as const;
+
+/**
  * Attacking a fresh form (capture 2): emerge t3239; three attack clicks on each of t3241 and t3242 made
  * no attack; it went off on t3243, with no weapon cooldown pending (the last cast was t3186).
  */

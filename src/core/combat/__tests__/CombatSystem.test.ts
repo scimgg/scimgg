@@ -328,6 +328,18 @@ describe('pending hit queue order', () => {
     expect(world.nextHitSequence).toBe(3);
   });
 
+  it('drops one source’s queued hits on one target only, keeping its others and other sources’ in order', () => {
+    const { world, victim, otherNpc, player, queue } = fixture();
+    queue({ sourceId: player.id, rolledDamage: 1 });
+    const elsewhere = queue({ sourceId: player.id, targetId: otherNpc.id, rolledDamage: 2 });
+    const otherSource = queue({ sourceId: otherNpc.id, rolledDamage: 3 });
+    queue({ sourceId: player.id, rolledDamage: 4, impactTick: 5 });
+
+    world.removePendingHitsBySourceOnTarget(player.id, victim.id);
+
+    expect(world.pendingHits).toEqual([elsewhere, otherSource]);
+  });
+
   it('keeps future entries queued, in order and untouched, while due ones land', () => {
     const { world, player, otherNpc, system, bridge, landed, queue } = fixture();
     const later = queue({ sourceId: player.id, rolledDamage: 9, impactTick: 4 });

@@ -210,6 +210,20 @@ export class WorldState {
   removePendingHitsBySource(sourceId: ActorId): void {
     this.pendingHits = this.pendingHits.filter((hit) => hit.sourceId !== sourceId);
   }
+
+  /**
+   * Drops `sourceId`'s queued hits on `targetId` only, leaving its hits on anyone else and those
+   * `keep` names.
+   */
+  removePendingHitsBySourceOnTarget(
+    sourceId: ActorId,
+    targetId: ActorId,
+    keep: (hit: PendingHit) => boolean = () => false,
+  ): void {
+    this.pendingHits = this.pendingHits.filter(
+      (hit) => hit.sourceId !== sourceId || hit.targetId !== targetId || keep(hit),
+    );
+  }
 }
 
 export interface EngineSnapshot {

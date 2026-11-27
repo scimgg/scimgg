@@ -314,6 +314,7 @@ export class ZulrahEncounter implements Encounter {
         break;
       case 'active':
         if (this.isPhaseDone(actor, ctx.tick)) this.startDive(actor, ctx);
+        else if (actor && this.isPhaseDone(actor, ctx.tick + 1)) this.closeForDive(actor, ctx, ctx.tick + 1);
         break;
       case 'diving':
         if (phase.stageEndTick !== null && ctx.tick >= phase.stageEndTick) this.goUnderwater(ctx);
@@ -428,9 +429,27 @@ export class ZulrahEncounter implements Encounter {
     return landTick === diveTick(actor) ? heldUntil(landTick) : landTick;
   }
 
+  /**
+   * From the sink tick S Zulrah refuses new attacks until 4 ticks after the emerge (private gameplay
+   * capture zulrah-packet-data-4.txt: clicks with the weapon ready refused on S, t2012 and t2074, and on
+   * E+3, t2080, attacking on E+4, t2081). The player's hits due from S on are dropped: no damage and no
+   * splat (simulator policy, pending a capture that settles it: hits due on S never splat there, t2010,
+   * t2093, t2130 and t2276, while one due on S-1 does, t2180; what the E+3 splats after them mean is an
+   * open question). Closed at the end of S-1, so a hit due on S is gone before S's hit band, and an
+   * attack on S-1 is still made but wasted; Zulrah stays targetable, with its health bar, until S. Nothing
+   * can start in the window, so dropping the queued hits once is enough. Called again on S itself, for a
+   * dive with no tick before it.
+   */
+  private closeForDive(actor: NpcActor, ctx: EncounterContext, sinkTick: number): void {
+    actor.attackBlockedUntilTick = sinkTick + ZULRAH_FORM_CHANGE_TICKS + ZULRAH_EMERGE_TICKS;
+    const player = ctx.world.getPlayer();
+    if (player) ctx.world.removePendingHitsBySourceOnTarget(player.id, actor.id);
+  }
+
   private startDive(actor: NpcActor | null, ctx: EncounterContext): void {
     const diveEnd = ctx.tick + ZULRAH_DIVE_TICKS;
     if (actor) {
+      this.closeForDive(actor, ctx, ctx.tick);
       submergeNpc(actor, diveEnd + 1);
       emitInfernoVisual(ctx.tickEvents, {
         animations: [{ actorId: actor.id, clipId: 'dive', delayCycles: 0 }],
@@ -443,8 +462,8 @@ export class ZulrahEncounter implements Encounter {
   }
 
   /**
-   * The dive is over: Zulrah is underwater, so it is not drawn and cannot be targeted, but it stays in
-   * the world, so hits already in flight still land.
+   * SINKFAST has played out: Zulrah is not drawn for the tick before it emerges and cannot be targeted.
+   * It stays in the world; the player's hits at it were dropped at the sink (`closeForDive`).
    */
   private goUnderwater(ctx: EncounterContext): void {
     const zulrah = ctx.world.getNpc(this.phase.actorId);
