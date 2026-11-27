@@ -157,7 +157,6 @@ export function collectCacheRoots(usage?: CacheUsage): CacheRoots {
     if (primary) add(roots.npcs, primary.npcTypeId, `${kind} render config primaryNpc`);
     for (const npc of config.preloadNpcTypes ?? []) {
       add(roots.npcs, npc.npcTypeId, `${kind} render config preloadNpcTypes`);
-      add(roots.seqs, npc.walkSeqId, `${kind} render config npc ${npc.npcTypeId} walkSeqId`);
     }
   }
   for (const [seqId, label] of collectDeclaredNpcSeqIds()) add(roots.seqs, seqId, label);

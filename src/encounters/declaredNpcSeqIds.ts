@@ -19,8 +19,8 @@ export const ENCOUNTER_RENDER_CONFIGS: ReadonlyMap<string, AuthoredEncounterRend
 
 /**
  * Every NPC sequence the encounter render configs make the renderer play — the primary NPC's
- * death clip and each preloaded type's idle, spawn, death (default and per-cause) and attack
- * clips — with a label naming where it was declared. Cache-asset consumers (trimming,
+ * death clip and each preloaded type's idle, walk override, spawn, death (default and per-cause)
+ * and attack clips — with a label naming where it was declared. Cache-asset consumers (trimming,
  * frame-sound extraction) read this so an animation added to a render config cannot be missed by
  * a hand-kept list.
  */
@@ -37,6 +37,7 @@ export function collectDeclaredNpcSeqIds(
     for (const npc of config.preloadNpcTypes ?? []) {
       const prefix = `${kind} npc ${npc.npcTypeId}`;
       add(npc.idleSeqId, `${prefix} idle`);
+      add(npc.walkSeqId, `${prefix} walk`);
       add(npc.spawnSeqId, `${prefix} spawn`);
       add(npc.deathSeqId, `${prefix} death`);
       for (const [cause, clip] of Object.entries(npc.deathClips ?? {})) add(clip.seqId, `${prefix} death:${cause}`);

@@ -542,15 +542,17 @@ describe('encounter catalog invariants', () => {
           {
             primaryNpc: { actorId: 'boss', npcTypeId: 1, basePosition: [0, 0], size: 1, deathSeqId: 10 },
             preloadNpcTypes: [
-              { npcTypeId: 1, attackClips: { swing: 11, unused: -1 } },
-              { npcTypeId: 2, idleSeqId: 20, spawnSeqId: 21, deathSeqId: 22 },
+              // -1 drops the walk clip rather than naming one.
+              { npcTypeId: 1, walkSeqId: -1, attackClips: { swing: 11, unused: -1 } },
+              { npcTypeId: 2, idleSeqId: 20, walkSeqId: 23, spawnSeqId: 21, deathSeqId: 22 },
             ],
           },
         ],
       ]),
     );
-    expect([...ids.keys()].sort((a, b) => a - b)).toEqual([10, 11, 20, 21, 22]);
+    expect([...ids.keys()].sort((a, b) => a - b)).toEqual([10, 11, 20, 21, 22, 23]);
     expect(ids.get(21)).toBe('test npc 2 spawn');
+    expect(ids.get(23)).toBe('test npc 2 walk');
   });
 
   it('opts only Sol healing totems into a relative transparent depth tolerance', () => {
