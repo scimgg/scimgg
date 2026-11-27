@@ -249,8 +249,9 @@ player path:
   `reset()` clears it. The call ends the interaction at once (attack intent, pending pickup) and
   discards the tick's walk target. What else it costs the current tick depends on when it is
   made: from `onTickStart` that tick's inputs are dropped and the player does not step; from the
-  NPC band or a landed hit, inputs already applied stay but the step does not; after movement
-  (`processPostTick`) the step stands. Every later locked tick drops its inputs and does not
+  NPC band, a combat hit or a `resolveHazards` hazard, inputs already applied stay but the step
+  does not; after movement (`processPostTick` or the environmental damage it returns) the step
+  stands. Every later locked tick drops its inputs and does not
   walk. This is an action lock, stricter than the game's `p_delay`: the game only rejects new
   move clicks while delayed and lets an existing route continue, whereas this also ends a walk
   in progress.

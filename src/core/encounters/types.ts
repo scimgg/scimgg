@@ -261,10 +261,12 @@ export interface EncounterContext {
    * (`didLastTickDiscardWalkTarget`). Called at tick T, it means:
    *
    * - before input (`onTickStart`): T's queued inputs are dropped and the player takes no step;
-   * - after input, before movement (an NPC-band hook, a hit landing): what the input already did
-   *   (a prayer, a gear swap) stays, and the player takes no step;
-   * - after movement (`processPostTick`): the step, its run energy and an attack already launched
-   *   stand; only the walk target is reported discarded.
+   * - after input, before movement (an NPC-band hook, or `onPlayerDamageTaken` for a combat hit or
+   *   a `resolveHazards` hazard): what the input already did (a prayer, a gear swap) stays, and the
+   *   player takes no step;
+   * - after movement (`processPostTick`, or `onPlayerDamageTaken` for its environmental damage):
+   *   the step, its run energy and an attack already launched stand; only the walk target is
+   *   reported discarded.
    *
    * Every later tick before `unlockTick` drops its queued inputs and takes no step. Timers, pending
    * hits and every NPC keep running. This is an action lock, stricter than the game's `p_delay`,
