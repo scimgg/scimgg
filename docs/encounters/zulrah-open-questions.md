@@ -20,9 +20,11 @@ Paths: **N/** = `src/npcs/zulrah/`, **E/** = `src/encounters/zulrah/`.
 
 | Question | Simulator | Label | Settled by |
 |---|---|---|---|
-| Form change | Dive 2, underwater 2, emerge 2, the bob, then 3 quiet ticks; first turn 4 ticks after the bob; `E/rotation.ts` | POLICY | Ticks from dive start to resurface, and to the first attack |
-| Opening | Rise 4 ticks from the fight's first tick, then 12 ticks before the first barrage; `E/rotation.ts` | POLICY | Ticks from arriving to Zulrah appearing, and to its first spit |
-| Cloud barrage and snakeling turn length | 3 ticks, as attacks | POLICY | A cloud-only phase (rotation 1, phase 1) |
+| Opening: arrival to spawn | Rises on the fight's first tick | OBSERVATION | Z2: the player arrives on t2968 and Zulrah is added on t2973, 5 ticks later. One case |
+| Opening: attackable | 4 ticks after the rise; `ZULRAH_OPENING_RISE_TICKS` | OBSERVATION | Z2: the first click, at spawn + 4 (t2977), cast at once; earlier clicks are untested |
+| Drawn between SINKFAST's end and the emerge | Hidden for that one tick; no capture removes the NPC | POLICY | Video of a dive |
+| Minimap dot and NPC markers on that tick | Still shown at the spot Zulrah sank from; only the model is hidden | UNVERIFIED (the project owner is not sure what the game shows) | Video of a dive with the minimap and RuneLite NPC indicators in view |
+| Turn gaps of 4 | Every turn 3 ticks apart | OBSERVATION | Z1 has three 4-tick gaps where the turn kind changes (attack t462 → barrage t466, barrage t319 → orb t323, orb t531 → stare t535), but 3 at t376 → t379. Z3's extra phase has one between two attacks (t855 → t859) and dived 4 ticks after its last attack (t868 → t872) |
 | Tail stare | Slam 6 ticks after the stare starts; next stare 3 ticks after the slam; `N/constants.ts` `ZULRAH_TAIL` | UNVERIFIED | Tail animation start to hitsplat, and slam to next stare |
 | Stun with a knockback | A hit on t blocks t..t+6 (`ZULRAH_TAIL.stunTicks` 7), knockback or not | OBSERVATION | With a knockback the player first moves a tick later: Z2 t3119 → t3127, Z1 t549 → t557. Consistent with 1 tick of knockback + the 7-tick stun. Z4 t2256 → t2265 is an upper bound only, as clicks were not made every tick. Without one Z4 agrees with Z2: hit t2064, first move t2071 |
 | Knockback | Not modeled; left to the contributor | OBSERVATION | Four of the ten captured tail hits pushed the player. Three pushed it west, each ending on 22,68: from 24,68 (Z1 t242, Z2 t3119, 2 tiles) and from 23,68 (Z1 t549, 1 tile, stopped at the island's edge). Z4 t2256 pushed it east, 2 tiles from 32,69 to 34,69, facing angle 512 (toward Zulrah). Each was a left tail. On the hit tick the game sends a teleport plus an exactmove over 30 cycles, the player faces Zulrah (angle 1536) and plays seq 1157 `human_troll_flyback`, and the `busy` varbit is set for that tick. The player first moves a tick later than without a knockback. No push for a player already on 22,68 (Z1 t249), on 32,70 at the north-east edge (Z2 t3008, t3015, t3247, t3254) or on 30,60 at the south edge (Z4 t2064, a left tail). Likely rule (inferred, from pushes west and east): up to 2 tiles directly away from Zulrah, stopping at the first unwalkable tile. The simulator has no forced player movement, so this needs shared engine support |
@@ -44,9 +46,8 @@ Paths: **N/** = `src/npcs/zulrah/`, **E/** = `src/encounters/zulrah/`.
 
 | Question | Simulator | Label | Settled by |
 |---|---|---|---|
-| Before the first hit | South, no target until the player first damages Zulrah; then tracks the player across forms | UNVERIFIED | Facing before and after the first hit |
-| During the tail stare | Holds its bearing on the locked tile until the slam | INFERENCE ("stare at the player's position") | Walking away during a stare |
 | While spitting venom | Faces each barrage's landing sites until its next attack | UNVERIFIED | A cloud phase |
+| During the tail stare | Holds its bearing on the locked tile until the slam | INFERENCE ("stare at the player's position") | Walking away during a stare. OBSERVATION: the captured stares face one of a few fixed tiles, never the player's: (16,67), (38,55), (39,51), (39,48), (32,48), (32,52), (39,49), each stare's with the player's tile in the fixture (`ZULRAH_CAPTURE_TAIL_SIDES`); always west (angle 512) or south to south-east (about 1820–1980), never north. Not modeled |
 
 ## Clouds
 
@@ -56,7 +57,6 @@ Paths: **N/** = `src/npcs/zulrah/`, **E/** = `src/encounters/zulrah/`.
 | Landing sites | 8 fixed sites. A 4-barrage phase fills them in order, base first, arm tips clear; other barrages land first on the site nearest the player, then random; `E/clouds.ts` | INFERENCE (fill, tips clear); POLICY (order, other barrages) | Cloud positions over several barrages |
 | Flight; lifetime | 3 ticks; 30 ticks | UNVERIFIED | Orb launch to cloud; cloud appearance to disappearance |
 | Damage | 1–5 typeless a tick, once however many clouds overlap | UNVERIFIED ("varying damage per tick") | Hitsplats in one cloud, and in two |
-| Spit animation | 5069 ACIDX1 | UNVERIFIED (5068 ACIDX3 exists) | A barrage compared with a ranged attack |
 | Orb launched as Zulrah dives | Not modelled | Gap | — |
 
 ## Snakelings
@@ -87,10 +87,9 @@ Paths: **N/** = `src/npcs/zulrah/`, **E/** = `src/encounters/zulrah/`.
 |---|---|---|---|
 | Blue magic/ranged split | 75% magic; `TANZANITE_MAGIC_CHANCE` | POLICY ("much more frequently") | Blue attacks counted by style |
 | Rotation odds | Equal | POLICY ("chosen at random") | Many fight starts |
-| Out-of-pattern phases after the first rotation | Not modelled | Gap | — |
-| Projectile graphics | 1045 ranged, 1044 cloud orb, 1046 magic | POLICY | The projectile each attack shows |
-| Projectile flight | Generic magic-spell timing | UNVERIFIED | Launch to hitsplat at several distances |
-| Spot tiles | Middle (26,64), south (26,55), west (16,65), east (36,64), south-west tile in 35_47's frame; middle sits one tile off the base so a halberd reaches it from the middle tiles (y 62), reported from play | INFERENCE (island geometry) | Tile markers of Zulrah's footprint at each spot |
+| Out-of-pattern phases after the first rotation | Not modeled | Gap | — |
+| South spot | (26,54), derived from projectile sources and targets and facing angles (facts spec) | INFERENCE | The captures agree on every signal but the decoded move tile, which reads (33,50) in Z1 (t276) and Z4 (t2015, t2098), (34,54) in Z2 (t3068, t3148) and (38,53) in Z3 (t922); a capture with tile markers would settle it |
+| Extra phases | Not modeled; each rotation follows the wiki's table | OBSERVATION | Z3: between rotation 4 phases 3 and 4 (the wiki's 4 and 5), Zulrah surfaced blue at the middle (t832, no form change), spat 3 barrages ((22,67)+(22,64) t835, (32,66)+(32,69) t838, (25,60)+(31,60) t841), made 7 attacks t849–t868 (magic, magic, ranged, ranged, magic, magic, magic) and dived t872. One case; the table is unchanged |
 | Player start | (28,61) | INFERENCE (wiki tile marker) | The boat arrival |
 
 ## Loadouts

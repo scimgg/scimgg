@@ -91,13 +91,26 @@ const ROTATION_STREAM_SALT = 0x5a55_4c52;
 const CLOUD_STREAM_SALT = 0x434c_4f55;
 const SNAKELING_STREAM_SALT = 0x534e_414b;
 
+/**
+ * The tick the current phase dives, once its last turn is taken: when that turn's last projectile has
+ * landed and its turn clock has run out. So 3 ticks after a last attack or tail hit, and 4 after a last
+ * cloud barrage or snakeling orb (private gameplay capture zulrah-packet-data-1.txt, all 11 dives that
+ * followed an action, e.g. t270 to t273, t329 to t333, t475 to t479, tail hit t549 to t552). Null
+ * while turns remain.
+ */
+function diveTick(actor: NpcActor): number | null {
+  const state = getZulrahState(actor);
+  if (!state || state.actions.length > 0 || state.pendingTail) return null;
+  return Math.max(state.lastImpactTick ?? Number.NEGATIVE_INFINITY, actor.combat.nextActionTick);
+}
+
 /** A snakeling orb in flight: where it lands, when, and what comes out. */
 type PendingSnakeling = { readonly tile: Coordinate; readonly landTick: number; readonly style: SnakelingStyle };
 
 /**
- * Zulrah: the four rotations with ranged, magic, jad and tail phases. Zulrah is one actor that dives,
- * stays hidden underwater, and transforms into its next form at its next spot (`transformZulrah`), so
- * its HP and any hits still in flight carry across forms.
+ * Zulrah: the four rotations with ranged, magic, jad and tail phases. Zulrah is one actor that dives
+ * and transforms into its next form at its next spot (`transformZulrah`), so its HP and any hits still
+ * in flight carry across forms.
  */
 export class ZulrahEncounter implements Encounter {
   public readonly kind = 'zulrah';
@@ -277,16 +290,6 @@ export class ZulrahEncounter implements Encounter {
         if (phase.stageEndTick !== null && ctx.tick >= phase.stageEndTick) {
           phase.stage = 'active';
           phase.stageEndTick = null;
-          // Reported from play: after a form change she plays her attack animation with no attack
-          // (the "bob"), the visual cue that she can be clicked again. Not on the opening rise, and
-          // not as the melee (magma) form, which only plays it for a cloud or snakeling spit.
-          if (actor && phase.index > 0 && getZulrahState(actor)?.form !== 'magma') {
-            emitInfernoVisual(ctx.tickEvents, {
-              animations: [{ actorId: actor.id, clipId: 'attack', delayCycles: 0 }],
-              projectiles: [],
-              graphics: [],
-            });
-          }
         }
         break;
       case 'active':
@@ -385,10 +388,8 @@ export class ZulrahEncounter implements Encounter {
 
   private isPhaseDone(actor: NpcActor | null, tick: number): boolean {
     if (!actor) return true;
-    const state = getZulrahState(actor);
-    if (!state || state.actions.length > 0 || state.pendingTail) return false;
-    // Dive once the last turn's effect has landed, so the dive never hides a hit still in the air.
-    return tick >= (state.lastImpactTick ?? tick);
+    const dive = diveTick(actor);
+    return dive !== null && tick >= dive;
   }
 
   private startDive(actor: NpcActor | null, ctx: EncounterContext): void {

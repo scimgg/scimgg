@@ -53,13 +53,14 @@ export const ZULRAH_TAIL = {
 } as const;
 
 /**
- * Tiles the tail cannot reach while Zulrah is at its middle spot (SW corner 26,64): the three walkable
- * tiles tucked behind each pillar (pillars at 25,63 and 31,63), reported from play. West pillar: its
- * west 24,63, south-west 24,62 and south 25,62; the east pillar mirrors them. The slam still lands; a
+ * Tiles the tail cannot reach while Zulrah is at its middle spot (SW corner 26,65, its tracked tile
+ * in private gameplay captures; `ZULRAH_SPOTS.middle`): the three walkable tiles tucked behind each
+ * pillar (pillars at 25,63 and 31,63), reported from play. West pillar: its west 24,63, south-west
+ * 24,62 and south 25,62; the east pillar mirrors them. The slam still lands; a
  * player standing here takes no damage and no stun.
  */
 export const ZULRAH_TAIL_SAFE_TILES: Readonly<{ zulrah: Coordinate; tiles: readonly Coordinate[] }> = {
-  zulrah: [26, 64],
+  zulrah: [26, 65],
   tiles: [
     [24, 63],
     [24, 62],
@@ -106,11 +107,10 @@ export const ZULRAH_CLOUD = {
  */
 export const ZULRAH_CLOUD_LOC_ID = 11700;
 
-/** The cloud barrage's dark-green orb: SNAKEBOSS_ORB, by policy (see the projectile note below). */
-export const ZULRAH_CLOUD_ORB_SPOTANIM_ID = 1044;
+/** The cloud barrage's dark-green orb: SNAKEBOSS_DOUBLE_ORB (see the projectile note below). */
+export const ZULRAH_CLOUD_ORB_SPOTANIM_ID = 1045;
 
 /** The snakeling orb: SNAKEBOSS_EGG (RuneLite gameval SpotanimID). */
-
 export const ZULRAH_SNAKELING_ORB_SPOTANIM_ID = 1047;
 
 /** The magic snakeling's bolt: SNAKEBOSS_MINION_SPELL (RuneLite gameval SpotanimID). */
@@ -183,23 +183,30 @@ export const ZULRAH_SEQS = {
 /**
  * Projectile spotanims. RuneLite gameval (SpotanimID.java, same commit) names them 1044 SNAKEBOSS_ORB,
  * 1045 SNAKEBOSS_DOUBLE_ORB, 1046 SNAKEBOSS_FIREBALL and 1047 SNAKEBOSS_EGG; 1230 is
- * SNAKEBOSS_MINION_SPELL. EGG is the snakeling orb (the wiki's "white orbs"; 1047 is 1044's model
- * recoloured white). Which of ORB and DOUBLE_ORB is the ranged attack and which the cloud barrage's
- * "dark-green orbs" is not settled by any source: simulator policy takes DOUBLE_ORB (1045) as the
- * ranged attack and ORB (1044) as the cloud orb, and FIREBALL (1046) as magic.
- * docs/encounters/zulrah-open-questions.md.
+ * SNAKEBOSS_MINION_SPELL. EGG is the snakeling orb (the wiki's "white orbs"). The private gameplay
+ * capture zulrah-packet-data-1.txt settles the rest: ORB (1044) is the ranged attack (t258, at the
+ * player, blocked to 0 by Protect from Missiles at t261), DOUBLE_ORB (1045) the cloud barrage's pair
+ * of orbs at tiles (t313, clouds at t316/t317), and FIREBALL (1046) the magic attack.
  */
-export const ZULRAH_RANGED_SPOTANIM_ID = 1045;
+export const ZULRAH_RANGED_SPOTANIM_ID = 1044;
 export const ZULRAH_MAGIC_SPOTANIM_ID = 1046;
 
 /**
- * Flight timing, simulator policy: the wiki says Zulrah's damage is rolled when the attack is
- * generated and gives no flight times, so both styles use the generic magic-spell shape
- * (`PROJ_ANIM_TIMINGS.magic_spell`).
+ * Both attacks fly 40-90 cycles at any distance, so each hit lands 3 ticks after its attack (private
+ * gameplay capture zulrah-packet-data-1.txt, all 38 ranged and magic launches, e.g. t258 to t261).
  */
 export const ZULRAH_PROJECTILE_TIMING = {
-  delay: 51,
-  lengthAdjustment: -5,
-  stepMultiplier: 10,
-  progress: 64,
+  delay: 40,
+  lengthAdjustment: 50,
+  stepMultiplier: 0,
+  progress: 0,
 } as const satisfies ProjAnimTiming;
+
+/**
+ * Zulrah faces this tile, the island's base south of the middle spot, every time it emerges between
+ * forms, until its first action (private gameplay captures zulrah-packet-data-1.txt, 12/12 emergences,
+ * e.g. t255, and zulrah-packet-data-2.txt, 10/10, e.g. t3000). From the middle spot that bearing is
+ * south, which is also the opening rise's spawn angle; it holds that until its first action, even once
+ * hit (zulrah-packet-data-2.txt: added facing south on t2973, hit on t2981, first barrage on t2984).
+ */
+export const ZULRAH_SURFACE_FACING_TILE: Coordinate = [28, 62];

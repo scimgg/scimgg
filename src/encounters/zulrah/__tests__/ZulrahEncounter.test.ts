@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import type { NpcActor } from '../../../core/actors/NpcActor';
+import { isNpcTargetable, type NpcActor } from '../../../core/actors/NpcActor';
 import {
   clearResolvedArenaConfigs,
   getArenaAllowUnboundedFallback,
@@ -11,6 +11,7 @@ import {
 import { VENOM_THRESHOLD } from '../../../core/poison';
 import { SimulationEngine } from '../../../core/SimulationEngine';
 import type { WorldState } from '../../../core/WorldState';
+import { isInfernoVisualEvent } from '../../../npcs/inferno/visualEvents';
 import {
   PLAYER_STUNNED_SPOTANIM_ID,
   SNAKELING,
@@ -31,7 +32,6 @@ import { parseInventoryFromSetup } from '../../../types/inventory';
 import { type Coordinate, type MechanicsConfig, PrayerType } from '../../../types/simulation';
 import { pickCloudSites, ZULRAH_CLOUD_FILL_ORDER, ZULRAH_CLOUD_SITES } from '../clouds';
 import {
-  ZULRAH_EMERGE_TICKS,
   ZULRAH_OPENING_PAUSE_TICKS,
   ZULRAH_OPENING_RISE_TICKS,
   ZULRAH_ROTATION_NUMBERS,
@@ -43,6 +43,10 @@ import {
 import { ZULRAH_ACTOR_ID, ZULRAH_PLAYER_START, ZulrahEncounter } from '../ZulrahEncounter';
 import { ZulrahSceneObjectController } from '../ZulrahSceneObjectController';
 import {
+  ZULRAH_CAPTURE_EMERGE_FACING_TILE,
+  ZULRAH_CAPTURE_EXTRA_PHASE,
+  ZULRAH_CAPTURE_FIRST_ATTACKABLE,
+  ZULRAH_CAPTURE_OPENING,
   ZULRAH_CAPTURE_TAIL_STUN,
 } from './fixtures/zulrahCapture';
 
@@ -79,6 +83,13 @@ function phaseIndexOf(run: Run): number {
   return stateOf(run).phaseIndex;
 }
 
+/** OSRS angle from a footprint's center to a tile's center, as Zulrah computes its facing. */
+function bearing(from: Pick<NpcActor, 'position' | 'size'>, tile: readonly number[]): number {
+  const dx = (tile[0] ?? 0) + 0.5 - (from.position[0] + from.size / 2);
+  const dy = (tile[1] ?? 0) + 0.5 - (from.position[1] + from.size / 2);
+  return (Math.round((Math.atan2(-dx, -dy) * 1024) / Math.PI) + 2048) % 2048;
+}
+
 /** Advances until the snapshot reports `phaseIndex` (or gives up). */
 function runToPhase(run: Run, phaseIndex: number, limit = 2000): void {
   for (let i = 0; i < limit; i++) {
@@ -95,6 +106,16 @@ describe('ZulrahEncounter', () => {
     expect(zulrah?.npcTypeId).toBe(ZULRAH_NPC_ID_BY_FORM.serpentine);
     expect(zulrah?.position).toEqual(ZULRAH_SPOTS.middle);
     expect(zulrah?.vitals).toEqual({ hp: 500, maxHp: 500 });
+  });
+
+  it("leaves capture 3's extra blue middle phase out of rotation 4's table, as one observation", () => {
+    const { barrages, attacks, styles } = ZULRAH_CAPTURE_EXTRA_PHASE;
+    expect(ZULRAH_ROTATIONS[4][3]).toMatchObject({ form: 'tanzanite', spot: 'west' });
+    expect(ZULRAH_ROTATIONS[4][4]).toMatchObject({ form: 'magma', spot: 'middle' });
+    expect(
+      ZULRAH_ROTATIONS[4].some((p) => p.form === 'tanzanite' && p.spot === 'middle' && p.attacks === attacks.length),
+    ).toBe(false);
+    expect([barrages.length, styles.length]).toEqual([3, attacks.length]);
   });
 
   it.each(ZULRAH_ROTATION_NUMBERS)('walks rotation %i in order, each form at its spot, then wraps to phase 2', (n) => {
@@ -139,13 +160,13 @@ describe('ZulrahEncounter', () => {
     if (!zulrah) throw new Error('No Zulrah');
     const surfaced = run.world.tick;
     while (zulrah.combat.lastAttackTick === null) run.tick();
-    // The emerge, then 4 snakeling orbs of 3 ticks each before the first of its 6 attacks.
-    expect(zulrah.combat.lastAttackTick - surfaced).toBeGreaterThanOrEqual(ZULRAH_EMERGE_TICKS + 4 * 3);
+    // The surface pause, then 4 snakeling orbs of 3 ticks each before the first of its 6 attacks.
+    expect(zulrah.combat.lastAttackTick - surfaced).toBe(ZULRAH_SURFACE_PAUSE_TICKS + 4 * 3);
   });
 
   it('surfaces, pauses, then makes each listed attack 3 ticks apart', () => {
-    // Timing is built from fixed pieces, not fitted to a total: the emerge, the surface pause, then
-    // one turn every 3 ticks (Zulrah's attack speed) for each listed attack and venom barrage.
+    // Timing is built from fixed pieces, not fitted to a total: the surface pause after the emerge,
+    // then one turn every 3 ticks (Zulrah's attack speed) for each listed attack and venom barrage.
     const run = startRun(1);
     runToPhase(run, 3); // Rotation 1 phase 4: south, green, 5 ranged.
     const zulrah = run.zulrah();
@@ -156,7 +177,7 @@ describe('ZulrahEncounter', () => {
       run.tick();
       if (zulrah.combat.lastAttackTick === run.world.tick) attackTicks.push(run.world.tick);
     }
-    expect(attackTicks[0]).toBe(surfaced + ZULRAH_EMERGE_TICKS + ZULRAH_SURFACE_PAUSE_TICKS);
+    expect(attackTicks[0]).toBe(surfaced + ZULRAH_SURFACE_PAUSE_TICKS);
     expect(attackTicks.slice(1).map((tick, i) => tick - (attackTicks[i] ?? 0))).toEqual([3, 3, 3, 3]);
   });
 
@@ -168,7 +189,7 @@ describe('ZulrahEncounter', () => {
       run.tick();
       if (stateOf(run).stage === 'submerged') {
         empty += 1;
-        // Still in the world (hits in flight land on it), but not drawn and not targetable.
+        // Still in the world, but not drawn and not targetable.
         expect(run.zulrah()?.hidden).toBe(true);
         expect((run.zulrah()?.targetableFromTick ?? 0) > run.world.tick).toBe(true);
       }
@@ -189,71 +210,15 @@ describe('ZulrahEncounter', () => {
     expect(second?.vitals.hp).toBe(321);
   });
 
-  it('faces south through the opening pause, then tracks the player from its first attack', () => {
+  it('surfaces on the captured bearing after a form change, then tracks the player from its first attack', () => {
     const run = startRun();
-    const npcSnapshot = () => run.engine.getState().npcs.find((npc) => npc.id === ZULRAH_ACTOR_ID);
-    const attacksMade = () => {
-      const zulrah = run.zulrah();
-      return zulrah ? (getZulrahState(zulrah)?.attacksMade ?? 0) : 0;
-    };
-    let zulrah = run.zulrah();
-    for (let i = 0; i < 300 && attacksMade() === 0; i++) {
-      if (zulrah && zulrah.actionFacing === undefined) {
-        expect(zulrah.combat.targetId).toBeNull();
-        expect(npcSnapshot()?.facingAngle).toBe(0);
-      }
-      run.tick();
-      zulrah = run.zulrah();
-    }
-    expect(attacksMade()).toBeGreaterThan(0);
-    expect(zulrah?.combat.targetId).toBe('player');
-  });
-
-  it('faces south until the player first hits it, then tracks the player through form changes', () => {
-    const run = startRun(1, { zulrahAttacks: false });
-    runToPhase(run, 1);
+    runToPhase(run, 3); // Rotation 1 phase 4 opens on its attacks.
     const zulrah = run.zulrah();
     if (!zulrah) throw new Error('No Zulrah');
-    const npcSnapshot = () => run.engine.getState().npcs.find((npc) => npc.id === zulrah.id);
-    expect(zulrah.combat.targetId).toBeNull();
-    expect(npcSnapshot()?.facingAngle).toBe(0);
-    while ((zulrah.targetableFromTick ?? 0) > run.world.tick) run.tick();
-    enqueueEnginePendingHit(run.engine, {
-      sourceId: 'player',
-      targetId: zulrah.id,
-      style: 'range',
-      attackKind: 'range_arrow',
-      launchTick: run.world.tick,
-      impactTick: run.world.tick + 1,
-      rolledDamage: 5,
-      accuracySucceeded: true,
-    });
-    run.tick();
-    run.tick();
+    expect(zulrah.actionFacing).toBe(bearing(zulrah, ZULRAH_CAPTURE_EMERGE_FACING_TILE));
+    while (zulrah.combat.lastAttackTick === null) run.tick();
+    expect(zulrah.actionFacing).toBeUndefined();
     expect(zulrah.combat.targetId).toBe('player');
-    runToPhase(run, 2);
-    expect(zulrah.combat.targetId).toBe('player');
-  });
-
-  it('lands a hit still in flight when Zulrah dives, on the form that surfaces', () => {
-    const run = startRun();
-    runToPhase(run, 1);
-    while (stateOf(run).stage !== 'diving') run.tick();
-    const zulrah = run.zulrah();
-    if (!zulrah) throw new Error('No Zulrah');
-    const hp = zulrah.vitals.hp;
-    enqueueEnginePendingHit(run.engine, {
-      sourceId: 'player',
-      targetId: zulrah.id,
-      style: 'range',
-      attackKind: 'range_arrow',
-      launchTick: run.world.tick,
-      impactTick: run.world.tick + 4, // Lands while Zulrah is underwater.
-      rolledDamage: 30,
-      accuracySucceeded: true,
-    });
-    runToPhase(run, 2);
-    expect(run.zulrah()?.vitals.hp).toBe(hp - 30);
   });
 
   it('rises on the first tick without waiting for the player to act', () => {
@@ -757,24 +722,6 @@ describe('Zulrah island across two map squares', () => {
     expect(isInTileSpace(23, 71)).toBe(false);
   });
 
-  it('lets a halberd hit the middle form from the front of the base, without walking', () => {
-    const run = startRun(6, { zulrahAttacks: false, zulrahClouds: false });
-    installIsland(run);
-    const front: Coordinate = [28, 62];
-    run.engine.setEquipment({ weapon: 3204 }); // Dragon halberd
-    // Weapon reach comes from the cache's item params, which unit tests do not load: set the halberd's 2.
-    const player = run.world.getPlayer();
-    if (player) player.equipmentStats = { ...player.equipmentStats, attackRange: 2 };
-    for (let i = 0; i < 20; i++) run.engine.advanceTick(front);
-    expect(run.world.getPlayer()?.position).toEqual(front);
-    run.engine.setAttackTarget(ZULRAH_ACTOR_ID);
-    for (let i = 0; i < 4; i++) {
-      run.engine.advanceTick(front);
-      expect(run.world.getPlayer()?.position).toEqual(front);
-    }
-    expect(run.world.getPlayer()?.attackTarget).toBe(ZULRAH_ACTOR_ID);
-  });
-
   it('lets the player walk up an arm to its tip', () => {
     const run = startRun(6, { zulrahAttacks: false, zulrahClouds: false });
     installIsland(run);
@@ -802,64 +749,6 @@ describe('Zulrah island across two map squares', () => {
     const before = run.world.getPlayer()?.vitals.hp;
     for (let i = 0; i < 20; i++) run.engine.advanceTick(tip);
     expect(run.world.getPlayer()?.vitals.hp).toBe(before);
-  });
-});
-
-describe('Zulrah surfacing bob', () => {
-  const attackCued = (run: Run) =>
-    run.engine
-      .getLastTickEvents()
-      .some(
-        (event) =>
-          event.type === 'inferno_visual' &&
-          (event as { animations?: { actorId: string; clipId: string }[] }).animations?.some(
-            (a) => a.actorId === ZULRAH_ACTOR_ID && a.clipId === 'attack',
-          ),
-      );
-
-  it('plays the attack animation, with no attack, when each later non-melee form becomes targetable', () => {
-    const run = startRun(1);
-    const bobs: number[] = [];
-    const targetable: number[] = [];
-    const meleeSurfaces: number[] = [];
-    let wasTargetable = false;
-    for (let i = 0; i < 400; i++) {
-      run.tick();
-      const zulrah = run.zulrah();
-      const isTargetable =
-        !!zulrah && !zulrah.hidden && run.world.tick >= (zulrah.targetableFromTick ?? Number.POSITIVE_INFINITY);
-      if (isTargetable && !wasTargetable && zulrah) {
-        (getZulrahState(zulrah)?.form === 'magma' ? meleeSurfaces : targetable).push(run.world.tick);
-      }
-      wasTargetable = isTargetable;
-      if (attackCued(run) && zulrah && zulrah.combat.lastAttackTick !== run.world.tick) bobs.push(run.world.tick);
-    }
-    expect(targetable.length).toBeGreaterThanOrEqual(3);
-    // Every form change bobs; the opening rise does not.
-    const [opening, ...surfaces] = targetable;
-    expect(bobs).toEqual(expect.arrayContaining(surfaces));
-    expect(bobs).not.toContain(opening);
-    // The melee form surfaces without one (rotation 1: phases 2 and 5).
-    expect(meleeSurfaces.length).toBeGreaterThan(0);
-    for (const tick of meleeSurfaces) expect(bobs).not.toContain(tick);
-  });
-
-  it('waits 3 quiet ticks after the bob, attacking on the 4th', () => {
-    const run = startRun(1, { zulrahClouds: false });
-    let bob: number | null = null;
-    const gaps: number[] = [];
-    for (let i = 0; i < 400 && gaps.length < 3; i++) {
-      run.tick();
-      const zulrah = run.zulrah();
-      if (!zulrah || !attackCued(run)) continue;
-      const attacked = zulrah.combat.lastAttackTick === run.world.tick;
-      if (!attacked) bob = run.world.tick;
-      else if (bob !== null) {
-        gaps.push(run.world.tick - bob);
-        bob = null;
-      }
-    }
-    expect(gaps).toEqual([4, 4, 4]);
   });
 });
 
@@ -1046,5 +935,83 @@ describe('Zulrah venom', () => {
     for (let i = 0; i < 3; i++) run.tick();
     expect(poisonVarp(run)).toBeLessThan(0);
     expect(run.world.getPlayer()?.inventory[0]?.id).toBe(12915); // Anti-venom+(3)
+  });
+});
+
+describe('Zulrah opening and first attackable tick, against private gameplay capture zulrah-packet-data-2.txt', () => {
+  const { spawn, spawnFacing, firstCast, hit, firstAction } = ZULRAH_CAPTURE_OPENING;
+
+  it('can be attacked the captured ticks after its spawn, and first acts the captured ticks after it', () => {
+    const run = startRun(1);
+    run.tick();
+    const zulrah = run.zulrah();
+    if (!zulrah) throw new Error('No Zulrah');
+    const risen = zulrah.spawnTick ?? 0;
+    expect(risen).toBe(run.world.tick);
+    expect((zulrah.targetableFromTick ?? 0) - risen).toBe(firstCast - spawn);
+    let firstSpit: number | null = null;
+    while (firstSpit === null) {
+      run.tick();
+      const spat = run.engine
+        .getLastTickEvents()
+        .filter(isInfernoVisualEvent)
+        .some((v) => v.animations.some((a) => a.actorId === ZULRAH_ACTOR_ID && a.clipId === 'attack'));
+      if (spat) firstSpit = run.world.tick;
+    }
+    expect(firstSpit - risen).toBe(firstAction - spawn);
+  });
+
+  it('faces south through the opening, even once hit, until its first barrage', () => {
+    const run = startRun(1);
+    run.tick();
+    const zulrah = run.zulrah();
+    if (!zulrah) throw new Error('No Zulrah');
+    const risen = zulrah.spawnTick ?? 0;
+    expect(zulrah.actionFacing).toBe(spawnFacing);
+    expect(zulrah.combat.targetId).toBeNull();
+    while (run.world.tick < risen + (hit - spawn) - 1) run.tick();
+    enqueueEnginePendingHit(run.engine, {
+      sourceId: 'player',
+      targetId: zulrah.id,
+      style: 'magic',
+      attackKind: 'magic_water',
+      launchTick: run.world.tick,
+      impactTick: run.world.tick + 1,
+      rolledDamage: 47,
+      accuracySucceeded: true,
+    });
+    while (run.world.tick < risen + (firstAction - spawn) - 1) {
+      run.tick();
+      expect(zulrah.actionFacing, `t+${run.world.tick - risen}`).toBe(spawnFacing);
+    }
+    expect(zulrah.vitals.hp).toBeLessThan(zulrah.vitals.maxHp);
+    run.tick();
+    expect(zulrah.actionFacing).not.toBe(spawnFacing);
+  });
+
+  it('can first be attacked after a form change on the captured tick', () => {
+    const { emerge, refused, attack } = ZULRAH_CAPTURE_FIRST_ATTACKABLE;
+    const run = startRun(5, { zulrahClouds: false });
+    runToPhase(run, 1); // Rotation 1 phase 2 surfaces at the middle spot, in reach of the start tile.
+    const zulrah = run.zulrah();
+    const player = run.world.getPlayer();
+    if (!zulrah || !player) throw new Error('No Zulrah or player');
+    const emerged = zulrah.spawnTick ?? 0;
+    expect(emerged).toBe(run.world.tick);
+    // A blowpipe's reach covers the middle spot from the start tile; set by hand, as there is no item loader.
+    run.engine.setEquipment({ weapon: 12926 });
+    player.equipmentStats = { ...createEmptyStats(), attackSpeed: 2, attackRange: 6 };
+    let firstAttack: number | null = null;
+    while (firstAttack === null && run.world.tick < emerged + 10) {
+      // The queued click, handled in the next tick's input band, as a click sent during this tick is.
+      run.engine.applyAction({ type: 'attackTarget', targetId: zulrah.id });
+      run.tick();
+      const attacked = run.engine
+        .getLastTickEvents()
+        .some((event) => event.type === 'attack_started' && event.sourceId === player.id);
+      if (attacked) firstAttack = run.world.tick;
+    }
+    for (const tick of refused) expect(isNpcTargetable(zulrah, emerged + (tick - emerge))).toBe(false);
+    expect(firstAttack).toBe(emerged + (attack - emerge));
   });
 });

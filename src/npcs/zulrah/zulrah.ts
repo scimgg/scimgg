@@ -1,4 +1,4 @@
-import { isNpcTargetable, type NpcActor } from '../../core/actors/NpcActor';
+import type { NpcActor } from '../../core/actors/NpcActor';
 import type { PlayerActor } from '../../core/actors/PlayerActor';
 import { calculateProjectileEndTime } from '../../core/combat/hitDelay';
 import { isNpcActionReady, scheduleNpcAction } from '../../core/combat/npcActionClock';
@@ -26,6 +26,7 @@ import {
   ZULRAH_RANGED_SPOTANIM_ID,
   ZULRAH_SIZE,
   ZULRAH_SNAKELING_ORB_SPOTANIM_ID,
+  ZULRAH_SURFACE_FACING_TILE,
   ZULRAH_TAIL,
   ZULRAH_TAIL_SAFE_TILES,
   type ZulrahForm,
@@ -93,9 +94,9 @@ export type CreateZulrahActorInput = {
   readonly hp: number;
   readonly maxHp: number;
   readonly spawnTick: TickNumber;
-  /** Ticks after `spawnTick` before it can be targeted or act (the emerge). */
+  /** Ticks after `spawnTick` before it can be targeted (the emerge). */
   readonly emergeTicks: number;
-  /** Further ticks after the emerge before its first turn. */
+  /** Ticks after `spawnTick` before its first turn; `emergeTicks` when absent. */
   readonly firstTurnDelayTicks?: number;
 };
 
@@ -132,19 +133,14 @@ const EMPTY: EncounterTickResult = { environmentalDamages: [] };
 export const zulrahDefinition = createNpcDefinition<ZulrahActorState, ZulrahDefinitionConfig>({
   id: 'zulrah',
   move: false,
-  // Reported from play: Zulrah faces south until the player first hits it, then tracks the player
-  // (docs/encounters/zulrah-open-questions.md). The target is the renderer's cue to track.
-  onDamageResolved: ({ actor, damage }) => {
-    if (damage.sourceId === 'player') actor.combat.targetId = 'player';
-  },
   tick: ({ actor, config, context }) => {
     const state = actor.state;
     const player = context.world.getPlayer();
     const damages = landTail(actor, state, config, context);
     if (state.pendingTail || state.actions.length === 0) return { environmentalDamages: damages };
     if (!canNpcActThisTurn(actor, context.tick) || !actor.alive) return { environmentalDamages: damages };
-    if (!isNpcTargetable(actor, context.tick) || !isNpcActionReady(actor.combat, context.tick))
-      return { environmentalDamages: damages };
+    // Its first turn after a form change (emerge + 3) comes before it can be targeted (emerge + 4).
+    if (actor.hidden || !isNpcActionReady(actor.combat, context.tick)) return { environmentalDamages: damages };
     if (!player || !canReceiveNewAttack(player)) return { environmentalDamages: damages };
 
     const action = state.actions.shift();
@@ -180,7 +176,8 @@ function takeAttack(
   player: PlayerActor,
 ): EncounterTickResult {
   scheduleNpcAction(actor.combat, context.tick, ZULRAH_ATTACK_SPEED_TICKS);
-  // An attack is aimed at the player: drop any bearing a cloud barrage left.
+  // An attack turn faces the player, dropping the bearing a surfacing or a spit left (private gameplay
+  // capture zulrah-packet-data-1.txt, e.g. t258; also t301, where the turn made no attack).
   delete actor.actionFacing;
   if (!config.attacksEnabled()) {
     // Spends the turn without the attack, so the phase keeps its length.
@@ -295,8 +292,7 @@ function startTail(
   // Holds the clock until the tail lands; the landing reschedules the next stare.
   scheduleNpcAction(actor.combat, context.tick, ZULRAH_TAIL.stareTicks);
   if (config.attacksEnabled()) {
-    // Its first attack turns it from south to the player (see `takeAttack`); the stare bearing above
-    // still wins until the slam lands.
+    // Tracks the player once the slam lands; the stare bearing above wins until then.
     actor.combat.targetId = 'player';
     emitInfernoVisual(context.tickEvents, {
       // Which side the game whips from is not sourced: simulator policy alternates, left first
@@ -357,8 +353,8 @@ function spitSnakelingOrb(
   state.lastImpactTick = context.tick + SNAKELING.orbFlightTicks;
   const tile = config.launchSnakelingOrb(actor, context);
   if (!tile) return;
-  // Reported from play: like a cloud barrage, it turns to where the orb lands rather than watching the
-  // player, and holds that bearing until its next attack or form change.
+  // It faces the orb's target tile, and holds that bearing until its next attack or form change
+  // (private gameplay capture zulrah-packet-data-1.txt, every snakeling orb, e.g. t323).
   actor.actionFacing = facingToward(actor, tile);
   emitInfernoVisual(context.tickEvents, {
     animations: [{ actorId: actor.id, clipId: 'attack', delayCycles: 0 }],
@@ -377,6 +373,11 @@ function spitSnakelingOrb(
     ],
     graphics: [],
   });
+}
+
+/** The bearing Zulrah surfaces on at `position`, toward `ZULRAH_SURFACE_FACING_TILE`. */
+function surfaceFacing(position: Coordinate): number {
+  return facingToward({ position, size: ZULRAH_SIZE }, ZULRAH_SURFACE_FACING_TILE);
 }
 
 /** OSRS angle (0 south, 512 west, 1024 north, 1536 east) from the NPC's centre to a tile's centre. */
@@ -434,13 +435,14 @@ export function createZulrahActor(input: CreateZulrahActorInput) {
     spawnTick: input.spawnTick,
     targetableFromTick,
     history: new Map<TickNumber, Coordinate>(),
+    actionFacing: surfaceFacing(input.position),
     combat: {
       attackSpeed: ZULRAH_ATTACK_SPEED_TICKS,
       attackRange: 20,
       attackStyle: input.form === 'tanzanite' ? 'magic' : 'range',
-      nextActionTick: targetableFromTick,
-      // No target until the player first hits it or it first attacks, so it faces south (`facing: 0`)
-      // rather than tracking the player; see `onDamageResolved` and `takeAttack`.
+      nextActionTick: input.spawnTick + (input.firstTurnDelayTicks ?? input.emergeTicks),
+      // No target until its first attack (`takeAttack`); until its first action it holds
+      // `ZULRAH_SURFACE_FACING_TILE`.
       targetId: null,
       lastAttackTick: null,
       animations: { idle: null, walk: null, run: null, attack: null, death: null },
@@ -478,9 +480,9 @@ export function transformZulrah(actor: NpcActor, input: Omit<CreateZulrahActorIn
   actor.spawnTick = input.spawnTick;
   actor.targetableFromTick = targetableFromTick;
   actor.hidden = false;
-  delete actor.actionFacing;
+  actor.actionFacing = surfaceFacing(input.position);
   actor.combat.attackStyle = input.form === 'tanzanite' ? 'magic' : 'range';
-  actor.combat.nextActionTick = targetableFromTick + (input.firstTurnDelayTicks ?? 0);
+  actor.combat.nextActionTick = input.spawnTick + (input.firstTurnDelayTicks ?? input.emergeTicks);
   actor.combat.lastAttackTick = null;
   state.form = input.form;
   state.mode = input.mode;

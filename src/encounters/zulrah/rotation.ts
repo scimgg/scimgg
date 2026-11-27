@@ -6,19 +6,17 @@ export type ZulrahSpot = 'middle' | 'south' | 'west' | 'east';
 
 /**
  * Zulrah's south-west tile at each named spot, in the local frame of map square 35_47 (the shrine
- * island's north arms run into 35_48, local y 64+).
- *
- * Simulator policy, read off the cache geometry rather than any capture: the island is a U whose base
- * spans local y 60-63 and whose arms are x 22-24 and 32-34 up to y 70. `middle` sits between the arms
- * north of the base, `south` below the base, `west` and `east` just outside each arm. `middle`'s south
- * edge (y 64) is two tiles from the base's front row (y 62), so a halberd (reach 2) hits it from the
- * middle, as reported from play; one tile further north, only the arms were in reach.
+ * island's north arms run into 35_48, local y 64+), from the private gameplay capture
+ * zulrah-packet-data-1.txt. `middle`, `west` and `east` are its tracked tiles (e.g. t255, t298).
+ * `south` is derived (t280-t291): the tracked tile after that move reads (33, 50), but Zulrah's
+ * projectiles leave from (27, 57), the player's spells at it target (28, 56) = south-west + 2 as at
+ * every other spot, and both sides' facing angles are exact for a center of (28.5, 56.5).
  */
 export const ZULRAH_SPOTS: Readonly<Record<ZulrahSpot, Coordinate>> = {
-  middle: [26, 64],
-  south: [26, 55],
-  west: [16, 65],
-  east: [36, 64],
+  middle: [26, 65],
+  south: [26, 54],
+  west: [16, 63],
+  east: [36, 63],
 };
 
 /** A phase's non-attack action: a venom cloud barrage, or a snakeling orb (not modelled yet: idle). */
@@ -152,31 +150,40 @@ export function nextZulrahPosition(
 }
 
 /**
- * Transition timings, simulator policy (no source gives them). Timing is built from fixed pieces,
- * never fitted to an overall pace: each turn takes Zulrah's 3-tick attack speed, each phase has its
- * listed attacks and venom barrages, and every form change is the same sequence:
- * - dive: SINKFAST runs 60 cycles, 2 ticks;
- * - underwater: 2 ticks hidden;
- * - emerge: EMERGEFAST runs 60 cycles, 2 ticks untargetable after the new form appears;
- * - surface pause: the bob, then 3 quiet ticks; first turn at `ZULRAH_SURFACE_PAUSE_TICKS` after the emerge.
- * The fight's opening rise (SNAKEBOSS_SPAWN, 105 cycles) keeps 4 ticks, then its own pause.
+ * Form-change timing, from private gameplay captures (zulrah-packet-data-1.txt, 12/12 form changes,
+ * e.g. t252 sink, t255 emerge, t258 first attack; zulrah-packet-data-2.txt, 10/10, e.g. t3018, t3021,
+ * t3024; zulrah-packet-data-3.txt and zulrah-packet-data-4.txt, 10/10 each). Each turn takes Zulrah's
+ * 3-tick attack speed, each phase has its listed attacks and venom barrages, and every form change is
+ * the same sequence:
+ * - dive: SINKFAST (5072) at the old spot on tick S;
+ * - on S+3 Zulrah moves to its next spot, transforms and plays EMERGEFAST (5073), all on one tick;
+ * - its first turn is 3 ticks after that (`ZULRAH_SURFACE_PAUSE_TICKS`);
+ * - the player can attack it from 4 ticks after that (`ZULRAH_EMERGE_TICKS`): zulrah-packet-data-2.txt
+ *   emerge t3239, attack clicks on t3241 and t3242 made no attack, the attack went off on t3243;
+ *   zulrah-packet-data-4.txt the same four times, e.g. refused on t2080 and attacking on t2081 after the
+ *   t2077 emerge (the opening, below, is attacked at the same delay).
+ * The captures never remove Zulrah. Simulator policy: it is drawn through SINKFAST's 60 cycles
+ * (`ZULRAH_DIVE_TICKS`) and hidden for the one tick left (`ZULRAH_UNDERWATER_TICKS`), so the idle
+ * pose does not pop back up at the old spot; it cannot be targeted from S.
+ * The fight's opening (zulrah-packet-data-2.txt): Zulrah is added at the middle spot on SNAKEBOSS_SPAWN
+ * (5071) on t2973; the player's first attack click, on t2977, cast at once (hit for 47 on t2981), so it
+ * can be attacked by `ZULRAH_OPENING_RISE_TICKS` after the spawn (earlier is untested); its first
+ * barrage is on t2984, `ZULRAH_OPENING_RISE_TICKS + ZULRAH_OPENING_PAUSE_TICKS` after the spawn.
  */
 export const ZULRAH_DIVE_TICKS = 2;
-export const ZULRAH_UNDERWATER_TICKS = 2;
-export const ZULRAH_EMERGE_TICKS = 2;
+export const ZULRAH_UNDERWATER_TICKS = 1;
+/** Sink to emerge: 3 ticks. */
+export const ZULRAH_FORM_CHANGE_TICKS = ZULRAH_DIVE_TICKS + ZULRAH_UNDERWATER_TICKS;
+export const ZULRAH_EMERGE_TICKS = 4;
 export const ZULRAH_OPENING_RISE_TICKS = 4;
 
 /**
- * Ticks from a resurfaced form's emerge ending (its bob) to its first turn. No source gives it; from
- * play she waits 3 full ticks after the bob before attacking, so the first turn lands on bob + 4 (at
- * bob + 3 it reads as one more attack at her normal speed). A POLICY value until measured on video.
- * Not applied to the opening, which has its own pause.
+ * Ticks from a form's emerge to its first turn: 3 (zulrah-packet-data-1.txt, 10 of 11 form changes that
+ * acted, once 4, t276 to t280; zulrah-packet-data-2.txt, 8 of 9, once 6 with the player out of sight,
+ * t3068 to t3074; zulrah-packet-data-3.txt, 8 of 10, the others with the player out of sight). Not
+ * applied to the opening, which has its own pause.
  */
-export const ZULRAH_SURFACE_PAUSE_TICKS = 4;
+export const ZULRAH_SURFACE_PAUSE_TICKS = 3;
 
-/**
- * Ticks Zulrah waits after its opening rise before its first turn (the fill's first barrage). No
- * source gives it; 12 is the user's pick from play, a POLICY value until it is measured on video
- * (docs/encounters/zulrah-open-questions.md, Timing).
- */
-export const ZULRAH_OPENING_PAUSE_TICKS = 12;
+/** Ticks Zulrah waits after its opening rise before its first turn: 11 from the spawn in all (above). */
+export const ZULRAH_OPENING_PAUSE_TICKS = 7;
