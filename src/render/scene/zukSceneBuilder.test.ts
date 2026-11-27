@@ -2796,6 +2796,34 @@ describe('legacy inferno_visual recording: continuous playback versus direct see
     }
   });
 
+  it('restores a pruned corpse in 3D on a paused frame first shown in 2D, as a direct 3D seek does', async () => {
+    // `healer` was pruned on tick 4; at cycle 150 its corpse is 60 cycles into its 90-cycle clip.
+    const cycle = 150;
+    const draw = ({ scene, context }: Awaited<ReturnType<typeof legacyScene>>, renderMode: '2d' | '3d') => {
+      const queue = scene.build(
+        { ...context, options: { ...SCENE_OPTIONS, renderMode }, ...replayContextAt(legacyFrames(), cycle, true) },
+        IDENTITY_PROJECTION,
+        VIEWPORT,
+      );
+      return {
+        meshes: queue.commands
+          .flatMap((command) => (command.kind === 'mesh3d' && /^npc-.*-healer$/.test(command.meshId) ? [command] : []))
+          .map(({ meshId, modelMatrix }) => ({ meshId, modelMatrix: [...modelMatrix] }))
+          .sort((left, right) => left.meshId.localeCompare(right.meshId)),
+        pose: observeScene(scene, queue).poses.healer ?? null,
+      };
+    };
+    const switched = await legacyScene();
+    draw(switched, '2d');
+    const expected = draw(await legacyScene(), '3d');
+
+    expect(expected.meshes.map(({ meshId }) => meshId)).toEqual(
+      expect.arrayContaining([expect.stringMatching(/opaque/), expect.stringMatching(/transparent/)]),
+    );
+    expect(expected.pose).toMatchObject({ seqId: 2638 });
+    expect(draw(switched, '3d')).toEqual(expected);
+  });
+
   // A baseline failure on 49ef532: played one cycle per frame, the corpse ended at 178, a frame
   // before a seek ended it (179), as the death timer was credited the frame's delta from before the
   // death. Replay now poses each snapshot corpse at its exact age every frame, before it is pruned.

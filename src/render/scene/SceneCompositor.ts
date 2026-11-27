@@ -468,8 +468,13 @@ export class SceneCompositor {
   protected readonly cues = new EncounterCuePlayer(this.spotAnimRenderer, (cue) => this.encounterGraphicStyle(cue));
   /** The history the cue player last synced from; undefined live and while a replay waits for assets. */
   private cueHistory: readonly ReplayDisplayFrame[] | undefined;
-  /** Whether this frame rebuilt the cues from history (a seek, a new history or a restore). */
-  private rebuiltReplayCues = false;
+  /**
+   * Whether the corpses the simulation already pruned still need restoring from history: set when the
+   * cues are rebuilt (a seek, a new history or a restore) or a history frame is shown in 2D, which
+   * draws no models; cleared once a 3D frame with synced cues has restored them at its destination,
+   * and when the history is left or reset.
+   */
+  private historicalCorpsesPending = false;
   /** Each NPC type the render config declares, with the settings it loads with; see `setEncounterRenderConfig`. */
   private declaredNpcTypes: ReadonlyMap<number, NpcTypeLoadConfig> = new Map();
   private declaredNpcTypeIds: readonly number[] = [];
@@ -521,6 +526,7 @@ export class SceneCompositor {
     this.registerTransientReset('encounter-cues', () => {
       this.cues.clear();
       this.cueHistory = undefined;
+      this.historicalCorpsesPending = false;
     });
     this.registerTransientReset('npc-animation-clock', () => {
       this.npcAnimationCycle = null;
@@ -1174,8 +1180,10 @@ export class SceneCompositor {
     if (!history || !index) {
       this.cues.consumeEvents(events, ctx.simulationState);
       this.cueHistory = undefined;
+      this.historicalCorpsesPending = false;
       return;
     }
+    if (ctx.options.renderMode === '2d') this.historicalCorpsesPending = true;
     if (ctx.restoredPresentation) this.reconstructedVisuals = true;
     if (this.encounterAssetState() === 'pending') {
       if (this.cueHistory) this.cues.clear();
@@ -1186,8 +1194,8 @@ export class SceneCompositor {
     const rebuild = history.frames !== this.cueHistory || this.lastDiscontinuityReason !== null;
     this.cues.syncReplay(index, { cycle: this.primaryCycle, throughFrameIndex: history.throughFrameIndex }, rebuild);
     this.cueHistory = history.frames;
-    this.rebuiltReplayCues = rebuild;
     if (!rebuild) return;
+    this.historicalCorpsesPending = true;
     this.reconstructedVisuals = true;
     // Rebuilt actors restart the cycle clock at the destination; skipped history is not replayed.
     this.npcAnimationCycle = null;
@@ -1301,14 +1309,17 @@ export class SceneCompositor {
   }
 
   /**
-   * After a 3D replay frame rebuilt its cues: the corpses still on display whose NPCs the simulation
-   * already pruned, from history, at their age at the destination. After the NPC clock reaches it
-   * and before the models are queued, so the frame draws them as posed.
+   * On a 3D replay frame while `historicalCorpsesPending`: the corpses still on display whose NPCs the
+   * simulation already pruned, from history, at their age at the destination. After the NPC clock
+   * reaches it and before the models are queued, so the frame draws them as posed. A frame whose cues
+   * are not synced (assets still pending) leaves them to the next.
    */
   private reconstructPrunedCorpses(npcs: readonly NpcSnapshot[]): void {
     const index = this.replayEffectIndex;
     const throughFrameIndex = this.replayThroughFrameIndex;
-    if (!this.rebuiltReplayCues || !index || throughFrameIndex === undefined) return;
+    if (!this.historicalCorpsesPending || !index || throughFrameIndex === undefined) return;
+    if (this.cueHistory !== index.frames) return;
+    this.historicalCorpsesPending = false;
     const liveActorIds = new Set<string>();
     for (const npc of npcs) if (npc.alive) liveActorIds.add(this.npcRenderIdOf(npc));
     for (const presentation of index.deathPresentations(
@@ -1847,6 +1858,7 @@ export class SceneCompositor {
     this.frameSoundTracker = null;
     this.cues.clear();
     this.cueHistory = undefined;
+    this.historicalCorpsesPending = false;
     this.projectileTargetId = null;
     this.lastProcessedEventId = -1;
     this.lastPlayedAudioEventId = -1;
@@ -2119,7 +2131,6 @@ export class SceneCompositor {
     } else this.replayEffectIndex = undefined;
     this.reconstructedVisuals =
       history !== undefined && (discontinuity !== null || this.previousEffectFrame === undefined);
-    this.rebuiltReplayCues = false;
     this.previousEffectCycle = history ? this.effectTick * 30 : undefined;
     this.previousEffectFrame = history?.throughFrameIndex;
     this.lastDisplayedTick = currentTick;
