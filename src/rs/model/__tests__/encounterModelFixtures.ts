@@ -4,15 +4,8 @@
  * spotanims (static, frame-animated and every skeletal pose) and their map LOCs.
  */
 import type { LocWithType } from '../../../cache/CacheManager';
+import { collectDeclaredSpotAnimIds } from '../../../encounters/renderConfigs';
 import { SOL_MAP_X, SOL_MAP_Y } from '../../../encounters/solHeredit/constants';
-import {
-  FIREBALL_PRELOAD_IDS,
-  VOID_FLARE_PRELOAD_IDS,
-  WAVE_PRELOAD_IDS,
-  YAMA_ATTACK_PRELOAD_IDS,
-} from '../../../encounters/yamaP3/spotAnims';
-import { COLOSSEUM_SPOT_ANIM_IDS } from '../../../npcs/colosseum/visualEvents';
-import { INFERNO_SPOT_ANIM_IDS } from '../../../npcs/inferno/constants';
 import { AnimationSystem } from '../../../render/backends/picogl/AnimationSystem';
 import { PLAYER_GRAPHIC_PRELOAD_IDS } from '../../../render/effects/controllers/PlayerGraphicController';
 import type { LocRenderOptions } from '../../../render/environment/locRenderOptions';
@@ -61,21 +54,9 @@ export function encounterNpcIds(): Set<number> {
   return ids;
 }
 
+/** Every spotanim the encounter render configs declare, death effects included, and the player's graphics. */
 export function encounterSpotAnimIds(): Set<number> {
-  const ids = new Set<number>([
-    ...COLOSSEUM_SPOT_ANIM_IDS,
-    ...INFERNO_SPOT_ANIM_IDS,
-    ...WAVE_PRELOAD_IDS,
-    ...FIREBALL_PRELOAD_IDS,
-    ...VOID_FLARE_PRELOAD_IDS,
-    ...YAMA_ATTACK_PRELOAD_IDS,
-    ...PLAYER_GRAPHIC_PRELOAD_IDS,
-  ]);
-  for (const kind of ENCOUNTER_KINDS) {
-    const deathSpotAnimId = getEncounterRenderConfig(kind)?.primaryNpc?.deathSpotAnimId;
-    if (deathSpotAnimId !== undefined) ids.add(deathSpotAnimId);
-  }
-  return ids;
+  return new Set([...collectDeclaredSpotAnimIds().keys(), ...PLAYER_GRAPHIC_PRELOAD_IDS]);
 }
 
 /**

@@ -238,10 +238,8 @@ async function openEncounter(
     if (config.bounds !== null) setResolvedArenaConfig(descriptor.kind, config);
   }
 
-  const scene = sceneBuilderRegistry.create(kind, {
-    cacheManager,
-    encounterRenderConfig: getEncounterRenderConfig(kind),
-  });
+  const renderConfig = getEncounterRenderConfig(kind);
+  const scene = sceneBuilderRegistry.create(kind, { cacheManager, encounterRenderConfig: renderConfig });
   const compositor = compositorOf(scene);
   const animationSystem = need(cacheManager.getAnimationSystem(), 'animation system');
   const npcModelLoader = need(cacheManager.getNpcModelLoader(), 'npc model loader');
@@ -263,12 +261,15 @@ async function openEncounter(
     await scene.loadLocs(need(cacheManager.getLocModelLoader(), 'loc model loader'), mapLocs);
   }
   await scene.loadNpc(npcModelLoader, animationSystem);
-  const renderConfig = getEncounterRenderConfig(kind);
-  if (scene.loadNpcType) {
-    for (const type of renderConfig?.preloadNpcTypes ?? []) {
-      await scene.loadNpcType(type.npcTypeId, npcModelLoader, animationSystem, type);
-    }
-  }
+  // `loadNpc` settles a declared type whose model fails without failing; report it rather than
+  // load it again here, which would pass a scene the app could not draw.
+  const declaredNpcTypeIds = [
+    renderConfig?.primaryNpc?.npcTypeId,
+    ...(renderConfig?.preloadNpcTypes ?? []).map((type) => type.npcTypeId),
+  ].filter((id) => id !== undefined);
+  const unloaded = [...new Set(declaredNpcTypeIds)].filter((id) => !compositor.isNpcTypeLoaded(id));
+  if (unloaded.length > 0)
+    throw new Error(`[cache-runtime] ${kind} declared NPC types not loaded: ${unloaded.join(', ')}`);
   await scene.loadSpotAnims(need(cacheManager.getSpotAnimModelLoader(), 'spotanim model loader'));
   await scene.loadPlayer(
     need(cacheManager.getPlayerModelLoader(), 'player model loader'),
