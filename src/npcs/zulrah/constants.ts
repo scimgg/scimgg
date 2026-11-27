@@ -38,13 +38,23 @@ export const ZULRAH_HIT_CAP = { above: 50, min: 45, max: 50 } as const;
  * The magma form's tail. The wiki: Zulrah stares at the player's position "for several seconds"
  * before whipping its tail there (Strategies, Forms); 20-30 typeless damage and a stun "for several
  * seconds" if the player has not moved away; it "can be avoided by moving two tiles away" (Zulrah,
- * Fight overview). The rest is simulator policy:
- * - the target is the player's tile when the stare starts;
- * - it lands 6 ticks (3.6 s) after the stare starts;
- * - it hits the 3x3 around the target, so two tiles away is the first safe distance;
- * - the stun is 5 ticks. A stunned player cannot move or attack but can pray, eat and switch gear
- *   (the engine's `playerStunned`), following the wiki's stun status: stuns disable "attacking and
- *   moving" (https://oldschool.runescape.wiki/w/Stun_(status)).
+ * Fight overview). Measured in private gameplay captures:
+ * - TAIL_LEFT lands 6 ticks after the stare starts and TAIL_RIGHT 5 (zulrah-packet-data-2.txt: right
+ *   t3003 to t3008, t3010 to t3015, t3242 to t3247; left t3105 to t3111, t3113 to t3119;
+ *   zulrah-packet-data-1.txt: left t236 to t242, right t244 to t249);
+ * - the next stare starts 2 ticks after a slam lands (zulrah-packet-data-2.txt t3008 to t3010, t3111 to
+ *   t3113, t3247 to t3249);
+ * - the phase dives 3 ticks after its last slam (t3015 to t3018, t3119 to t3122; zulrah-packet-data-1.txt
+ *   t249 to t252, t549 to t552);
+ * - a hit on tick t stuns the player through t+6 and it moves again on t+7, without a knockback
+ *   (zulrah-packet-data-2.txt t3015: "You're stunned!" t3016-t3021, first move t3022). With a knockback,
+ *   which is not modeled, it is a tick longer (t3119 to t3127; zulrah-packet-data-1.txt t549 to t557).
+ * The side follows the player's position (`zulrahTailSide` in zulrah.ts). Simulator policy: the target
+ * is the player's tile when the stare starts; it hits the 3x3 around the target, so two tiles away is
+ * the first safe distance. A stunned
+ * player cannot move or attack but can pray, eat and switch gear (the engine's `playerStunned`;
+ * zulrah-packet-data-1.txt shows eating while stunned at t245), following the wiki's stun status: stuns
+ * disable "attacking and moving" (https://oldschool.runescape.wiki/w/Stun_(status)).
  */
 /**
  * The stunned player's graphic: spotanim 245 `stunned_thieving`, at height 124 (private gameplay
@@ -53,20 +63,25 @@ export const ZULRAH_HIT_CAP = { above: 50, min: 45, max: 50 } as const;
 export const PLAYER_STUNNED_SPOTANIM_ID = 245;
 
 export const ZULRAH_TAIL = {
-  stareTicks: 6,
+  /** Ticks from the stare's start to the slam, by the side it whips from. */
+  stareTicks: { tailLeft: 6, tailRight: 5 },
   radius: 1,
   damage: [20, 30] as [number, number],
   stunTicks: 7,
   /** Ticks after a slam lands before the next stare begins. */
-  recoveryTicks: 3,
+  recoveryTicks: 2,
+  /** Ticks after the phase's last slam lands before Zulrah dives. */
+  diveTicks: 3,
 } as const;
 
 /**
  * Tiles the tail cannot reach while Zulrah is at its middle spot (SW corner 26,65, its tracked tile
  * in private gameplay captures; `ZULRAH_SPOTS.middle`): the three walkable tiles tucked behind each
  * pillar (pillars at 25,63 and 31,63), reported from play. West pillar: its west 24,63, south-west
- * 24,62 and south 25,62; the east pillar mirrors them. The slam still lands; a
- * player standing here takes no damage and no stun.
+ * 24,62 and south 25,62; the east pillar mirrors them. The slam still lands; a player standing here
+ * takes no damage and no stun. Captured for 32,62 only: the player stood there through a TAIL_RIGHT
+ * and a TAIL_LEFT (private gameplay capture zulrah-packet-data-3.txt, stares t878 and t885, slams t883
+ * and t891) and took neither hit nor stun.
  */
 export const ZULRAH_TAIL_SAFE_TILES: Readonly<{ zulrah: Coordinate; tiles: readonly Coordinate[] }> = {
   zulrah: [26, 65],

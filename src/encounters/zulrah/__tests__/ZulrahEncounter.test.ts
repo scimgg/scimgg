@@ -1,5 +1,6 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { isNpcTargetable, type NpcActor } from '../../../core/actors/NpcActor';
+import { npcHitDelayFromEndTime } from '../../../core/combat/hitDelay';
 import {
   clearResolvedArenaConfigs,
   getArenaAllowUnboundedFallback,
@@ -17,6 +18,7 @@ import { mulberry32 } from '../../../core/rng';
 import { SimulationEngine } from '../../../core/SimulationEngine';
 import type { WorldState } from '../../../core/WorldState';
 import { isInfernoVisualEvent } from '../../../npcs/inferno/visualEvents';
+import type { NpcProjectileCue } from '../../../npcs/projectileCue';
 import {
   PLAYER_STUNNED_SPOTANIM_ID,
   SNAKELING,
@@ -26,6 +28,7 @@ import {
   ZULRAH_ATTACK_SPEED_TICKS,
   ZULRAH_CLOUD,
   ZULRAH_CLOUD_LOC_ID,
+  ZULRAH_CLOUD_ORB_SPOTANIM_ID,
   ZULRAH_LOS_GIVE_UP_TICKS,
   ZULRAH_MAGIC_SPOTANIM_ID,
   ZULRAH_NPC_ID_BY_FORM,
@@ -35,7 +38,7 @@ import {
   zulrahCloudOrbLandTicks,
 } from '../../../npcs/zulrah/constants';
 import { snakelingDefinition } from '../../../npcs/zulrah/snakeling';
-import { getZulrahState, isInTailArea, isTailSafeTile, zulrahDefinition } from '../../../npcs/zulrah/zulrah';
+import { getZulrahState, isInTailArea, isTailSafeTile, zulrahDefinition, zulrahTailSide } from '../../../npcs/zulrah/zulrah';
 import { CollisionFlag } from '../../../rs/collision/CollisionFlag';
 import { createCollisionMap, getBoundsFromRegion } from '../../../rs/collision/WalkabilityAnalyzer';
 import { enqueueEnginePendingHit } from '../../../test/helpers/pendingHits';
@@ -66,18 +69,35 @@ import { randomSnakelingSite, ZULRAH_SNAKELING_SITES, zulrahSnakelingSequence } 
 import { ZULRAH_ACTOR_ID, ZULRAH_PLAYER_START, ZulrahEncounter } from '../ZulrahEncounter';
 import { ZulrahSceneObjectController } from '../ZulrahSceneObjectController';
 import {
+  ZULRAH_CAPTURE_2_JAD_PROJECTILES,
+  ZULRAH_CAPTURE_3_JAD_PROJECTILES,
+  ZULRAH_CAPTURE_ATTACK_HIT,
+  ZULRAH_CAPTURE_CLOUD_BARRAGE,
   ZULRAH_CAPTURE_CLOUD_SEQUENCES,
   ZULRAH_CAPTURE_CLOUD_SITES,
+  ZULRAH_CAPTURE_DEFERRED,
+  ZULRAH_CAPTURE_DIVES,
   ZULRAH_CAPTURE_EMERGE_FACING_TILE,
   ZULRAH_CAPTURE_EXTRA_PHASE,
   ZULRAH_CAPTURE_FIRST_ATTACKABLE,
+  ZULRAH_CAPTURE_FLIGHTS,
+  ZULRAH_CAPTURE_FORM_CHANGES,
+  ZULRAH_CAPTURE_JAD_PROJECTILES,
   ZULRAH_CAPTURE_OPENING,
+  ZULRAH_CAPTURE_PHASE_ATTACKS,
+  ZULRAH_CAPTURE_PROJECTILES,
   ZULRAH_CAPTURE_SIGHT,
   ZULRAH_CAPTURE_SIGHT_GIVE_UP,
   ZULRAH_CAPTURE_SIGHT_RESUME,
   ZULRAH_CAPTURE_SNAKELING_DEATHS,
+  ZULRAH_CAPTURE_SNAKELING_FACING,
+  ZULRAH_CAPTURE_SNAKELING_ORBS,
   ZULRAH_CAPTURE_SNAKELING_SEQUENCES,
+  ZULRAH_CAPTURE_SPOTS,
+  ZULRAH_CAPTURE_TAIL_SIDES,
+  ZULRAH_CAPTURE_TAIL_SLAMS,
   ZULRAH_CAPTURE_TAIL_STUN,
+  ZULRAH_CAPTURE_TAILS,
 } from './fixtures/zulrahCapture';
 
 type Run = {
@@ -418,7 +438,8 @@ describe('Zulrah magma tail', () => {
     const run = startRun(5, { infiniteHealth: false, zulrahClouds: false });
     const pending = runToStare(run);
     expect(pending.target).toEqual(ZULRAH_PLAYER_START);
-    expect(pending.landTick - run.world.tick).toBe(ZULRAH_TAIL.stareTicks);
+    // The start tile is in Zulrah's center column: TAIL_LEFT (simulator policy).
+    expect(pending.landTick - run.world.tick).toBe(ZULRAH_TAIL.stareTicks.tailLeft);
   });
 
   it('hits a player who stays for 20-30 and stuns them', () => {
@@ -593,7 +614,62 @@ describe('Zulrah magma tail', () => {
       if (zulrah.combat.lastAttackTick === run.world.tick) stares.push(run.world.tick);
     }
     expect(stares).toHaveLength(2);
-    expect(stares[1] - stares[0]).toBe(ZULRAH_TAIL.stareTicks + ZULRAH_TAIL.recoveryTicks);
+    expect(stares[1] - stares[0]).toBe(ZULRAH_TAIL.stareTicks.tailLeft + ZULRAH_TAIL.recoveryTicks);
+  });
+
+  it.each(
+    ZULRAH_CAPTURE_TAIL_SIDES.filter((t) => !t.exception).map(
+      (t) => [t.capture, t.stare, t.side, `${t.player}`, t] as const,
+    ),
+  )('whips from the captured side: capture %i t%i, %s, the player at (%s)', (_capture, _stare, _side, _player, {
+    side,
+    player,
+  }) => {
+    expect(zulrahTailSide({ position: ZULRAH_SPOTS.middle, size: 5 }, player)).toBe(side);
+  });
+
+  it('whips the other side at the captured exceptions (capture 1 t244, capture 3 t885, capture 4 t2058 and t2250) only in the capture', () => {
+    const exceptions = ZULRAH_CAPTURE_TAIL_SIDES.filter((t) => t.exception);
+    expect(exceptions.map((t) => [t.capture, t.stare])).toEqual([
+      [1, 244],
+      [3, 885],
+      [4, 2058],
+      [4, 2250],
+    ]);
+    for (const { side, player } of exceptions)
+      expect(zulrahTailSide({ position: ZULRAH_SPOTS.middle, size: 5 }, player)).not.toBe(side);
+  });
+
+  it('fixture: every captured slam hit the player exactly when within one tile of the whip (OBSERVATION, not modeled)', () => {
+    expect(ZULRAH_CAPTURE_TAIL_SLAMS).toHaveLength(18);
+    for (const { whip, player, hit } of ZULRAH_CAPTURE_TAIL_SLAMS)
+      expect(Math.max(Math.abs(whip[0] - player[0]), Math.abs(whip[1] - player[1])) <= 1).toBe(hit);
+  });
+
+  it.each([
+    ['west', [22, 62], 'tailLeft'],
+    ['east', [33, 62], 'tailRight'],
+    ['in the center column (policy)', [28, 61], 'tailLeft'],
+  ] as const)('stares %s of Zulrah with %s and its stare length', (_where, tile, side) => {
+    const run = startRun(5, { zulrahClouds: false });
+    runToPhase(run, MAGMA_PHASE);
+    const zulrah = run.zulrah();
+    if (!zulrah) throw new Error('No Zulrah');
+    let pending = getZulrahState(zulrah)?.pendingTail ?? null;
+    let clip: string | undefined;
+    for (let i = 0; i < 40 && !pending; i++) {
+      run.engine.advanceTick([tile[0], tile[1]]);
+      pending = getZulrahState(zulrah)?.pendingTail ?? null;
+      clip = run.engine
+        .getLastTickEvents()
+        .filter(isInfernoVisualEvent)
+        .flatMap((v) => v.animations.filter((a) => a.actorId === zulrah.id).map((a) => a.clipId))
+        .find((id) => id === 'tailLeft' || id === 'tailRight');
+    }
+    if (!pending) throw new Error('Magma never stared');
+    expect(run.world.getPlayer()?.position).toEqual(tile);
+    expect(clip).toBe(side);
+    expect(pending.landTick - run.world.tick).toBe(ZULRAH_TAIL.stareTicks[side]);
   });
 
   it('counts the 3x3 around the target as the tail area', () => {
@@ -1220,6 +1296,366 @@ describe('Zulrah venom', () => {
     for (let i = 0; i < 3; i++) run.tick();
     expect(poisonVarp(run)).toBeLessThan(0);
     expect(run.world.getPlayer()?.inventory[0]?.id).toBe(12915); // Anti-venom+(3)
+  });
+});
+
+describe.each([
+  { rotation: 3, capture: 'zulrah-packet-data-1.txt', jad: ZULRAH_CAPTURE_JAD_PROJECTILES },
+  { rotation: 2, capture: 'zulrah-packet-data-2.txt', jad: ZULRAH_CAPTURE_2_JAD_PROJECTILES },
+  { rotation: 4, capture: 'zulrah-packet-data-3.txt', jad: ZULRAH_CAPTURE_3_JAD_PROJECTILES },
+] as const)('Zulrah rotation $rotation against private gameplay capture $capture', ({ rotation, jad }) => {
+  type Action = 'attack' | 'cloud' | 'snakeling';
+  type TickRecord = {
+    readonly tick: number;
+    readonly phaseInRotation: number;
+    readonly clips: readonly string[];
+    readonly projectiles: readonly NpcProjectileCue[];
+    readonly action: Action | null;
+    readonly attackStyle: string;
+    readonly emerged: boolean;
+    readonly tailStart: 'tailLeft' | 'tailRight' | null;
+    readonly tailHit: boolean;
+    readonly position: Coordinate;
+    readonly actionFacing: number | undefined;
+    readonly targetId: string | null;
+    readonly newClouds: readonly { center: readonly [number, number]; landTick: number; expireTick: number }[];
+    readonly newSnakelings: readonly { tile: Coordinate; spawnTick: number }[];
+  };
+
+  const ZULRAH_PROJECTILE_IDS = new Set<number>(Object.values(ZULRAH_CAPTURE_PROJECTILES));
+
+  function actionOf(projectiles: readonly NpcProjectileCue[]): Action | null {
+    if (projectiles.length === 0) return null;
+    if (projectiles.some((p) => p.target.kind === 'actor')) return 'attack';
+    return projectiles.length === ZULRAH_CLOUD.perBarrage ? 'cloud' : 'snakeling';
+  }
+
+  /** A run pinned to the capture's rotation, recorded tick by tick. */
+  function recordRotation(ticks = 760): TickRecord[] {
+    const run = startRun(11, { zulrahRotation: String(rotation) as '2' | '3' | '4' });
+    const zulrah = run.zulrah();
+    if (!zulrah) throw new Error('No Zulrah');
+    const seenClouds = new Set<string>();
+    const seenSnakelings = new Set<string>();
+    const records: TickRecord[] = [];
+    for (let i = 0; i < ticks; i++) {
+      const hadTail = getZulrahState(zulrah)?.pendingTail ?? null;
+      run.tick();
+      const tick = run.world.tick;
+      const visuals = run.engine.getLastTickEvents().filter(isInfernoVisualEvent);
+      const projectiles = visuals.flatMap((v) => v.projectiles.filter((p) => ZULRAH_PROJECTILE_IDS.has(p.spotAnimId)));
+      const snapshot = run.engine.getEncounterSnapshot();
+      const clouds = snapshot.kind === 'zulrah' ? snapshot.visuals.clouds : [];
+      const newClouds = clouds.filter((cloud) => {
+        const key = `${cloud.center}:${cloud.landTick}`;
+        if (seenClouds.has(key)) return false;
+        seenClouds.add(key);
+        return true;
+      });
+      const newSnakelings = run.world
+        .getNpcs()
+        .filter((npc) => snakelingDefinition.isActor(npc) && !seenSnakelings.has(npc.id))
+        .map((npc) => {
+          seenSnakelings.add(npc.id);
+          return { tile: [npc.position[0], npc.position[1]] as Coordinate, spawnTick: npc.spawnTick ?? -1 };
+        });
+      const clips = visuals.flatMap((v) =>
+        v.animations.filter((a) => a.actorId === ZULRAH_ACTOR_ID).map((a) => a.clipId),
+      );
+      records.push({
+        tick,
+        phaseInRotation: stateOf(run).phaseInRotation,
+        clips,
+        projectiles,
+        action: actionOf(projectiles),
+        attackStyle: zulrah.combat.attackStyle,
+        emerged: zulrah.spawnTick === tick && tick > 1,
+        tailStart: clips.includes('tailLeft') ? 'tailLeft' : clips.includes('tailRight') ? 'tailRight' : null,
+        tailHit: hadTail !== null && getZulrahState(zulrah)?.pendingTail === null,
+        position: [zulrah.position[0], zulrah.position[1]],
+        actionFacing: zulrah.actionFacing,
+        targetId: zulrah.combat.targetId,
+        newClouds,
+        newSnakelings,
+      });
+    }
+    return records;
+  }
+
+  let records: TickRecord[] = [];
+  let sinks: number[] = [];
+  let emerges: number[] = [];
+  beforeAll(() => {
+    records = recordRotation();
+    sinks = records.filter((r) => r.clips.includes('dive')).map((r) => r.tick);
+    emerges = records.filter((r) => r.emerged).map((r) => r.tick);
+  });
+  const at = (tick: number) => records.find((r) => r.tick === tick);
+  const nextSinkAfter = (tick: number) => sinks.find((sink) => sink > tick);
+  /** The one value every capture case agrees on. */
+  const single = (values: readonly number[]) => {
+    const unique = [...new Set(values)];
+    if (unique.length !== 1) throw new Error(`Capture cases disagree: ${values}`);
+    return unique[0] as number;
+  };
+  /** The most common capture offset, for facts with an outlier. */
+  const usual = (values: readonly number[]) => {
+    const counts = new Map<number, number>();
+    for (const value of values) counts.set(value, (counts.get(value) ?? 0) + 1);
+    return [...counts].sort((a, b) => b[1] - a[1])[0]?.[0] as number;
+  };
+  const SINK_TO_EMERGE = single(ZULRAH_CAPTURE_FORM_CHANGES.map((c) => c.emerge - c.sink));
+  const EMERGE_TO_FIRST = usual(
+    ZULRAH_CAPTURE_FORM_CHANGES.flatMap((c) => (c.firstAction === null ? [] : [c.firstAction - c.emerge])),
+  );
+  const DEFERRED_SNAKELING = single(
+    ZULRAH_CAPTURE_DEFERRED.filter((d) => d.kind === 'snakeling').map((d) => d.appears - d.launch),
+  );
+  const DEFERRED_CLOUD = single(
+    ZULRAH_CAPTURE_DEFERRED.filter((d) => d.kind === 'cloud').map((d) => d.appears - d.launch),
+  );
+  const SNAKELING_LANDS = single(ZULRAH_CAPTURE_SNAKELING_ORBS.map((orb) => orb.lands - orb.launch));
+
+  it('runs through every phase of the rotation and into the next', () => {
+    expect(emerges.length).toBeGreaterThanOrEqual(ZULRAH_ROTATIONS[rotation].length);
+  });
+
+  it('slams on the captured tick for each side, and stares again the captured ticks after a slam', () => {
+    const stareTicks = (side: 'tailLeft' | 'tailRight') =>
+      single(ZULRAH_CAPTURE_TAILS.filter((t) => t.side === side).map((t) => t.lands - t.stare));
+    const restartTicks = single(
+      ZULRAH_CAPTURE_TAILS.flatMap((tail, i) => {
+        const next = ZULRAH_CAPTURE_TAILS[i + 1];
+        return i % 2 === 0 && next ? [next.stare - tail.lands] : [];
+      }),
+    );
+    const starts = records.filter((r) => r.tailStart !== null);
+    expect(starts.length).toBeGreaterThanOrEqual(2);
+    let restarts = 0;
+    for (const start of starts) {
+      const slam = records.find((r) => r.tick > start.tick && r.tailHit);
+      if (!start.tailStart || !slam) throw new Error(`No slam after the stare at t${start.tick}`);
+      expect(slam.tick - start.tick, `${start.tailStart} t${start.tick}`).toBe(stareTicks(start.tailStart));
+      const next = starts.find((r) => r.tick > start.tick);
+      if (next && next.tick < (nextSinkAfter(start.tick) ?? Number.POSITIVE_INFINITY)) {
+        restarts += 1;
+        expect(next.tick - slam.tick, `stare after t${slam.tick}`).toBe(restartTicks);
+      }
+    }
+    expect(restarts).toBeGreaterThan(0);
+  });
+
+  it('launches the captured projectile for each kind of turn, on the captured flight', () => {
+    expect([ZULRAH_RANGED_SPOTANIM_ID, ZULRAH_MAGIC_SPOTANIM_ID]).toEqual([
+      ZULRAH_CAPTURE_PROJECTILES.ranged,
+      ZULRAH_CAPTURE_PROJECTILES.magic,
+    ]);
+    expect([ZULRAH_CLOUD_ORB_SPOTANIM_ID, ZULRAH_SNAKELING_ORB_SPOTANIM_ID]).toEqual([
+      ZULRAH_CAPTURE_PROJECTILES.cloudOrb,
+      ZULRAH_CAPTURE_PROJECTILES.snakelingOrb,
+    ]);
+    const flight = (p: NpcProjectileCue) => ({ startCycle: p.startDelayCycles, endCycle: p.endDelayCycles });
+    const seen = new Set<Action>();
+    for (const record of records) {
+      if (record.action === null) continue;
+      seen.add(record.action);
+      switch (record.action) {
+        case 'attack':
+          for (const p of record.projectiles) {
+            expect(p.spotAnimId, `t${record.tick}`).toBe(
+              record.attackStyle === 'magic' ? ZULRAH_CAPTURE_PROJECTILES.magic : ZULRAH_CAPTURE_PROJECTILES.ranged,
+            );
+            expect(flight(p)).toEqual(ZULRAH_CAPTURE_FLIGHTS.attack);
+          }
+          break;
+        case 'cloud':
+          expect(record.projectiles.map((p) => p.spotAnimId)).toEqual(
+            [1, 2].map(() => ZULRAH_CAPTURE_PROJECTILES.cloudOrb),
+          );
+          expect(record.projectiles.map(flight)).toEqual(ZULRAH_CAPTURE_FLIGHTS.cloudOrbs);
+          break;
+        case 'snakeling':
+          expect(record.projectiles.map((p) => p.spotAnimId)).toEqual([ZULRAH_CAPTURE_PROJECTILES.snakelingOrb]);
+          expect(record.projectiles.map(flight)).toEqual([ZULRAH_CAPTURE_FLIGHTS.snakelingOrb]);
+          break;
+      }
+    }
+    expect(seen).toEqual(new Set(['attack', 'cloud', 'snakeling']));
+  });
+
+  it('lands an attack on the player 3 ticks after it, as in the capture', () => {
+    const { launch, hit } = ZULRAH_CAPTURE_ATTACK_HIT;
+    expect(npcHitDelayFromEndTime(ZULRAH_CAPTURE_FLIGHTS.attack.endCycle)).toBe(hit - launch);
+  });
+
+  it('emerges the captured ticks after it sinks, and first acts the captured ticks after that', () => {
+    expect(sinks.length).toBeGreaterThanOrEqual(11);
+    // An emerge too near the recording's end to see its first turn is left out.
+    for (const emerge of emerges.filter((e) => e < (records.at(-1)?.tick ?? 0) - 10)) {
+      const sink = [...sinks].reverse().find((s) => s < emerge);
+      expect(emerge - (sink ?? -1), `emerge t${emerge}`).toBe(SINK_TO_EMERGE);
+      const first = records.find((r) => r.tick > emerge && r.clips.some((clip) => clip !== 'dive'));
+      expect((first?.tick ?? -1) - emerge, `emerge t${emerge}`).toBe(EMERGE_TO_FIRST);
+    }
+  });
+
+  it('dives on the captured tick after each kind of last turn', () => {
+    const expected = new Map(
+      (['attack', 'cloud', 'snakeling', 'tailHit'] as const).map((kind) => [
+        kind,
+        single(ZULRAH_CAPTURE_DIVES.filter((d) => d.after === kind).map((d) => d.dive - d.tick)),
+      ]),
+    );
+    const kinds = new Set<string>();
+    for (const sink of sinks) {
+      const last = [...records].reverse().find((r) => r.tick < sink && (r.action !== null || r.tailHit));
+      if (!last) throw new Error(`Nothing before the dive at t${sink}`);
+      const kind = last.tailHit ? 'tailHit' : (last.action as Action);
+      kinds.add(kind);
+      expect(sink - last.tick, `${kind} t${last.tick}, dive t${sink}`).toBe(expected.get(kind));
+    }
+    // A tail phase ends on its last slam unless specials follow it (rotation 4's has 2 barrages after).
+    const tailEnds = ZULRAH_ROTATIONS[rotation].some((p) => p.mode === 'tail' && !p.after?.length);
+    expect(kinds).toEqual(new Set([...expected.keys()].filter((kind) => tailEnds || kind !== 'tailHit')));
+  });
+
+  it('puts Zulrah on the captured spot tiles', () => {
+    expect(ZULRAH_SPOTS).toEqual(ZULRAH_CAPTURE_SPOTS);
+    for (const change of ZULRAH_CAPTURE_FORM_CHANGES) expect(Object.values(ZULRAH_SPOTS)).toContainEqual(change.to);
+    for (const emerge of emerges) expect(Object.values(ZULRAH_SPOTS)).toContainEqual(at(emerge)?.position);
+  });
+
+  it('surfaces facing the captured tile, then faces the player, the first cloud or the orb tile as it acts', () => {
+    expect(ZULRAH_CAPTURE_CLOUD_BARRAGE.facing).toEqual([
+      ZULRAH_CAPTURE_CLOUD_BARRAGE.orbs[0].target[0] + ZULRAH_CLOUD.radius,
+      ZULRAH_CAPTURE_CLOUD_BARRAGE.orbs[0].target[1] + ZULRAH_CLOUD.radius,
+    ]);
+    expect(ZULRAH_CAPTURE_SNAKELING_FACING.facing).toEqual(ZULRAH_CAPTURE_SNAKELING_FACING.target);
+    const footprint = (record: TickRecord) => ({ position: record.position, size: 5 });
+    for (const emerge of emerges) {
+      const record = at(emerge);
+      if (!record) throw new Error(`No record at t${emerge}`);
+      expect(record.actionFacing, `emerge t${emerge}`).toBe(
+        bearing(footprint(record), ZULRAH_CAPTURE_EMERGE_FACING_TILE),
+      );
+    }
+    for (const record of records) {
+      if (record.action === 'attack') {
+        expect(record.actionFacing).toBeUndefined();
+        expect(record.targetId).toBe('player');
+      } else if (record.action === 'cloud') {
+        const [orb] = record.projectiles;
+        const tile = orb?.target.position ?? [0, 0];
+        expect(record.actionFacing).toBe(
+          bearing(footprint(record), [tile[0] + ZULRAH_CLOUD.radius, tile[1] + ZULRAH_CLOUD.radius]),
+        );
+      } else if (record.action === 'snakeling') {
+        expect(record.actionFacing).toBe(bearing(footprint(record), record.projectiles[0]?.target.position ?? []));
+      }
+    }
+  });
+
+  it('never plays the attack animation without a projectile, so no bob after a form change', () => {
+    const attackClips = records.filter((r) => r.clips.includes('attack'));
+    expect(attackClips.length).toBeGreaterThan(0);
+    for (const record of attackClips) expect(record.projectiles.length, `t${record.tick}`).toBeGreaterThan(0);
+  });
+
+  it('lands each cloud on its orb tick, at the orb target, for 30 ticks; one landing on the dive waits', () => {
+    const barrage = ZULRAH_CAPTURE_CLOUD_BARRAGE;
+    const landOffsets = barrage.orbs.map((orb) => orb.lands - barrage.launch);
+    const lifetime = single(barrage.orbs.map((orb) => orb.removed - orb.lands));
+    let deferred = 0;
+    for (const record of records.filter((r) => r.action === 'cloud')) {
+      const clouds = record.newClouds;
+      expect(clouds).toHaveLength(ZULRAH_CLOUD.perBarrage);
+      clouds.forEach((cloud, index) => {
+        const orbTarget = record.projectiles[index]?.target.position;
+        expect(orbTarget).toEqual([cloud.center[0] - ZULRAH_CLOUD.radius, cloud.center[1] - ZULRAH_CLOUD.radius]);
+        const onTime = record.tick + (landOffsets[index] ?? -1);
+        if (onTime === nextSinkAfter(record.tick)) {
+          deferred += 1;
+          expect(cloud.landTick, `deferred t${record.tick}`).toBe(record.tick + DEFERRED_CLOUD);
+        } else {
+          expect(cloud.landTick, `t${record.tick} orb ${index}`).toBe(onTime);
+        }
+        expect(cloud.expireTick - cloud.landTick).toBe(lifetime);
+      });
+    }
+    expect(deferred).toBeGreaterThan(0);
+  });
+
+  it('lands each snakeling on its orb tile the captured ticks later; one landing on the dive waits', () => {
+    let onTime = 0;
+    let deferred = 0;
+    const spawned = records.flatMap((r) => r.newSnakelings);
+    for (const record of records.filter((r) => r.action === 'snakeling')) {
+      const tile = record.projectiles[0]?.target.position;
+      const lands = record.tick + SNAKELING_LANDS;
+      const expectedTick = lands === nextSinkAfter(record.tick) ? record.tick + DEFERRED_SNAKELING : lands;
+      if (expectedTick === lands) onTime += 1;
+      else deferred += 1;
+      const snakeling = spawned.find(
+        (s) => s.spawnTick === expectedTick && s.tile[0] === tile?.[0] && s.tile[1] === tile?.[1],
+      );
+      expect(snakeling, `orb t${record.tick} to ${tile}`).toBeDefined();
+    }
+    expect(onTime).toBeGreaterThan(0);
+    expect(deferred).toBeGreaterThan(0);
+    // The deferred effect comes on the next form's first turn.
+    for (const d of ZULRAH_CAPTURE_DEFERRED) {
+      const change = ZULRAH_CAPTURE_FORM_CHANGES.find((c) => c.sink === d.dive);
+      expect(d.appears - (change?.emerge ?? 0)).toBe(EMERGE_TO_FIRST);
+    }
+  });
+
+  it('spits the captured cloud sequence in each captured phase, every time the phase comes round', () => {
+    const captured = ZULRAH_CAPTURE_CLOUD_SEQUENCES.filter((s) => s.rotation === rotation && s.index > 0);
+    expect(captured.length).toBeGreaterThan(0);
+    for (const { index, barrages, partial } of captured) {
+      const spat = records
+        .filter((r) => r.phaseInRotation === index + 1 && r.action === 'cloud')
+        .map((r) => r.projectiles.map((p) => p.target.position));
+      expect(spat.length, `phase ${index}`).toBeGreaterThanOrEqual(barrages.length);
+      if (partial) {
+        expect(spat.slice(0, barrages.length), `phase ${index}`).toEqual(barrages);
+        continue;
+      }
+      // Phases that come round again in the next rotation repeat it.
+      for (let i = 0; i < spat.length; i++)
+        expect(spat[i], `phase ${index} barrage ${i}`).toEqual(barrages[i % barrages.length]);
+    }
+  });
+
+  it('spits the captured snakeling orbs in each captured phase, every time the phase comes round', () => {
+    const captured = ZULRAH_CAPTURE_SNAKELING_SEQUENCES.filter((s) => s.rotation === rotation && !s.partial);
+    expect(captured.length).toBeGreaterThan(0);
+    for (const { index, sites } of captured) {
+      const spat = records
+        .filter((r) => r.phaseInRotation === index + 1 && r.action === 'snakeling')
+        .map((r) => r.projectiles[0]?.target.position);
+      expect(spat.length, `phase ${index}`).toBeGreaterThanOrEqual(sites.length);
+      for (let i = 0; i < spat.length; i++) expect(spat[i], `phase ${index} orb ${i}`).toEqual(sites[i % sites.length]);
+    }
+  });
+
+  it("makes each captured phase's attack count, the outlier aside", () => {
+    const captured = ZULRAH_CAPTURE_PHASE_ATTACKS.filter((p) => p.rotation === rotation && !p.outlier);
+    for (const { index, launches } of captured) {
+      expect(ZULRAH_ROTATIONS[rotation][index]?.attacks).toBe(launches.length);
+      const made = records.filter((r) => r.phaseInRotation === index + 1 && r.action === 'attack');
+      expect(made.length, `phase ${index}`).toBeGreaterThanOrEqual(launches.length);
+      // Every round of the phase makes the full count (the recording may end mid-round).
+      expect(made.length % launches.length, `phase ${index}`).toBe(0);
+    }
+  });
+
+  it('opens the jad phase on the captured style and alternates, as in the capture', () => {
+    const jadPhase = ZULRAH_ROTATIONS[rotation].findIndex((phase) => phase.mode === 'jad') + 1;
+    const ids = records
+      .filter((r) => r.phaseInRotation === jadPhase && r.action === 'attack')
+      .map((r) => r.projectiles[0]?.spotAnimId);
+    expect(ids.slice(0, jad.length)).toEqual(jad);
   });
 });
 

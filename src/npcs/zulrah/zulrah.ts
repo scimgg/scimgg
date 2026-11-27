@@ -61,7 +61,10 @@ export type ZulrahActorState = {
   actions: ZulrahAction[];
   /** Ranged/magic attacks and tails made, for the jad alternation. */
   attacksMade: number;
-  /** Tick the last turn's effect lands (a hit, a tail, a cloud); the encounter waits for it before diving. */
+  /**
+   * Tick the last turn's effect lands (a hit, a cloud, a snakeling), or `ZULRAH_TAIL.diveTicks` after a
+   * slam lands; the encounter waits for it before diving.
+   */
   lastImpactTick: TickNumber | null;
   /** The tail in progress: the tile it locked when the stare began, and the tick it lands. */
   pendingTail: { readonly target: Coordinate; readonly landTick: TickNumber } | null;
@@ -318,28 +321,46 @@ function startTail(
   context: NpcDefinitionContext,
   player: PlayerActor,
 ): void {
-  const landTick = context.tick + ZULRAH_TAIL.stareTicks;
+  state.attacksMade += 1;
+  // The side sets the stare's length.
+  const side = zulrahTailSide(actor, player.position);
+  const stareTicks = ZULRAH_TAIL.stareTicks[side];
+  const landTick = context.tick + stareTicks;
   state.pendingTail = { target: [player.position[0], player.position[1]], landTick };
   // Zulrah stares at the locked tile, not at the player: it holds this bearing until the slam.
   actor.actionFacing = facingToward(actor, state.pendingTail.target);
-  state.attacksMade += 1;
-  state.lastImpactTick = landTick;
+  state.lastImpactTick = landTick + ZULRAH_TAIL.diveTicks;
   actor.combat.lastAttackTick = context.tick;
   // Holds the clock until the tail lands; the landing reschedules the next stare.
-  scheduleNpcAction(actor.combat, context.tick, ZULRAH_TAIL.stareTicks);
+  scheduleNpcAction(actor.combat, context.tick, stareTicks);
   if (config.attacksEnabled()) {
     // Tracks the player once the slam lands; the stare bearing above wins until then.
     actor.combat.targetId = 'player';
     emitInfernoVisual(context.tickEvents, {
-      // Which side the game whips from is not sourced: simulator policy alternates, left first
-      // (docs/encounters/zulrah-open-questions.md).
-      animations: [
-        { actorId: actor.id, clipId: state.attacksMade % 2 === 1 ? 'tailLeft' : 'tailRight', delayCycles: 0 },
-      ],
+      animations: [{ actorId: actor.id, clipId: side, delayCycles: 0 }],
       projectiles: [],
       graphics: [],
     });
   }
+}
+
+/**
+ * The side the tail whips from, by where the player stands as the stare starts (its tile at the start
+ * of the tick, since Zulrah's turn comes before the player moves): west of Zulrah's center column,
+ * TAIL_LEFT; east of it, TAIL_RIGHT. INFERENCE from private gameplay captures, 14 of 18 stares
+ * (zulrah-packet-data-1.txt t236, t535, t543 and zulrah-packet-data-2.txt t3105, t3113 left, the player
+ * west; zulrah-packet-data-2.txt t3003, t3010, t3242, t3249, zulrah-packet-data-3.txt t878 and
+ * zulrah-packet-data-4.txt t2066, t2187, t2194, t2243 right, the player east). The exceptions:
+ * zulrah-packet-data-1.txt t244 whipped right at a player just knocked back west to (22, 68);
+ * zulrah-packet-data-3.txt t885 left at a player on (32, 62); zulrah-packet-data-4.txt t2058 left at a
+ * player on (29, 62), which got right at t2187, and t2250 left at a player on (32, 69).
+ * Simulator policy: a player in the center column gets TAIL_LEFT.
+ */
+export function zulrahTailSide(
+  zulrah: Pick<NpcActor, 'position' | 'size'>,
+  player: Coordinate,
+): 'tailLeft' | 'tailRight' {
+  return player[0] > zulrah.position[0] + Math.floor(zulrah.size / 2) ? 'tailRight' : 'tailLeft';
 }
 
 /** Spits a barrage: the encounter places the clouds, this sends an orb to each. */

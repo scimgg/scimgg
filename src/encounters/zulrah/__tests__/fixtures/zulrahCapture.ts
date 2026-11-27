@@ -276,6 +276,67 @@ export const ZULRAH_CAPTURE_TAIL_STUN = {
 } as const;
 
 /**
+ * Tail stares (TAIL_LEFT 5806, TAIL_RIGHT 5807) and their slams, by the whip sound (2720), a miss's
+ * included (t3111; capture 3's two, the player on a safe tile). Each pair is one magma phase's two
+ * tails; the second stare starts 2 ticks after the first slam.
+ */
+export const ZULRAH_CAPTURE_TAILS: readonly {
+  readonly side: 'tailLeft' | 'tailRight';
+  readonly stare: number;
+  readonly lands: number;
+}[] = [
+  { side: 'tailLeft', stare: 236, lands: 242 },
+  { side: 'tailRight', stare: 244, lands: 249 },
+  { side: 'tailRight', stare: 3003, lands: 3008 },
+  { side: 'tailRight', stare: 3010, lands: 3015 },
+  { side: 'tailLeft', stare: 3105, lands: 3111 },
+  { side: 'tailLeft', stare: 3113, lands: 3119 },
+  { side: 'tailRight', stare: 3242, lands: 3247 },
+  { side: 'tailRight', stare: 3249, lands: 3254 },
+  { side: 'tailRight', stare: 878, lands: 883 },
+  { side: 'tailLeft', stare: 885, lands: 891 },
+  { side: 'tailLeft', stare: 2058, lands: 2064 },
+  { side: 'tailRight', stare: 2066, lands: 2071 },
+  { side: 'tailRight', stare: 2187, lands: 2192 },
+  { side: 'tailRight', stare: 2194, lands: 2199 },
+  { side: 'tailRight', stare: 2243, lands: 2248 },
+  { side: 'tailLeft', stare: 2250, lands: 2256 },
+];
+
+/**
+ * Every captured slam, by the whip sound (2720): its tile, the player's start-of-tick tile on the slam
+ * tick, and whether the player was hit (stun graphic and splat). OBSERVATION, not modeled: in all 18,
+ * the player was hit exactly when standing within one tile of the whip tile, which is not always near
+ * the tile the player stood on as the stare began (capture 3's two, the player on (32, 62)).
+ */
+export const ZULRAH_CAPTURE_TAIL_SLAMS: readonly {
+  readonly capture: 1 | 2 | 3 | 4;
+  readonly lands: number;
+  readonly whip: Coordinate;
+  readonly player: Coordinate;
+  readonly hit: boolean;
+}[] = [
+  { capture: 1, lands: 242, whip: [24, 69], player: [24, 68], hit: true },
+  { capture: 1, lands: 249, whip: [23, 68], player: [22, 68], hit: true },
+  { capture: 1, lands: 541, whip: [23, 66], player: [24, 70], hit: false },
+  { capture: 1, lands: 549, whip: [24, 69], player: [23, 68], hit: true },
+  { capture: 2, lands: 3008, whip: [32, 69], player: [32, 70], hit: true },
+  { capture: 2, lands: 3015, whip: [32, 69], player: [32, 70], hit: true },
+  { capture: 2, lands: 3111, whip: [23, 66], player: [24, 70], hit: false },
+  { capture: 2, lands: 3119, whip: [24, 69], player: [24, 68], hit: true },
+  { capture: 2, lands: 3247, whip: [32, 69], player: [32, 70], hit: true },
+  { capture: 2, lands: 3254, whip: [32, 69], player: [32, 70], hit: true },
+  { capture: 3, lands: 883, whip: [27, 61], player: [32, 62], hit: false },
+  { capture: 3, lands: 891, whip: [29, 61], player: [32, 62], hit: false },
+  { capture: 4, lands: 2064, whip: [29, 61], player: [30, 60], hit: true },
+  { capture: 4, lands: 2071, whip: [27, 61], player: [30, 60], hit: false },
+  { capture: 4, lands: 2192, whip: [27, 61], player: [32, 69], hit: false },
+  { capture: 4, lands: 2199, whip: [32, 69], player: [34, 69], hit: false },
+  { capture: 4, lands: 2248, whip: [32, 69], player: [34, 69], hit: false },
+  { capture: 4, lands: 2256, whip: [32, 70], player: [32, 69], hit: true },
+];
+
+/**
  * The opening (capture 2): Zulrah is added at the middle spot on SNAKEBOSS_SPAWN (5071) on t2973,
  * facing south; the player's attack click on t2977 casts at once and hits on t2981; Zulrah keeps facing
  * south until its first action, a barrage, on t2984.
@@ -316,6 +377,52 @@ export const ZULRAH_CAPTURE_SNAKELING_DEATHS: readonly {
 
 /** A snakeling killed by recoil (capture 2): the hit on t3197, the death animation t3198, removed t3200. */
 export const ZULRAH_CAPTURE_SNAKELING_KILL = { hit: 3197, death: 3198, removed: 3200 } as const;
+
+/** Rotation 3's jad phase (capture 1, t395-t422): 10 attacks alternating, opening on magic. */
+export const ZULRAH_CAPTURE_JAD_PROJECTILES: readonly number[] = [
+  1046, 1044, 1046, 1044, 1046, 1044, 1046, 1044, 1046, 1044,
+];
+
+/**
+ * Rotation 2's jad phase (capture 2, t3193-t3220; capture 4, t2138-t2165): 10 attacks alternating,
+ * opening on ranged.
+ */
+export const ZULRAH_CAPTURE_2_JAD_PROJECTILES: readonly number[] = [
+  1044, 1046, 1044, 1046, 1044, 1046, 1044, 1046, 1044, 1046,
+];
+
+/**
+ * Attack turns by phase (`index` into `ZULRAH_ROTATIONS`). Rotation 2's blue south (index 4) made all 5
+ * of the table's attacks in capture 4, where capture 2's made 2 (t3074, t3077) before its specials, with
+ * the player in sight at t3080 and t3083 (`outlier`, an open question).
+ */
+export const ZULRAH_CAPTURE_PHASE_ATTACKS: readonly {
+  readonly capture: 2 | 4;
+  readonly rotation: 2;
+  readonly index: number;
+  readonly launches: readonly number[];
+  readonly styles: readonly ('range' | 'magic')[];
+  readonly outlier?: true;
+}[] = [
+  { capture: 2, rotation: 2, index: 4, launches: [3074, 3077], styles: ['magic', 'range'], outlier: true },
+  {
+    capture: 4,
+    rotation: 2,
+    index: 4,
+    launches: [2018, 2021, 2024, 2027, 2030],
+    styles: ['range', 'magic', 'magic', 'magic', 'range'],
+  },
+  {
+    capture: 4,
+    rotation: 2,
+    index: 7,
+    launches: [2101, 2104, 2107, 2110, 2113],
+    styles: ['range', 'magic', 'magic', 'range', 'magic'],
+  },
+];
+
+/** Rotation 4's jad phase (capture 3, t1034-t1055): 8 attacks alternating, opening on magic. */
+export const ZULRAH_CAPTURE_3_JAD_PROJECTILES: readonly number[] = [1046, 1044, 1046, 1044, 1046, 1044, 1046, 1044];
 
 export type ZulrahCaptureSightTile = {
   readonly spot: 'middle' | 'east' | 'south';
@@ -753,6 +860,42 @@ export const ZULRAH_CAPTURE_CLOUD_SITES: readonly Coordinate[] = [
   [32, 63],
   [32, 66],
   [32, 69],
+];
+
+/**
+ * Every tail stare, with the player's tile at the start of the stare's tick, Zulrah at the middle spot
+ * (26, 65), and the tile Zulrah faces as it stares (OBSERVATION: a few fixed tiles, none the player's,
+ * always west (angle 512) or south to south-east (about 1820-1980), never north). The side follows the
+ * player's side of Zulrah's center column (x 28) in 14 of 18. The exceptions: capture 1 t244, the player
+ * just knocked back west (t242 to (22, 68)); capture 3 t885, on the safe tile (32, 62); capture 4 t2058
+ * and t2250. (29, 62) got TAIL_LEFT at t2058 and TAIL_RIGHT at t2187, Zulrah facing (32, 52) both times.
+ */
+export const ZULRAH_CAPTURE_TAIL_SIDES: readonly {
+  readonly capture: 1 | 2 | 3 | 4;
+  readonly stare: number;
+  readonly side: 'tailLeft' | 'tailRight';
+  readonly player: Coordinate;
+  readonly facing: Coordinate;
+  readonly exception?: true;
+}[] = [
+  { capture: 1, stare: 236, side: 'tailLeft', player: [24, 70], facing: [39, 48] },
+  { capture: 1, stare: 244, side: 'tailRight', player: [22, 68], facing: [16, 67], exception: true },
+  { capture: 1, stare: 535, side: 'tailLeft', player: [22, 68], facing: [16, 67] },
+  { capture: 1, stare: 543, side: 'tailLeft', player: [24, 70], facing: [39, 48] },
+  { capture: 2, stare: 3003, side: 'tailRight', player: [32, 70], facing: [38, 55] },
+  { capture: 2, stare: 3010, side: 'tailRight', player: [32, 70], facing: [38, 55] },
+  { capture: 2, stare: 3105, side: 'tailLeft', player: [24, 66], facing: [16, 67] },
+  { capture: 2, stare: 3113, side: 'tailLeft', player: [24, 70], facing: [32, 48] },
+  { capture: 2, stare: 3242, side: 'tailRight', player: [32, 70], facing: [38, 55] },
+  { capture: 2, stare: 3249, side: 'tailRight', player: [32, 70], facing: [38, 55] },
+  { capture: 3, stare: 878, side: 'tailRight', player: [32, 62], facing: [39, 51] },
+  { capture: 3, stare: 885, side: 'tailLeft', player: [32, 62], facing: [39, 51], exception: true },
+  { capture: 4, stare: 2058, side: 'tailLeft', player: [29, 62], facing: [32, 52], exception: true },
+  { capture: 4, stare: 2066, side: 'tailRight', player: [30, 60], facing: [32, 52] },
+  { capture: 4, stare: 2187, side: 'tailRight', player: [29, 62], facing: [32, 52] },
+  { capture: 4, stare: 2194, side: 'tailRight', player: [32, 70], facing: [39, 49] },
+  { capture: 4, stare: 2243, side: 'tailRight', player: [32, 69], facing: [39, 49] },
+  { capture: 4, stare: 2250, side: 'tailLeft', player: [32, 69], facing: [39, 49], exception: true },
 ];
 
 /**
