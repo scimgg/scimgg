@@ -278,3 +278,62 @@ describe('legacy Yama recording: continuous playback versus direct seek', () => 
     }
   });
 });
+
+describe("Yama's body on the NPC clock", () => {
+  const arena = getArenaConfig();
+  const unbounded = getArenaAllowUnboundedFallback();
+  const built: SceneCompositor[] = [];
+  afterEach(() => {
+    for (const scene of built.splice(0)) scene.dispose();
+    vi.restoreAllMocks();
+    setArenaConfig(arena, unbounded);
+  });
+
+  async function yamaScene() {
+    const scene = new YamaSceneCompositor();
+    scene.setEncounterRenderConfig(YAMA_ENCOUNTER_RENDER_CONFIG);
+    built.push(scene);
+    const { loader, animation } = syntheticNpcAssets((id) => (id === YAMA_NPC_ID ? 5 : 1));
+    await scene.loadNpc(loader, animation);
+    installSyntheticSpotAnims(scene, YAMA_ATTACK_PRELOAD_IDS);
+    return scene;
+  }
+
+  // Live play takes each frame's snapshot as it arrives: the cast's reservation on tick 10 plays the
+  // body 30 cycles later and the melee on tick 13 at once, on the displayed cycle whatever the wall
+  // clock does between frames, exactly as the replay and its seeks show it.
+  it('starts the live cast and melee bodies on the cycles replay shows them, whatever the frame time', async () => {
+    const frames = legacyYamaRecording().frames;
+    const scene = await yamaScene();
+    const now = vi.spyOn(performance, 'now').mockReturnValue(1000);
+    const live = (cycle: number) => {
+      const frame = frames[Math.min(frames.length - 1, Math.floor(cycle / 30))];
+      if (!frame) throw new RangeError(`No frame for cycle ${cycle}`);
+      // An uneven wall clock: long and short frames, none of them the displayed time.
+      now.mockReturnValue(1000 + cycle * 37 + (cycle % 7) * 90);
+      return observeScene(
+        scene,
+        scene.build(
+          {
+            speedMultiplier: 1,
+            interaction: { hoveredTile: null, targetTile: null },
+            options: SCENE_OPTIONS,
+            simulationState: frame.state,
+            events: frame.events,
+            interpolatedTick: cycle / 30,
+          },
+          IDENTITY_PROJECTION,
+          VIEWPORT,
+        ),
+      );
+    };
+    const idleSeqIds = new Set(
+      YAMA_ENCOUNTER_RENDER_CONFIG.preloadNpcTypes?.flatMap(({ idleSeqId }) => idleSeqId ?? []),
+    );
+
+    expect(activeWindows(live, 0, 480, idleSeqIds).clips).toEqual({
+      [`${PRIMARY_NPC_ACTOR_ID}:12144`]: [330, 389],
+      [`${PRIMARY_NPC_ACTOR_ID}:12146`]: [390, 399],
+    });
+  });
+});

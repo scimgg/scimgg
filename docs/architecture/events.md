@@ -28,7 +28,9 @@ Each cue's identity is its batch's `eventId`, its family and its ordinal, so bat
 order are part of the wire contract. A graphic stands on a tile's center, on a tracked actor's
 rendered center (its recorded position while the actor is not rendered), or rides an `attached`
 actor's rendered model, hidden while the actor is absent. The scene's `EncounterCuePlayer` plays
-batches live and restores them in replay from `ReplayEffectIndex`.
+batches live and restores them in replay from `ReplayEffectIndex`, in every scene, the common one
+included: an encounter emits the batch and declares the clips and effects it names in its render
+config, and needs no scene code to play it ([presenting an encounter](encounters.md#presenting-it)).
 
 `actor_presentations_removed` drops every drawn presentation of the listed NPC types, corpses
 included, before the frame's actors are synced (a practice command replacing a set). Plain

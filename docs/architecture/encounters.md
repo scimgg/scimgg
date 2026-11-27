@@ -260,6 +260,30 @@ spawn command (reset instead); reviving before the defeat is adjudicated is supp
 7. Test source-backed behavior, full-engine tick timing, NPC stage enrollment, reset/seed
    determinism, snapshot cloneability and manifest agreement.
 
+### Presenting it
+
+A new encounter needs no scene code of its own to animate, fly, place and replay its effects:
+
+1. **Emit** each visual transition that is a set of scheduled instructions as one `encounter_visual`
+   batch (`emitEncounterVisual`) where the mechanic decides it, with every per-occurrence fact it
+   needs (delays, targets, heights) recorded there, never recovered later from a landed frame. A
+   practice command that replaces a set of NPC types emits `actor_presentations_removed`. See
+   [Visual batches](events.md#visual-batches).
+2. **Declare** the assets in its `renderConfig.ts`: each NPC type with keyed `attackClips` (the
+   batch's `clipId`s) and every spot animation. The same declarations drive loading, replay
+   readiness, cache trimming and frame-sound extraction (`npx tsx scripts/extract-frame-sounds.ts`
+   for new clips; name new sound ids in `audio/soundNames.ts`).
+3. **Use the default scene builder**: no `sceneBuilder` in `presentationModules.ts`. The common
+   `SceneCompositor` plays the batches on one NPC clock, live and after any seek, from the shared
+   `ReplayEffectIndex`.
+4. **Override only real presentation differences** in a scene subclass: an opening camera or
+   cutscene, overlays, a graphic's draw style (`encounterGraphicStyle`). Persistent LOC hazards are a
+   snapshot plus a scene-object controller ([scene objects](scene-objects.md)); explicit event sounds
+   are local `audioRules.ts` registered in `presentationModules.ts`. No history reader, seek hook,
+   boss-name branch or import from another encounter. A scene presenting from its snapshot rather
+   than from batches (Yama) adds only its own `createEncounterReplayReader`, `encounterNpcTriggers`
+   and `restoreEncounterTimelines`.
+
 ## Adding or reusing an NPC
 
 - Import common services from core, never an encounter, its state or its config type.

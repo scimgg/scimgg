@@ -1,9 +1,10 @@
 # Rendering
 
 [`SceneCompositor`](../../src/render/scene/SceneCompositor.ts) orchestrates each frame and owns the
-shared renderers, animation clocks, event cursor and timeline-reset registry. Encounter compositors
-(`YamaSceneCompositor`, `InfernoSceneCompositor` for Zuk) extend it, add their controllers and
-route encounter events through `onEncounterEvents()`. Effect controllers live in
+shared renderers, the NPC clock, the encounter cue player, the event cursor and the timeline-reset
+registry. It is a complete encounter scene by itself; encounter compositors (`YamaSceneCompositor`,
+`InfernoSceneCompositor`, `ColosseumSceneCompositor`) extend it only for their own presentation and
+route their own semantic events through `onEncounterEvents()`. Effect controllers live in
 [`src/render/effects/controllers/`](../../src/render/effects/controllers/); encounter-owned animated
 LOCs go through [runtime scene objects](scene-objects.md); projectile kinematics are in
 [projectile motion](projectile-motion.md).
@@ -23,14 +24,14 @@ LOCs go through [runtime scene objects](scene-objects.md); projectile kinematics
 ## Spotanim playback and flight
 
 [`spotAnimPlayback.ts`](../../src/render/effects/spotAnimPlayback.ts) is the stateless playback path
-for Yama casts/impacts, player graphics, player projectile impacts and Inferno graphics. It schedules
+for Yama casts/impacts, player graphics, player projectile impacts and encounter cue graphics. It schedules
 start and expiry in native client cycles, avoiding fractional-tick boundary drift; only the
 renderer's `oneShot` request converts to game ticks. Controllers supply stable instance ids, asset
 ids, original start cycles (including delays), transforms, style and height policy; the helper
 returns `pending | active | unloaded | expired` and removes stale draws. Loading and retention stay
-adapter-owned: Yama drops unloaded effects, player graphics/impacts retain them, Inferno retains only
-future unloaded graphics. Inferno uses a zero-duration cache-length fallback (also for history
-pruning); the other adapters use three ticks.
+adapter-owned: Yama drops unloaded effects, player graphics/impacts retain them, the cue player
+retains only future unloaded graphics. The cue player uses a zero-duration cache-length fallback
+(also for history pruning); the other adapters use three ticks.
 
 On Apple touch devices, the Sol scene enables conservative off-screen rejection for its three
 ground melee puff graphics. `SpotAnimRenderer` may omit their commands only when their all-frame

@@ -486,10 +486,9 @@ describe('Colosseum presentation lifecycle', () => {
     expect(controller['tickRemainderMs']).toBeCloseTo(10);
   });
 
-  it('uses only displayed elapsed time regardless of wall time, rate, or held frame', () => {
-    const { scene, controller, draw } = fixture();
+  it('uses only displayed elapsed time regardless of rate or held frame', () => {
+    const { controller, draw } = fixture();
     draw(0, { events: [visual({ animations: [{ actorId: SOL_ACTOR_ID, clipId: 'spear', delayCycles: 0 }] })] });
-    scene['lastNpcVisualUpdateTime'] = performance.now() - 100;
     draw(0.5, { speedMultiplier: 3 });
     draw(0.5, { timeline: { timelineKey: 'live', paused: true } });
     expect(controller['primaryTrack']?.elapsedTicks).toBe(15);

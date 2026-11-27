@@ -1,8 +1,10 @@
 import type { OverlayTypeLoader, UnderlayTypeLoader } from '../../../rs/config/flotype/FloTypeLoader';
 import type { LocationData, LocTypeInfoLoader, MapLoader, MapSquareData } from '../../../rs/map/MapLoader';
 import type { NpcSnapshot } from '../../../types/simulation';
+import { animationFrames } from '../../../util/animationFrames';
 import type { Projection2D, Viewport } from '../../core/camera';
 import type { Mesh3DCommand, RenderQueue } from '../../core/commands';
+import type { NpcAnimationTrigger } from '../../npc/NpcInstanceManager';
 import { SceneCompositor } from '../SceneCompositor';
 import type { NpcHitTestData, RenderContext } from '../types';
 import { buildLobbyRenderContext, lobbyNpcRenderId, syncLobbyNpcInstances } from './lobbyAnimations';
@@ -10,8 +12,15 @@ import { LobbyArenaRenderer } from './lobbyArenaRenderer';
 import type { LobbyCelShadedCache, LobbyFootprintCache } from './lobbyBossModels';
 import { applyLobbyBossTransforms, forceTransparentPlayerMeshToOpaque, remapLobbyHitTestData } from './lobbyBossModels';
 
+/**
+ * The lobby: a display scene, not a fight. Its boss models idle and turn by frame time, unlike an
+ * encounter's NPCs on the NPC clock: the simulation's tick, which holds through the landing intro and
+ * while a modal pauses the run, would freeze them there. It has no cues to play.
+ */
 export class LobbySceneCompositor extends SceneCompositor {
   private forcedTerrain: MapSquareData | null = null;
+  /** The animation clock's time at the last frame, or 0 before the first; time the clock spent suspended is excluded. */
+  private lastNpcFrameTimeMs = 0;
   private readonly arenaRenderer = new LobbyArenaRenderer();
   private readonly celShadedCache: LobbyCelShadedCache = new Map();
   private readonly footprintCache: LobbyFootprintCache = new Map();
@@ -27,10 +36,32 @@ export class LobbySceneCompositor extends SceneCompositor {
 
   override dispose(): void {
     super.dispose();
+    this.lastNpcFrameTimeMs = 0;
     this.forcedTerrain = null;
     this.celShadedCache.clear();
     this.footprintCache.clear();
     this.arenaRenderer.dispose();
+  }
+
+  /** The frame's elapsed animation-clock time; none on the first frame or after a stall of a second or more. */
+  protected override getNpcVisualDeltaMs(): number {
+    const now = animationFrames.clock.now();
+    const deltaMs = this.lastNpcFrameTimeMs === 0 ? 0 : now - this.lastNpcFrameTimeMs;
+    this.lastNpcFrameTimeMs = now;
+    return deltaMs > 0 && deltaMs < 1000 && Number.isFinite(deltaMs) ? deltaMs : 0;
+  }
+
+  protected override updateEncounterNpcFacing(playerVisualPosition: [number, number], frameDeltaMs: number): number {
+    return this.npcInstanceManager.updateNpcVisualFacing(playerVisualPosition, frameDeltaMs) ?? 0;
+  }
+
+  /** No cues and no NPC clock, in replay too: the frame-time update animates the bosses. */
+  protected override getEncounterAttackTriggers(): NpcAnimationTrigger[] {
+    return [];
+  }
+
+  protected override restoreEncounterPrimaries(): boolean {
+    return false;
   }
 
   protected override getTerrainMapSquare(): { x: number; y: number } {

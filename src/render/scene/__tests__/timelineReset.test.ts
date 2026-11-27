@@ -22,6 +22,7 @@ import type { RenderQueue } from '../../core/commands';
 import { NpcVisualTracker } from '../../core/interpolation';
 import { getReplayPresentation } from '../../core/replayPresentation';
 import { playerAttackSequenceIds } from '../../core/replayPrimaryCues';
+import { WAVE_PRELOAD_IDS } from '../../effects/controllers/WaveController';
 import { SpotAnimRenderer } from '../../effects/SpotAnimRenderer';
 import { registerType, seed } from '../../npc/__tests__/npcFacingTestHarness';
 import type { FrameClipRef, NpcAnimationSet } from '../../npc/animationTypes';
@@ -33,6 +34,23 @@ import * as renderUtils from '../../shared/renderUtils';
 import { SceneCompositor } from '../SceneCompositor';
 import type { RenderContext } from '../types';
 import { YamaSceneCompositor } from '../YamaSceneCompositor';
+
+/**
+ * A Yama scene whose declared effects have settled, as a replay needs before it presents anything:
+ * each is cached with nothing to draw, so the tests' own subjects are all that renders.
+ */
+function yamaScene(): YamaSceneCompositor {
+  const yama = new YamaSceneCompositor();
+  for (const spotAnimId of WAVE_PRELOAD_IDS)
+    yama['spotAnimRenderer']['meshCache'].set(spotAnimId, {
+      static: [],
+      frames: [],
+      frameLengths: [],
+      frameStep: -1,
+      heightOffset: 0,
+    });
+  return yama;
+}
 
 const initialArena = getArenaConfig();
 const initialAllowUnbounded = getArenaAllowUnboundedFallback();
@@ -1219,7 +1237,7 @@ describe('SceneCompositor replay delayed cues', () => {
 
   it('retries held player metadata silently at the original fractional phase and invalidates a cache identity', () => {
     scene.dispose();
-    const yama = new YamaSceneCompositor();
+    const yama = yamaScene();
     scene = yama;
     const { controller, lookup, type, types } = installPlayer(yama);
     const tracker = new FrameSoundTracker(engine);
@@ -1271,7 +1289,7 @@ describe('SceneCompositor replay delayed cues', () => {
 
   it('restores the delayed Yama body and melee secondary through the normal build hook with silent seek/resume', () => {
     scene.dispose();
-    const yama = new YamaSceneCompositor();
+    const yama = yamaScene();
     scene = yama;
     const state = new SimulationEngine({ encounter: new YamaEncounter(), combatSeed: 1 }).getState();
     const snapshot = state.encounter;
@@ -1349,20 +1367,20 @@ describe('SceneCompositor replay delayed cues', () => {
 
   /**
    * A Yama scene with one 2x2 npc of type 14179 replayed from `frames`; `at(cycle)` draws the frame
-   * whose tick the cycle falls in, advancing npc animations 20 ms per draw as playback would.
+   * whose tick the cycle falls in at that displayed cycle, so the NPC clock moves as far as playback
+   * does: one cycle (20 ms) per consecutive call.
    */
   function flareReplayScene(
     buildAnimations: (clip: (id: string, seqId: number, frameLengths: number[]) => FrameClipRef) => NpcAnimationSet,
     frames: ReplayDisplayFrame[],
   ) {
     scene.dispose();
-    const yama = new YamaSceneCompositor();
+    const yama = yamaScene();
     scene = yama;
     yama.setFrameSoundTracker(new FrameSoundTracker(engine));
     yama.setEncounterRenderConfig({
       primaryNpc: { actorId: 'boss', npcTypeId: 1, basePosition: [0, 0], size: 1, deathSeqId: -1 },
     });
-    vi.spyOn(yama as unknown as { getNpcVisualDeltaMs(): number }, 'getNpcVisualDeltaMs').mockReturnValue(20);
     const manager = yama['npcInstanceManager'];
     manager['animSystem'] = new AnimationSystem();
     const clip = (id: string, seqId: number, frameLengths: number[]): FrameClipRef => {

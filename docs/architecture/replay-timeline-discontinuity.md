@@ -96,27 +96,29 @@ layout coverage hides the menu rather than showing stale state.
 Reset first, then rebuild from snapshots and indexed history. Reconstruction never advances the
 simulation or dispatches historical events to audio; frame-sound trackers silently synchronize
 (including on late readiness). Unavailable cache assets retry on held frames without changing the
-recorded origin. `ReplayEffectIndex` is the one history index: player and Yama effects, and the
-encounter cues every scene's cue player restores; each is described below.
+recorded origin. `ReplayEffectIndex` is the one history index: player effects and primaries, the
+encounter cues every scene's cue player restores, and, in the same append pass, a scene's own
+`ReplayFrameReader` if it keeps one (Yama's `YamaReplayIndex`); each is described below.
 
 - Player tile position and effect state carried in the snapshot (e.g. Yama waves and fireballs) are
   snapshot/tick-derived.
 - [`ReplayEffectIndex`](../../src/render/core/replayEffectIndex.ts) restores player projectiles,
-  impacts and graphics and Yama cast/impact effects from their original event clocks, with
+  impacts and graphics, and Yama's index his cast/impact effects, from their original event clocks, with
   historical targets from `ReplayActorHistory`. Repeated seeks use binary/lifetime-window lookups,
   not prefix scans.
 - NPC despawn-timer bars (currently the Yama void flare) derive from the snapshot's
   `targetableFromTick`, `despawnTick` and `despawnTimerLeadTicks` (`npcDespawnTimerRatio`); recent
   indexed explosion/destruction events restore explosions.
 
-**Player and Yama primaries.** `ReplayEffectIndex` also indexes player primary cues and Yama body
-triggers in its single append pass; `ReplayPrimaryIndex` resolves them into accepted primaries and
+**Player and Yama primaries.** `ReplayEffectIndex` indexes player primary cues, and Yama's index his
+body triggers, in the single append pass; `ReplayPrimaryIndex` resolves them into accepted primaries and
 binary-searches per destination. A rejected low-priority cue never becomes an origin. Player lookup
 uses the event's weapon and attack kind (the owning frame's equipment as weapon fallback and for
 block). Consume, block and self-cast cues keep event order and the final attack follows them,
 matching the live deferred attack flush; consume restoration keeps the unarmed pose and
 weapon/shield hiding. Yama shares the live trigger descriptor and NPC duration, priority and delay
-rules, including its secondary melee clip. `restorePrimaryAt` restores only primary phase and
+rules, including its secondary melee clip: live, the trigger starts on the NPC clock at its tick;
+in replay, his timeline is restored after the clock reaches the destination. `restorePrimaryAt` restores only primary phase and
 fractional client-cycle remainder; the next render updates the mesh once without advancing it
 again. Timelines invalidate with animation-metadata identity.
 
@@ -136,7 +138,8 @@ committing it, so coarse and fine presentation share one trajectory. Historical 
 `NpcInstanceManager` (exact tick boundary uses current position; positive fractions interpolate
 previous to current); player positions follow the snapshot's previous position and path.
 
-In a scene with cue presentation (`npcPresentation: 'cues'`, the Inferno's and Sol Heredit's), each actor's
+Every encounter scene presents its NPCs on one clock, the displayed client cycle (the lobby's display
+bosses idle by frame time instead); each actor's
 `ReplayDeferredPrimaryIndex` checkpoints accepted state plus a bounded pending tail at
 source-frame boundaries. Delayed cues may start out of emission order, so sorting all cues and
 taking the newest eligible would let future source frames reject earlier delayed cues; checkpoints
@@ -149,7 +152,8 @@ corpse on the cycle a seek would; a frame that rebuilds the cues also restores, 
 corpses still on display whose NPCs the simulation already pruned. In 3D, every encounter's replay presentation waits until each spot
 animation and NPC type its render config declares has settled (`SceneCompositor.encounterAssetState`:
 loaded or failed, which is not proof of usable geometry), retrying without latching; a 2D view never
-waits.
+waits. While it waits the cue player holds nothing and the frame sounds sync silently; corpses and an
+encounter's own timelines, which need no cue assets, are still posed.
 
 **Limits.** These are canonical tick-origin reconstructions, not recordings of the render loop:
 original RAF arrival offsets, free-running idle/movement phase, full player locomotion backlog and

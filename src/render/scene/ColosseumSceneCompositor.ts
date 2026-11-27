@@ -99,7 +99,7 @@ export class ColosseumSceneCompositor extends SceneCompositor {
   private readonly cullSolMeleeOutsideView: boolean;
 
   constructor(options: ColosseumSceneOptions = {}) {
-    super({ npcPresentation: 'cues' });
+    super();
     this.cullSolMeleeOutsideView = options.cullSolMeleeOutsideView === true;
     // Melee first: the families are admitted in this order against one allowance.
     if (options.batchSolEffects === true)

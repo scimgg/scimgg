@@ -26,12 +26,14 @@ import { writeViewProjection } from '../spotAnimViewRejection';
 /**
  * A ripple-sized burst of Sol's real ground effects, drawn frame by frame at 60 fps from emission to
  * expiry, live and in replay with a seek back. Pin every command field, array byte, model matrix,
- * command/array identity and frame state. A separate identity-free visible digest checks that
- * omitting wholly zero-alpha parts changes no remaining draw payload or frame state: the full-sort
- * queues lose 6,173 live / 9,125 replay zero-alpha commands and nothing else.
- * Frame states carry each graphic's instance id (`cue-<eventId>-graphic-<ordinal>`), so the ids are
- * part of every digest. A replay seek back rebuilds the cues, as the scene does on a discontinuity,
- * so each later frame queues its draws in emission order.
+ * command/array identity and frame state. A separate visible digest, free of object identity (no
+ * command, array or mesh-source numbering), checks that omitting wholly zero-alpha parts changes no
+ * remaining draw payload or frame state: the full-sort queues lose 6,173 live / 9,125 replay
+ * zero-alpha commands and nothing else. Both digests hash each frame state's actor id,
+ * `spotanim:<instance id>`, and a graphic's instance id is its cue id
+ * (`cue-<eventId>-graphic-<ordinal>`), so renaming cues changes both. A replay seek back rebuilds
+ * the cues, as the scene does on a discontinuity, so each later frame queues its draws in emission
+ * order.
  */
 
 const initialSkipSort = perfFlags.skipTransparentSort;

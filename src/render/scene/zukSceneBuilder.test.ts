@@ -99,8 +99,9 @@ class SceneProbe extends InfernoSceneCompositor {
   sync(npcs: NpcSnapshot[]): void {
     this.syncNpcInstances(npcs, false);
   }
+  /** The Inferno's clips play from the tick and NPCs alone; it derives no triggers from the rest. */
   animate(state: Pick<SimulationState, 'currentTick' | 'npcs'>, tick: number): void {
-    this.getEncounterAttackTriggers(state, tick);
+    this.getEncounterAttackTriggers(state as SimulationState, tick);
   }
 }
 

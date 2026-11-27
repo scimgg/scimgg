@@ -8,17 +8,18 @@ import { packHsl } from '../../rs/util/ColorUtil';
 import type { Coordinate, DamageHistoryEntry, SimulationState } from '../../types/simulation';
 import type { Projection2D, Viewport } from '../core/camera';
 import type { FillStyle, RenderQueue } from '../core/commands';
-import { describeYamaPrimaries } from '../core/replayPrimaryCues';
+import type { ReplayEffectDestination, ReplayFrameReader } from '../core/replayEffectIndex';
 import { rgba, rgbaFromHex, vec2 } from '../core/types';
 import { FIREBALL_PRELOAD_IDS, FireballController } from '../effects/controllers/FireballController';
 import { VOID_FLARE_PRELOAD_IDS, VoidFlareController } from '../effects/controllers/VoidFlareController';
 import { WAVE_PRELOAD_IDS, WaveController } from '../effects/controllers/WaveController';
 import { YAMA_ATTACK_PRELOAD_IDS, YamaAttackController } from '../effects/controllers/YamaAttackController';
-import { PRIMARY_NPC_ACTOR_ID } from '../npc/NpcInstanceManager';
+import { type NpcAnimationTrigger, PRIMARY_NPC_ACTOR_ID } from '../npc/NpcInstanceManager';
 import { getLocCenterHeight } from '../shared/renderUtils';
 import type { NpcRenderConfig } from './encounterRenderConfig';
 import { SceneCompositor, Z_LAYERS } from './SceneCompositor';
 import type { RenderContext, SceneOptions } from './types';
+import { describeYamaPrimaries, YamaReplayIndex } from './yamaReplayIndex';
 
 const YAMA_COLORS = {
   npc: rgbaFromHex('#4a0404'),
@@ -109,10 +110,10 @@ export class YamaSceneCompositor extends SceneCompositor {
 
   protected override reconstructEncounterVisuals(ctx: RenderContext): void {
     const history = ctx.replayHistory;
-    const index = this.replayEffectIndex;
+    const index = this.yamaReplayIndex();
     if (!history || !index) return;
     const destination = { cycle: this.effectTick * 30, throughFrameIndex: history.throughFrameIndex };
-    const attack = index.latestYamaAttack(destination);
+    const attack = index.latestAttack(destination);
     if (attack) {
       const castDuration = this.effectDuration(attack.npcCast.spotAnimId);
       const impactDuration = this.effectDuration(attack.playerImpact.spotAnimId);
@@ -135,18 +136,27 @@ export class YamaSceneCompositor extends SceneCompositor {
     }
   }
 
-  protected override restoreEncounterPrimaries(ctx: RenderContext): boolean {
-    const history = ctx.replayHistory;
-    const index = this.replayEffectIndex;
-    if (!history || !index) return false;
-    if (
-      this.npcInstanceManager.restoreReplayPrimary(PRIMARY_NPC_ACTOR_ID, index.yamaPrimaryTimeline, {
-        cycle: this.primaryCycle,
-        throughFrameIndex: history.throughFrameIndex,
-      })
-    )
-      this.reconstructedVisuals = true;
-    return true;
+  protected override createEncounterReplayReader(): ReplayFrameReader {
+    return new YamaReplayIndex();
+  }
+
+  /** Yama's body, from his own primary timeline: a seek lands on the clip and phase playback shows. */
+  protected override restoreEncounterTimelines(destination: ReplayEffectDestination): boolean {
+    const index = this.yamaReplayIndex();
+    return (
+      index !== undefined &&
+      this.npcInstanceManager.restoreReplayPrimary(PRIMARY_NPC_ACTOR_ID, index.primaryTimeline, destination)
+    );
+  }
+
+  /** Live, Yama's body trigger for the snapshot's tick, played on the NPC clock from that tick. */
+  protected override encounterNpcTriggers(simulationState: SimulationState): readonly NpcAnimationTrigger[] {
+    return describeYamaPrimaries(simulationState);
+  }
+
+  private yamaReplayIndex(): YamaReplayIndex | undefined {
+    const reader = this.replayEffectIndex?.encounter;
+    return reader instanceof YamaReplayIndex ? reader : undefined;
   }
 
   protected override renderEncounterEffectsEarly(
@@ -237,20 +247,6 @@ export class YamaSceneCompositor extends SceneCompositor {
       lastAttackKind,
       simulationState.primaryNpcSize,
     );
-  }
-
-  protected override getEncounterAttackTriggers(
-    simulationState: SimulationState,
-    _interpolatedTick?: number,
-  ): Array<{
-    actorId: string;
-    trigger: string;
-    tick: number;
-    clipId?: string;
-    durationGameTicks?: number;
-    delayClientTicks?: number;
-  }> {
-    return describeYamaPrimaries(simulationState);
   }
 
   protected override renderEncounterAttackEffects(

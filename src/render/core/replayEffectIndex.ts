@@ -1,28 +1,23 @@
 import { isActorPresentationsRemovedEvent } from '../../core/events/encounterVisual';
-import type { GameEvent } from '../../core/events/types';
 import type { ReplayDisplayFrame } from '../../core/ReplayRecorder';
 import type { NpcSnapshot } from '../../types/simulation';
-import { VOID_FLARE_EXPLOSION_DURATION_TICKS } from '../effects/controllers/VoidFlareController';
-import { describeYamaAttack, type YamaAttackDescriptor } from '../effects/controllers/YamaAttackController';
 import {
   describePlayerEffects,
   type PlayerEffectDescriptor,
   type PlayerTravelDescriptor,
   projectileEndCycle,
 } from '../effects/playerEffectDescriptors';
-import { type AnimClipRef, CLIENT_TICK_MS } from '../npc/animationTypes';
-import type { NpcAnimationTrigger } from '../npc/NpcInstanceManager';
+import { CLIENT_TICK_MS } from '../npc/animationTypes';
 import { EncounterCueIndex } from './encounterCueIndex';
 import { ReplayActorHistory } from './replayActorHistory';
-import {
-  describePlayerPrimaries,
-  describeYamaPrimaries,
-  type PlayerPrimaryClip,
-  type PlayerPrimaryCue,
-} from './replayPrimaryCues';
+import { describePlayerPrimaries, type PlayerPrimaryClip, type PlayerPrimaryCue } from './replayPrimaryCues';
 import { type PrimaryCue, ReplayPrimaryIndex } from './replayPrimaryIndex';
 
 export type ReplayEffectDestination = { readonly cycle: number; readonly throughFrameIndex: number };
+/** An encounter's own reading of a history, fed each frame once, in order, by the index's append pass. */
+export interface ReplayFrameReader {
+  append(frame: ReplayDisplayFrame, frameIndex: number): void;
+}
 type Entry<Value> = {
   readonly frameIndex: number;
   readonly tick: number;
@@ -66,14 +61,10 @@ export class ReplayEffectIndex {
   /** Every encounter visual batch: the scene's cue player restores clips, flights and graphics from it. */
   readonly cues = new EncounterCueIndex();
   readonly playerPrimaries: PrimaryCue<PlayerPrimaryCue>[] = [];
-  readonly yamaPrimaries: PrimaryCue<NpcAnimationTrigger>[] = [];
   readonly playerPrimaryTimeline = new ReplayPrimaryIndex<PlayerPrimaryCue, PlayerPrimaryClip>(this.playerPrimaries);
-  readonly yamaPrimaryTimeline = new ReplayPrimaryIndex<NpcAnimationTrigger, AnimClipRef>(this.yamaPrimaries);
   private indexedLength = 0;
   private readonly graphics: Entry<PlayerEffectDescriptor>[] = [];
   private readonly travel = new Map<number, TravelStream>();
-  private readonly yamaAttacks: Entry<YamaAttackDescriptor>[] = [];
-  private readonly flareEvents: Entry<GameEvent>[] = [];
   private readonly actorLives = new Map<string, ActorLife>();
   private presentActorIds = new Set<string>();
   private readonly deathsByLife = new Map<number, DeathPresentationRecord>();
@@ -83,7 +74,11 @@ export class ReplayEffectIndex {
   private readonly typeRemovals = new Map<number, Entry<undefined>[]>();
   private nextLifeKey = 0;
 
-  constructor(readonly frames: readonly ReplayDisplayFrame[]) {
+  /** @param encounter The scene's encounter-specific reading of the same frames, if it has one. */
+  constructor(
+    readonly frames: readonly ReplayDisplayFrame[],
+    readonly encounter?: ReplayFrameReader,
+  ) {
     this.extend();
   }
 
@@ -94,6 +89,7 @@ export class ReplayEffectIndex {
       const frame = { state: source.state, events: source.events };
       this.cues.append(frame.events, this.indexedLength);
       this.actors.append(frame, this.indexedLength);
+      this.encounter?.append(source, this.indexedLength);
       const presentActorIds = new Set<string>();
       for (const npc of frame.state.npcs) {
         presentActorIds.add(npc.id);
@@ -124,8 +120,6 @@ export class ReplayEffectIndex {
       this.presentActorIds = presentActorIds;
       for (const cue of describePlayerPrimaries(frame))
         this.playerPrimaries.push({ frameIndex: this.indexedLength, tick: cue.tick, value: cue });
-      for (const cue of describeYamaPrimaries(frame.state))
-        this.yamaPrimaries.push({ frameIndex: this.indexedLength, tick: frame.state.currentTick, value: cue });
       for (const [ordinal, effect] of describePlayerEffects(frame).entries()) {
         const entry = { frameIndex: this.indexedLength, tick: effect.tick, ordinal, value: effect };
         switch (effect.kind) {
@@ -153,9 +147,6 @@ export class ReplayEffectIndex {
       }
       for (const [ordinal, event] of frame.events.entries()) {
         const entry = { frameIndex: this.indexedLength, tick: event.tick, ordinal, value: event };
-        const yama = describeYamaAttack(event);
-        if (yama) this.yamaAttacks.push({ ...entry, value: yama });
-        if (event.type === 'voidflare_exploded' || event.type === 'voidflare_destroyed') this.flareEvents.push(entry);
         if (event.type === 'actor_despawned' && typeof event.actorId === 'string') {
           const life = this.actorLives.get(event.actorId);
           if (life && !this.deathSuppressions.has(life.key)) {
@@ -208,20 +199,6 @@ export class ReplayEffectIndex {
     }
     travel.sort((left, right) => left.frameIndex - right.frameIndex || left.ordinal - right.ordinal);
     return [...result, ...travel.map((entry) => entry.value)];
-  }
-
-  latestYamaAttack(destination: ReplayEffectDestination): YamaAttackDescriptor | undefined {
-    return this.yamaAttacks[upperBound(this.yamaAttacks, destination) - 1]?.value;
-  }
-
-  recentFlareEvents(destination: ReplayEffectDestination): readonly GameEvent[] {
-    const end = upperBound(this.flareEvents, destination);
-    const start = upperBound(
-      this.flareEvents,
-      { ...destination, cycle: destination.cycle - VOID_FLARE_EXPLOSION_DURATION_TICKS * 30 },
-      false,
-    );
-    return this.flareEvents.slice(start, end).map((entry) => entry.value);
   }
 
   deathPresentations(

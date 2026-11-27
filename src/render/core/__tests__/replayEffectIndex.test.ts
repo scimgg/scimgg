@@ -544,19 +544,6 @@ describe('ReplayEffectIndex', () => {
     expect(removed(1560, 1560)('target')).toBeNull();
   });
 
-  it('bounds flare history while retaining exact expiry and destruction events', () => {
-    const index = new ReplayEffectIndex([
-      frame(10, [
-        { type: 'voidflare_exploded', eventId: 1, tick: 10, flareId: 'vf-1', position: [1, 1], variant: 'shadow' },
-      ]),
-      frame(12, [{ type: 'voidflare_destroyed', eventId: 2, tick: 12, flareId: 'vf-1' }]),
-    ]);
-
-    const events = index.recentFlareEvents({ cycle: 13 * 30, throughFrameIndex: 1 });
-
-    expect(events.map((event) => event.type)).toEqual(['voidflare_exploded', 'voidflare_destroyed']);
-  });
-
   it('retains the first dead snapshot by reference after simulation pruning and reports exact age', () => {
     const dead = corpse('healer', 7705, 4, 10);
     const death = frame(10);

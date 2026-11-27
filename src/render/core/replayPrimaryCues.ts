@@ -1,5 +1,4 @@
 import { getSpecialAttackDef } from '../../core/combat/player/specialAttacks/registry';
-import { isYamaSnapshot } from '../../core/encounters/snapshot';
 import { type AttackKind, isCoreEvent } from '../../core/events/types';
 import { getSpellVisuals } from '../../data/spellVisuals';
 import {
@@ -9,8 +8,6 @@ import {
   PLAYER_EAT_SEQ_ID,
 } from '../../data/weaponAnimations';
 import { getWeaponCombatVisuals } from '../../data/weaponCombatVisuals';
-import type { SimulationState } from '../../types/simulation';
-import type { NpcAnimationTrigger } from '../npc/NpcInstanceManager';
 import type { AnimationSequence } from './animation';
 import type { ReplayEffectSourceFrame } from './replayEffectContext';
 import type { PrimarySpec } from './replayPrimaryIndex';
@@ -106,18 +103,4 @@ export function describePlayerPrimaries(frame: ReplayEffectSourceFrame): readonl
   if (intro) cues.push(intro);
   if (attack) cues.push(attack);
   return cues;
-}
-
-export function describeYamaPrimaries(state: SimulationState): Array<NpcAnimationTrigger & { readonly tick: number }> {
-  const snapshot = state.encounter;
-  if (!isYamaSnapshot(snapshot)) return [];
-  const { lastAttackKind: kind, lastAttackTick: tick } = snapshot.state;
-  if (!kind || tick !== state.currentTick) return [];
-  if (kind === 'melee_crush')
-    return state.mechanicsConfig?.yamaMelee === false
-      ? []
-      : [{ actorId: 'primary-npc', trigger: 'attack', tick, clipId: 'secondary' }];
-  if (kind === 'fireball' ? state.mechanicsConfig?.fireballs === false : state.mechanicsConfig?.yamaMageRange === false)
-    return [];
-  return [{ actorId: 'primary-npc', trigger: 'attack', tick, durationGameTicks: 3, delayClientTicks: 30 }];
 }

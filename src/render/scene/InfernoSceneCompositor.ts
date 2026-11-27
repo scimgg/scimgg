@@ -18,15 +18,10 @@ const ZUK_SAFE_BORDER = { color: rgbaFromHex(ZUK_SAFE_COLOR, 0.65), widthPx: DEF
 const ZUK_SAFE_HSL = rgbToHsl(Number.parseInt(ZUK_SAFE_COLOR.slice(1), 16));
 
 /**
- * The Inferno's scene: its NPCs play the shared cue player's clips (`npcPresentation: 'cues'`), plus
- * wave 69's own presentation: the intro's fade and camera, the shield-safe overlay and Zuk's early
- * presentation origin.
+ * The Inferno's scene: the common scene plus wave 69's own presentation: the intro's fade and camera,
+ * the shield-safe overlay and Zuk's early presentation origin.
  */
 export class InfernoSceneCompositor extends SceneCompositor {
-  constructor() {
-    super({ npcPresentation: 'cues' });
-  }
-
   /** Wave 69's intro after wave 68: its fade and scripted camera (`zukIntroCutsceneFrame`). */
   getCutsceneFrame(state: SimulationState, interpolatedTick: number): SceneCutsceneFrame | null {
     const snapshot = state.encounter;
