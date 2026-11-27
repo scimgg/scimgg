@@ -86,7 +86,7 @@ Paths: **N/** = `src/npcs/zulrah/`, **E/** = `src/encounters/zulrah/`.
 
 | Question | Simulator | Label | Settled by |
 |---|---|---|---|
-| Blue magic/ranged split | 75% magic; `TANZANITE_MAGIC_CHANCE` | POLICY ("much more frequently") | Blue attacks counted by style |
+| Blue magic/ranged split | Two-thirds magic, drawn per attack; `TANZANITE_MAGIC_CHANCE` | OBSERVATION (the captured rate; facts spec, Blue's style) | More blue attacks counted by style |
 | Rotation odds | Equal | POLICY ("chosen at random") | Many fight starts |
 | Out-of-pattern phases after the first rotation | Not modeled | Gap | — |
 | Rotation 2, phase 5 (blue south) attacks | 5, as the wiki tables | OBSERVATION | Z4 made all 5 (t2018–t2030). Z2 made 2 (t3074, t3077) before its specials, with the player in sight at t3080 and t3083, so line of sight does not explain it; every other rotation 2 phase matches in both |

@@ -73,10 +73,10 @@ export const ZULRAH_ACTOR_ID = 'zulrah';
 export const ZULRAH_PLAYER_START: Coordinate = [28, 61];
 const VICTORY_COMPLETION_DELAY_TICKS = 4;
 /**
- * Tanzanite's magic share. Simulator policy: the wiki says only "uses magic much more frequently"
- * (https://oldschool.runescape.wiki/w/Zulrah/Strategies).
+ * Tanzanite's magic share, drawn per attack. Private gameplay captures zulrah-packet-data-1.txt to -4.txt: 33 magic of
+ * 50 blue attacks (95% interval about 0.51–0.79), with no forced switch, per-phase script or prayer dependence seen.
  */
-const TANZANITE_MAGIC_CHANCE = 0.75;
+const TANZANITE_MAGIC_CHANCE = 2 / 3;
 
 type PhaseRuntime = {
   /** Phases surfaced since the fight began, counting from 0. */

@@ -5,7 +5,7 @@ registered, with what would settle it, in the [open questions](./zulrah-open-que
 
 ## Rules
 
-- A wiki word without a number ("several seconds", "much more frequently") becomes one named
+- A wiki word without a number ("several seconds") becomes one named
   constant, labelled POLICY beside the code.
 - A cache id is used only for what its gameval name describes.
 - Timing is composed from fixed per-turn and per-transition durations, never fitted to an overall
@@ -31,7 +31,7 @@ registered, with what would settle it, in the [open questions](./zulrah-open-que
 | Snakeling sites (FOR DISCUSSION) | Every orb lands on one of the 9 cloud sites' centers (capture), with no walkability check, since captured orbs landed on (33,70), off the walkable island ([facts spec](./zulrah-facts-spec.md#measured-in-the-captures), Snakeling orb). A captured phase repeats its captured orb sequence; every other orb picks a site the phase has not used yet at random, from the encounter's seeded snakeling stream. The player's position plays no part. Which phases are captured: open questions, Snakelings |
 | Dive-tick landings | A cloud or snakeling whose orb lands on the dive tick appears on the next form's first turn (capture) |
 | Attacks toggle | With Zulrah Attacks off the fight keeps its timing exactly: every turn is taken, an attack turn still waits for sight and gives up as above, and its style and rolls are still drawn from the encounter's seeded stream, as are a snakeling's, so turning attacks back on mid-fight continues with the rolls a run with attacks on throughout would make. The rotation, cloud-site and snakeling-site draws have streams of their own either way. Only the attacks, their damage, venom and visuals, and the tail's slam damage, stun and animation, are dropped |
-| Blue | Magic 75% of the time |
+| Blue | Magic two-thirds of the time, drawn per attack (capture rate: [facts spec](./zulrah-facts-spec.md#measured-in-the-captures), Blue's style) |
 | Rotations | Equally likely |
 | Projectiles | 1044 ranged, 1045 cloud orbs, 1046 magic, 1047 snakeling orb; attacks fly 40→90 cycles at any distance (capture) |
 | Venom immunity | The game's single poison counter (`core/poison.ts`): Antidote++ -40, anti-venom -41, anti-venom+ -50, extended anti-venom+ -59 steps, venom blocked below -38. A re-sip resets to the potion's full value (reported by the project owner from play); a weaker potion over a longer running immunity keeps the longer one (owner-approved policy) |

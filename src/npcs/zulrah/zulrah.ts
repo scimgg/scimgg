@@ -73,11 +73,7 @@ export type ZulrahActorState = {
 };
 
 export type ZulrahDefinitionConfig = {
-  /**
-   * Tanzanite's chance to pick magic. The wiki gives no number, only "will randomly attack with
-   * both Magic and Ranged attacks, although it uses magic much more frequently"
-   * (https://oldschool.runescape.wiki/w/Zulrah/Strategies). Simulator policy: 0.75.
-   */
+  /** Tanzanite's chance to pick magic on each attack; the encounter's `TANZANITE_MAGIC_CHANCE`, from the captures. */
   readonly tanzaniteMagicChance: number;
   readonly attacksEnabled: () => boolean;
   /** Whether attacks may envenom (`ZULRAH_VENOM`). */
