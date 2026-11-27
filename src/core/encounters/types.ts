@@ -95,6 +95,7 @@ export interface EncounterEngineRules {
   multiCombat?: boolean;
   prayerRestrictions?: {
     protection?: EncounterPrayerAccess | { expiresAfterTicks: number };
+    /** Every `boost` prayer (`PRAYER_CATEGORIES`), the defence-only skin prayers included. */
     offensive?: EncounterPrayerAccess;
   };
   prayerDrain?: {

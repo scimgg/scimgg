@@ -187,13 +187,13 @@ describe('modifier damage in the engine', () => {
     const player = world.getPlayer()!;
     player.position = [34, 36]; // Orb zero's spawn tile, vacated at T=4.
     engine.queueProtectionPrayer(PrayerType.ProtectMelee);
-    engine.queueOffensivePrayer(PrayerType.Piety);
+    engine.queueBoostPrayer(PrayerType.Piety);
     engine.queueIndependentPrayer(PrayerType.Preserve);
     engine.advanceTick([33, 36]); // Leaving during T does not escape the exposure.
     expect(player.position).toEqual([33, 36]);
     expect(engine.getDamageHistory()).toEqual([]);
     expect(player.activePrayer).toBe(tier === 3 ? null : PrayerType.ProtectMelee);
-    expect(player.offensivePrayer).toBe(PrayerType.Piety);
+    expect(player.boostPrayers).toEqual([PrayerType.Piety]);
     expect(player.independentPrayers).toEqual([PrayerType.Preserve]);
     if (tier === 3) engine.queueProtectionPrayer(PrayerType.ProtectMelee);
     advance();

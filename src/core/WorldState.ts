@@ -360,7 +360,7 @@ export function toSimulationState(world: WorldState, engineSnapshot: EngineSnaps
     markOfDarknessActive: player.combatTimers.markOfDarknessActiveTicks > 0,
     markOfDarknessTicksRemaining: player.combatTimers.markOfDarknessActiveTicks,
     activePrayer: player.activePrayer,
-    offensivePrayer: player.offensivePrayer,
+    boostPrayers: player.boostPrayers,
     independentPrayers: player.independentPrayers,
     failedCondition: engineSnapshot.getFailedCondition(),
     playerHistory: player.history,
@@ -388,7 +388,7 @@ export function toSimulationState(world: WorldState, engineSnapshot: EngineSnaps
       boolean,
       PrayerType | null,
     ],
-    pendingOffensivePrayer: [pendingPrayer.offensiveTouched, pendingPrayer.offensive] as [boolean, PrayerType | null],
+    pendingBoostPrayers: [pendingPrayer.boostTouched, pendingPrayer.boost] as [boolean, readonly PrayerType[]],
     pendingIndependentPrayers: [pendingPrayer.independentTouched, pendingPrayer.independent] as [
       boolean,
       readonly PrayerType[],

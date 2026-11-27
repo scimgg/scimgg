@@ -31,10 +31,14 @@ export interface PlayerActor extends ActorBase {
   isRunning: boolean;
   history: Map<TickNumber, Coordinate>;
   activePrayer: PrayerType | null;
-  offensivePrayer: PrayerType | null;
   /**
-   * Prayers that belong to no exclusion group and therefore stack with both slots above
-   * (Preserve and Rapid Restore; Rapid Heal would join them). Deduplicated, insertion-ordered.
+   * Lit attack, strength and defence boosts. Conflict-free by `prayersConflict`, deduplicated and
+   * insertion-ordered.
+   */
+  boostPrayers: PrayerType[];
+  /**
+   * Prayers that belong to no conflict group and therefore stack with everything above
+   * (Preserve, Rapid Restore and Rapid Heal). Deduplicated, insertion-ordered.
    */
   independentPrayers: PrayerType[];
   prayerState: PrayerState;

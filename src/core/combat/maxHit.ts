@@ -55,10 +55,12 @@ function playerMaxHit(
       return maxHitFromStrength(rangedStrengthEffectiveLevel(attacker, prayers), equipmentStats.rangedStrength);
     case 'magic': {
       const baseMaxHit = Math.floor(attacker.magicBaseMaxHit ?? 0);
-      const equipmentDamage = equipmentStats.magicDamage / 100;
-      const prayerDamage = prayers.magicDamage - 1;
-      const voidDamage = attacker.voidSet === 'elite_magic' ? 0.05 : 0;
-      return Math.floor(baseMaxHit * (1 + equipmentDamage + prayerDamage + voidDamage));
+      // Summed in tenths of a percent, the finest step gear has (the cache param is in tenths):
+      // the floating sum can floor a hit short, e.g. 25 × (1 + 0.15 + 0.01) is 28.999999999999996.
+      const equipmentTenths = Math.round(equipmentStats.magicDamage * 10);
+      const prayerTenths = Math.round((prayers.magicDamage - 1) * 1000);
+      const voidTenths = attacker.voidSet === 'elite_magic' ? 50 : 0;
+      return Math.floor((baseMaxHit * (1000 + equipmentTenths + prayerTenths + voidTenths)) / 1000);
     }
     default:
       return style;

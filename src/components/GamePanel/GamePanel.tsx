@@ -341,11 +341,11 @@ export const GAME_PANEL_DEFAULT_BOTTOM_OFFSET = ICON_BAR_HEIGHT + 2;
 interface GamePanelProps {
   simulationState?: SimulationState;
   activePrayer: PrayerType | null;
-  offensivePrayer?: PrayerType | null;
+  boostPrayers?: readonly PrayerType[];
   independentPrayers?: readonly PrayerType[];
   prayerVisualOverrides?: Readonly<Partial<Record<PrayerType, boolean>>>;
   onPrayerChange: (prayer: PrayerType | null) => void;
-  onOffensivePrayerChange?: (prayer: PrayerType | null) => void;
+  onBoostPrayerChange?: (prayer: PrayerType | null) => void;
   onIndependentPrayerChange?: (prayer: PrayerType) => void;
   quickPrayerSetupOpen?: boolean;
   /**
@@ -593,11 +593,11 @@ const NO_PANEL_CHANGE = () => {};
 export const GamePanel: React.FC<GamePanelProps> = ({
   simulationState,
   activePrayer,
-  offensivePrayer,
+  boostPrayers,
   independentPrayers,
   prayerVisualOverrides,
   onPrayerChange,
-  onOffensivePrayerChange,
+  onBoostPrayerChange,
   onIndependentPrayerChange,
   quickPrayerSetupOpen = false,
   quickPrayerSetupRequest = 0,
@@ -1156,11 +1156,11 @@ export const GamePanel: React.FC<GamePanelProps> = ({
         ) : (
           <PrayerContent
             activePrayer={activePrayer}
-            offensivePrayer={offensivePrayer ?? null}
+            boostPrayers={boostPrayers}
             independentPrayers={independentPrayers}
             prayerVisualOverrides={prayerVisualOverrides}
             onPrayerChange={onPrayerChange}
-            onOffensivePrayerChange={onOffensivePrayerChange}
+            onBoostPrayerChange={onBoostPrayerChange}
             onIndependentPrayerChange={onIndependentPrayerChange}
             prayerState={prayerState}
             reorderMode={prayerReordering}

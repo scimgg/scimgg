@@ -30,7 +30,7 @@ function makePlayer(pos: Coordinate = [31, 25]): PlayerActor {
     isMoving: false,
     isRunning: false,
     activePrayer: null,
-    offensivePrayer: null,
+    boostPrayers: [],
     independentPrayers: [],
     isRunEnabled: false,
     isSpecialAttackActive: false,

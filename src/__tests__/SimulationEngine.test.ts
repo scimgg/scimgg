@@ -4361,13 +4361,13 @@ describe('SimulationEngine', () => {
     it('flicking offensive prayer off→on each tick avoids all drain', () => {
       const eng = makeSafeEngine();
 
-      eng.queueOffensivePrayer(PrayerType.Piety);
+      eng.queueBoostPrayer(PrayerType.Piety);
       tickHere(eng);
       expect(eng.prayerState.points).toBe(99);
 
       for (let i = 0; i < 20; i++) {
-        eng.queueOffensivePrayer(null);
-        eng.queueOffensivePrayer(PrayerType.Piety);
+        eng.queueBoostPrayer(null);
+        eng.queueBoostPrayer(PrayerType.Piety);
         tickHere(eng);
       }
 
@@ -4380,16 +4380,16 @@ describe('SimulationEngine', () => {
 
       // Activate both
       eng.queueProtectionPrayer(PrayerType.ProtectMagic);
-      eng.queueOffensivePrayer(PrayerType.Piety);
+      eng.queueBoostPrayer(PrayerType.Piety);
       tickHere(eng);
       expect(eng.prayerState.points).toBe(99);
 
       // Flick both every tick (simulates quick prayer toggle off→on)
       for (let i = 0; i < 20; i++) {
         eng.queueProtectionPrayer(null);
-        eng.queueOffensivePrayer(null);
+        eng.queueBoostPrayer(null);
         eng.queueProtectionPrayer(PrayerType.ProtectMagic);
-        eng.queueOffensivePrayer(PrayerType.Piety);
+        eng.queueBoostPrayer(PrayerType.Piety);
         tickHere(eng);
       }
 
@@ -4402,7 +4402,7 @@ describe('SimulationEngine', () => {
 
       // Activate both prayers on tick 1
       eng.queueProtectionPrayer(PrayerType.ProtectMagic);
-      eng.queueOffensivePrayer(PrayerType.Piety);
+      eng.queueBoostPrayer(PrayerType.Piety);
       tickHere(eng);
       expect(eng.prayerState.points).toBe(99);
 
@@ -4495,7 +4495,7 @@ describe('SimulationEngine', () => {
 
         expect(eng.getState().quickPrayersActive).toBe(true);
         expect(eng.activePrayer).toBe(PrayerType.ProtectMagic);
-        expect(eng.getOffensivePrayer()).toBe(PrayerType.Augury);
+        expect(eng.boostPrayers).toEqual([PrayerType.Augury]);
       });
 
       it('emits every slot transition for an off→on pair inside one tick', () => {
@@ -4514,7 +4514,7 @@ describe('SimulationEngine', () => {
           { from: null, to: PrayerType.Augury },
         ]);
         expect(eng.activePrayer).toBe(PrayerType.ProtectMagic);
-        expect(eng.getOffensivePrayer()).toBe(PrayerType.Augury);
+        expect(eng.boostPrayers).toEqual([PrayerType.Augury]);
       });
 
       it('double-clicking from off lands back on off', () => {
@@ -4526,7 +4526,7 @@ describe('SimulationEngine', () => {
 
         expect(eng.getState().quickPrayersActive).toBe(false);
         expect(eng.activePrayer).toBeNull();
-        expect(eng.getOffensivePrayer()).toBeNull();
+        expect(eng.boostPrayers).toEqual([]);
       });
 
       it('costs no prayer when double-clicked every tick', () => {
@@ -4634,7 +4634,7 @@ describe('SimulationEngine', () => {
       advanceSafeTick(eng);
 
       expect(eng.getState().activePrayer).toBeNull();
-      expect(eng.getState().offensivePrayer).toBeNull();
+      expect(eng.getState().boostPrayers).toEqual([]);
       expect(eng.getState().quickPrayersActive).toBe(false);
     });
 
@@ -4655,7 +4655,7 @@ describe('SimulationEngine', () => {
       eng.prayerState.points = 0;
 
       eng.queueProtectionPrayer(PrayerType.ProtectMagic);
-      eng.queueOffensivePrayer(PrayerType.Piety);
+      eng.queueBoostPrayer(PrayerType.Piety);
       advanceSafeTick(eng);
 
       expect(eng.getLastTickEvents().filter((event) => event.type === 'prayer_activation_failed')).toHaveLength(1);

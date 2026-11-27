@@ -11,6 +11,7 @@ const PROTECTION_PRAYERS = [
   PrayerType.Redemption,
 ] as const;
 const INDEPENDENT_PRAYERS = [PrayerType.Preserve, PrayerType.RapidRestore, PrayerType.RapidHeal] as const;
+/** The boost prayers that conflict with every other one: they span both offence rows. */
 const OFFENSIVE_PRAYERS = [
   PrayerType.Augury,
   PrayerType.Rigour,
@@ -20,6 +21,23 @@ const OFFENSIVE_PRAYERS = [
   PrayerType.MysticMight,
   PrayerType.Deadeye,
   PrayerType.MysticVigour,
+] as const;
+const BOOST_PRAYERS = [
+  ...OFFENSIVE_PRAYERS,
+  PrayerType.ThickSkin,
+  PrayerType.BurstOfStrength,
+  PrayerType.ClarityOfThought,
+  PrayerType.SharpEye,
+  PrayerType.MysticWill,
+  PrayerType.RockSkin,
+  PrayerType.SuperhumanStrength,
+  PrayerType.ImprovedReflexes,
+  PrayerType.HawkEye,
+  PrayerType.MysticLore,
+  PrayerType.SteelSkin,
+  PrayerType.UltimateStrength,
+  PrayerType.IncredibleReflexes,
+  PrayerType.Chivalry,
 ] as const;
 
 function orderedConflicts(prayers: readonly PrayerType[]): Array<[PrayerType, PrayerType]> {
@@ -69,41 +87,46 @@ describe('prayer grid geometry', () => {
 });
 
 describe('prayer click highlighting', () => {
-  it('classifies every current prayer into the expected conflict group', () => {
+  it('stores every current prayer in the expected place', () => {
     expect(Object.values(PrayerType).filter((prayer) => PRAYER_CATEGORIES[prayer] === 'protection')).toEqual(
       PROTECTION_PRAYERS,
     );
-    expect(Object.values(PrayerType).filter((prayer) => PRAYER_CATEGORIES[prayer] === 'offensive')).toEqual(
-      OFFENSIVE_PRAYERS,
-    );
+    expect(Object.values(PrayerType).filter((prayer) => PRAYER_CATEGORIES[prayer] === 'boost')).toEqual(BOOST_PRAYERS);
     expect(Object.values(PrayerType).filter((prayer) => PRAYER_CATEGORIES[prayer] === 'independent')).toEqual(
       INDEPENDENT_PRAYERS,
     );
   });
 
   it('highlights an independent prayer from set membership rather than a slot', () => {
-    expect(isPrayerHighlighted(PrayerType.Preserve, null, null, undefined, [PrayerType.Preserve])).toBe(true);
-    expect(isPrayerHighlighted(PrayerType.Preserve, null, null, undefined, [])).toBe(false);
+    expect(isPrayerHighlighted(PrayerType.Preserve, null, [], undefined, [PrayerType.Preserve])).toBe(true);
+    expect(isPrayerHighlighted(PrayerType.Preserve, null, [], undefined, [])).toBe(false);
     // An overhead and an offensive prayer being lit neither lights nor darkens it.
     expect(
-      isPrayerHighlighted(PrayerType.Preserve, PrayerType.ProtectMelee, PrayerType.Piety, undefined, [
+      isPrayerHighlighted(PrayerType.Preserve, PrayerType.ProtectMelee, [PrayerType.Piety], undefined, [
         PrayerType.Preserve,
       ]),
     ).toBe(true);
   });
 
+  it('highlights every lit boost prayer at once, and only those', () => {
+    const lit = [PrayerType.ThickSkin, PrayerType.BurstOfStrength, PrayerType.ClarityOfThought];
+    for (const prayer of BOOST_PRAYERS) {
+      expect(isPrayerHighlighted(prayer, null, lit, undefined)).toBe(lit.includes(prayer));
+    }
+  });
+
   it('keeps the old protection prayer highlighted while the new click awaits server receipt', () => {
     const overrides = { [PrayerType.ProtectMelee]: true };
 
-    expect(isPrayerHighlighted(PrayerType.ProtectRange, PrayerType.ProtectRange, null, overrides)).toBe(true);
-    expect(isPrayerHighlighted(PrayerType.ProtectMelee, PrayerType.ProtectRange, null, overrides)).toBe(true);
+    expect(isPrayerHighlighted(PrayerType.ProtectRange, PrayerType.ProtectRange, [], overrides)).toBe(true);
+    expect(isPrayerHighlighted(PrayerType.ProtectMelee, PrayerType.ProtectRange, [], overrides)).toBe(true);
   });
 
   it('shows only the predicted protection prayer when Instant Prayer replaces the active slot', () => {
     const overrides = { [PrayerType.ProtectMelee]: true };
 
-    expect(isPrayerHighlighted(PrayerType.ProtectRange, PrayerType.ProtectMelee, null, overrides)).toBe(false);
-    expect(isPrayerHighlighted(PrayerType.ProtectMelee, PrayerType.ProtectMelee, null, overrides)).toBe(true);
+    expect(isPrayerHighlighted(PrayerType.ProtectRange, PrayerType.ProtectMelee, [], overrides)).toBe(false);
+    expect(isPrayerHighlighted(PrayerType.ProtectMelee, PrayerType.ProtectMelee, [], overrides)).toBe(true);
   });
 
   it.each(
@@ -111,8 +134,8 @@ describe('prayer click highlighting', () => {
   )('keeps protection conflict %s + %s highlighted before server receipt', (active, clicked) => {
     const overrides = { [clicked]: true };
 
-    expect(isPrayerHighlighted(active, active, null, overrides)).toBe(true);
-    expect(isPrayerHighlighted(clicked, active, null, overrides)).toBe(true);
+    expect(isPrayerHighlighted(active, active, [], overrides)).toBe(true);
+    expect(isPrayerHighlighted(clicked, active, [], overrides)).toBe(true);
   });
 
   it.each(
@@ -120,8 +143,8 @@ describe('prayer click highlighting', () => {
   )('keeps offensive conflict %s + %s highlighted before server receipt', (active, clicked) => {
     const overrides = { [clicked]: true };
 
-    expect(isPrayerHighlighted(active, null, active, overrides)).toBe(true);
-    expect(isPrayerHighlighted(clicked, null, active, overrides)).toBe(true);
+    expect(isPrayerHighlighted(active, null, [active], overrides)).toBe(true);
+    expect(isPrayerHighlighted(clicked, null, [active], overrides)).toBe(true);
   });
 
   it.each(
@@ -129,8 +152,8 @@ describe('prayer click highlighting', () => {
   )('Instant Prayer replaces protection conflict %s with %s immediately', (active, clicked) => {
     const overrides = { [clicked]: true };
 
-    expect(isPrayerHighlighted(active, clicked, null, overrides)).toBe(false);
-    expect(isPrayerHighlighted(clicked, clicked, null, overrides)).toBe(true);
+    expect(isPrayerHighlighted(active, clicked, [], overrides)).toBe(false);
+    expect(isPrayerHighlighted(clicked, clicked, [], overrides)).toBe(true);
   });
 
   it.each(
@@ -138,7 +161,7 @@ describe('prayer click highlighting', () => {
   )('Instant Prayer replaces offensive conflict %s with %s immediately', (active, clicked) => {
     const overrides = { [clicked]: true };
 
-    expect(isPrayerHighlighted(active, null, clicked, overrides)).toBe(false);
-    expect(isPrayerHighlighted(clicked, null, clicked, overrides)).toBe(true);
+    expect(isPrayerHighlighted(active, null, [clicked], overrides)).toBe(false);
+    expect(isPrayerHighlighted(clicked, null, [clicked], overrides)).toBe(true);
   });
 });

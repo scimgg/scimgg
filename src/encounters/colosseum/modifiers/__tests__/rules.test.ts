@@ -178,7 +178,7 @@ describe('Blasphemy', () => {
     const { engine, hit, player } = setup({ blasphemy: 3 });
     player.prayerState.points = 9;
     player.activePrayer = PrayerType.ProtectMelee;
-    player.offensivePrayer = PrayerType.Piety;
+    player.boostPrayers = [PrayerType.Piety];
     player.independentPrayers = [PrayerType.Preserve];
     player.quickPrayersActive = true;
     hit(15);
@@ -190,7 +190,7 @@ describe('Blasphemy', () => {
       prayerActivationTicks: {},
     });
     expect(player.activePrayer).toBeNull();
-    expect(player.offensivePrayer).toBeNull();
+    expect(player.boostPrayers).toEqual([]);
     expect(player.independentPrayers).toEqual([]);
     expect(player.quickPrayersActive).toBe(false);
     expect(engine['tickEvents'].flush().filter((event) => event.type === 'prayer_depleted')).toHaveLength(1);

@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { PrayerType } from '../../types/simulation';
-import { type PrayerInputState, type QueuedPrayerAction, resolvePrayerActions } from '../prayerInput';
+import { type PrayerInputState, prayerSetChanges, type QueuedPrayerAction, resolvePrayerActions } from '../prayerInput';
 
-const NOTHING_ON: PrayerInputState = { protection: null, offensive: null, independent: [], quickPrayersActive: false };
+const NOTHING_ON: PrayerInputState = { protection: null, boost: [], independent: [], quickPrayersActive: false };
 
 const QUICK_SET = [PrayerType.ProtectMagic, PrayerType.Augury] as const;
 
@@ -23,19 +23,18 @@ describe('resolvePrayerActions', () => {
     ])('makes Zeal mutually exclusive with %s, including quick prayers', (other) => {
       const start = {
         ...NOTHING_ON,
-        offensive: other,
+        boost: [other],
         protection: PrayerType.ProtectMelee,
         independent: [PrayerType.Preserve],
       };
-      const zeal = resolvePrayerActions(start, [{ type: 'offensive', prayer: PrayerType.Zeal }], true);
-      expect(zeal.offensive).toBe(PrayerType.Zeal);
+      const zeal = resolvePrayerActions(start, [{ type: 'boost', prayer: PrayerType.Zeal }], true);
+      expect(zeal.boost).toEqual([PrayerType.Zeal]);
       expect(zeal.protection).toBe(PrayerType.ProtectMelee);
       expect(zeal.independent).toEqual([PrayerType.Preserve]);
-      expect(resolvePrayerActions(zeal, [{ type: 'offensive', prayer: other }], true).offensive).toBe(other);
+      expect(resolvePrayerActions(zeal, [{ type: 'boost', prayer: other }], true).boost).toEqual([other]);
       expect(
-        resolvePrayerActions(NOTHING_ON, [{ type: 'quickPrayers', selections: [other, PrayerType.Zeal] }], true)
-          .offensive,
-      ).toBe(PrayerType.Zeal);
+        resolvePrayerActions(NOTHING_ON, [{ type: 'quickPrayers', selections: [other, PrayerType.Zeal] }], true).boost,
+      ).toEqual([PrayerType.Zeal]);
     });
 
     it('toggles the same clicked protection prayer twice back to the starting state', () => {
@@ -89,25 +88,25 @@ describe('resolvePrayerActions', () => {
       expect(outcome.activated).toEqual([]);
     });
 
-    it('keeps the protection and offensive slots independent', () => {
+    it('keeps the protection slot and the boost set independent', () => {
       const outcome = resolvePrayerActions(
         NOTHING_ON,
         [
-          { type: 'offensive', prayer: PrayerType.Piety },
+          { type: 'boost', prayer: PrayerType.Piety },
           { type: 'protection', prayer: PrayerType.ProtectMelee },
         ],
         true,
       );
 
       expect(outcome.protection).toBe(PrayerType.ProtectMelee);
-      expect(outcome.offensive).toBe(PrayerType.Piety);
+      expect(outcome.boost).toEqual([PrayerType.Piety]);
     });
   });
 
   describe('drain grace period', () => {
     it('counts a genuine off→on flick as an activation', () => {
       const outcome = resolvePrayerActions(
-        { protection: PrayerType.ProtectMelee, offensive: null, independent: [], quickPrayersActive: false },
+        { protection: PrayerType.ProtectMelee, boost: [], independent: [], quickPrayersActive: false },
         [
           { type: 'protection', prayer: null },
           { type: 'protection', prayer: PrayerType.ProtectMelee },
@@ -121,7 +120,7 @@ describe('resolvePrayerActions', () => {
 
     it('turns off a clicked prayer that is already active', () => {
       const outcome = resolvePrayerActions(
-        { protection: PrayerType.ProtectMelee, offensive: null, independent: [], quickPrayersActive: false },
+        { protection: PrayerType.ProtectMelee, boost: [], independent: [], quickPrayersActive: false },
         [{ type: 'protection', prayer: PrayerType.ProtectMelee }],
         true,
       );
@@ -149,7 +148,7 @@ describe('resolvePrayerActions', () => {
     it('an even number of orb toggles is a no-op', () => {
       const start: PrayerInputState = {
         protection: PrayerType.ProtectMagic,
-        offensive: PrayerType.Augury,
+        boost: [PrayerType.Augury],
         independent: [],
         quickPrayersActive: true,
       };
@@ -158,12 +157,12 @@ describe('resolvePrayerActions', () => {
 
       expect(outcome.quickPrayersActive).toBe(true);
       expect(outcome.protection).toBe(PrayerType.ProtectMagic);
-      expect(outcome.offensive).toBe(PrayerType.Augury);
+      expect(outcome.boost).toEqual([PrayerType.Augury]);
       expect(outcome.transitions).toEqual([
         { slot: 'protection', from: PrayerType.ProtectMagic, to: null },
-        { slot: 'offensive', from: PrayerType.Augury, to: null },
+        { slot: 'boost', from: PrayerType.Augury, to: null },
         { slot: 'protection', from: null, to: PrayerType.ProtectMagic },
-        { slot: 'offensive', from: null, to: PrayerType.Augury },
+        { slot: 'boost', from: null, to: PrayerType.Augury },
       ]);
     });
 
@@ -172,7 +171,7 @@ describe('resolvePrayerActions', () => {
 
       expect(outcome.quickPrayersActive).toBe(false);
       expect(outcome.protection).toBeNull();
-      expect(outcome.offensive).toBeNull();
+      expect(outcome.boost).toEqual([]);
     });
 
     it('an odd number of orb toggles flips the set on', () => {
@@ -180,13 +179,13 @@ describe('resolvePrayerActions', () => {
 
       expect(outcome.quickPrayersActive).toBe(true);
       expect(outcome.protection).toBe(PrayerType.ProtectMagic);
-      expect(outcome.offensive).toBe(PrayerType.Augury);
+      expect(outcome.boost).toEqual([PrayerType.Augury]);
     });
 
     it('an off→on orb pair counts as an activation, so a flick avoids drain', () => {
       const start: PrayerInputState = {
         protection: PrayerType.ProtectMagic,
-        offensive: PrayerType.Augury,
+        boost: [PrayerType.Augury],
         independent: [],
         quickPrayersActive: true,
       };
@@ -199,7 +198,7 @@ describe('resolvePrayerActions', () => {
     it('an individual prayer click drops the quick-prayer flag', () => {
       const start: PrayerInputState = {
         protection: PrayerType.ProtectMagic,
-        offensive: PrayerType.Augury,
+        boost: [PrayerType.Augury],
         independent: [],
         quickPrayersActive: true,
       };
@@ -208,7 +207,7 @@ describe('resolvePrayerActions', () => {
 
       expect(outcome.quickPrayersActive).toBe(false);
       expect(outcome.protection).toBe(PrayerType.ProtectMelee);
-      expect(outcome.offensive).toBe(PrayerType.Augury);
+      expect(outcome.boost).toEqual([PrayerType.Augury]);
     });
 
     it('activating an empty quick-prayer set changes nothing', () => {
@@ -233,7 +232,7 @@ describe('resolvePrayerActions', () => {
 
     it('still allows deactivation', () => {
       const outcome = resolvePrayerActions(
-        { protection: PrayerType.ProtectMelee, offensive: null, independent: [], quickPrayersActive: false },
+        { protection: PrayerType.ProtectMelee, boost: [], independent: [], quickPrayersActive: false },
         [{ type: 'protection', prayer: null }],
         false,
       );
@@ -256,14 +255,14 @@ describe('independent prayers', () => {
 
   it('toggles membership without touching either exclusive slot', () => {
     const outcome = resolvePrayerActions(
-      { protection: PrayerType.ProtectMelee, offensive: PrayerType.Piety, independent: [], quickPrayersActive: false },
+      { protection: PrayerType.ProtectMelee, boost: [PrayerType.Piety], independent: [], quickPrayersActive: false },
       [{ type: 'independent', prayer: PrayerType.Preserve }],
       true,
     );
 
     expect(outcome.independent).toEqual([PrayerType.Preserve]);
     expect(outcome.protection).toBe(PrayerType.ProtectMelee);
-    expect(outcome.offensive).toBe(PrayerType.Piety);
+    expect(outcome.boost).toEqual([PrayerType.Piety]);
     expect(outcome.transitions).toEqual([{ slot: 'independent', from: null, to: PrayerType.Preserve }]);
   });
 
@@ -331,14 +330,149 @@ describe('independent prayers', () => {
 
     it('turning quick prayers off clears independent membership too', () => {
       const outcome = resolvePrayerActions(
-        { ...PRESERVE_ON, offensive: PrayerType.Piety, quickPrayersActive: true },
+        { ...PRESERVE_ON, boost: [PrayerType.Piety], quickPrayersActive: true },
         [{ type: 'quickPrayers', selections: [PrayerType.Preserve, PrayerType.Piety] }],
         true,
       );
 
       expect(outcome.quickPrayersActive).toBe(false);
       expect(outcome.independent).toEqual([]);
-      expect(outcome.offensive).toBeNull();
+      expect(outcome.boost).toEqual([]);
     });
+  });
+});
+
+describe('boost prayers', () => {
+  const click = (prayer: PrayerType | null): QueuedPrayerAction => ({ type: 'boost', prayer });
+  const SINGLE_STATS: PrayerInputState = {
+    ...NOTHING_ON,
+    boost: [PrayerType.ThickSkin, PrayerType.BurstOfStrength, PrayerType.ClarityOfThought],
+  };
+
+  it('lights Thick Skin, Burst of Strength and Clarity of Thought together', () => {
+    const outcome = resolvePrayerActions(
+      NOTHING_ON,
+      [click(PrayerType.ThickSkin), click(PrayerType.BurstOfStrength), click(PrayerType.ClarityOfThought)],
+      true,
+    );
+
+    expect(outcome.boost).toEqual([PrayerType.ThickSkin, PrayerType.BurstOfStrength, PrayerType.ClarityOfThought]);
+    expect(outcome.activated).toEqual(outcome.boost);
+  });
+
+  it('lets Sharp Eye turn off Burst of Strength and Clarity of Thought but keep Thick Skin', () => {
+    const outcome = resolvePrayerActions(SINGLE_STATS, [click(PrayerType.SharpEye)], true);
+
+    expect(outcome.boost).toEqual([PrayerType.ThickSkin, PrayerType.SharpEye]);
+    // One click, one change: the first prayer it displaced, as a slot swap always reported.
+    expect(outcome.transitions).toEqual([{ slot: 'boost', from: PrayerType.BurstOfStrength, to: PrayerType.SharpEye }]);
+  });
+
+  it('lets Chivalry turn off every single-stat row', () => {
+    const outcome = resolvePrayerActions(SINGLE_STATS, [click(PrayerType.Chivalry)], true);
+
+    expect(outcome.boost).toEqual([PrayerType.Chivalry]);
+    expect(outcome.activated).toEqual([PrayerType.Chivalry]);
+    expect(outcome.transitions).toEqual([{ slot: 'boost', from: PrayerType.ThickSkin, to: PrayerType.Chivalry }]);
+  });
+
+  it('keeps a skin prayer beside Deadeye, and drops Deadeye when Rigour lights', () => {
+    const deadeye = resolvePrayerActions(NOTHING_ON, [click(PrayerType.SteelSkin), click(PrayerType.Deadeye)], true);
+    expect(deadeye.boost).toEqual([PrayerType.SteelSkin, PrayerType.Deadeye]);
+
+    const rigour = resolvePrayerActions(deadeye, [click(PrayerType.Rigour)], true);
+    expect(rigour.boost).toEqual([PrayerType.Rigour]);
+  });
+
+  it('swaps the ranged line for the magic line', () => {
+    const outcome = resolvePrayerActions(
+      { ...NOTHING_ON, boost: [PrayerType.HawkEye] },
+      [click(PrayerType.MysticLore)],
+      true,
+    );
+
+    expect(outcome.boost).toEqual([PrayerType.MysticLore]);
+  });
+
+  it('turns only the clicked prayer off when it is lit', () => {
+    const outcome = resolvePrayerActions(SINGLE_STATS, [click(PrayerType.BurstOfStrength)], true);
+
+    expect(outcome.boost).toEqual([PrayerType.ThickSkin, PrayerType.ClarityOfThought]);
+    expect(outcome.transitions).toEqual([{ slot: 'boost', from: PrayerType.BurstOfStrength, to: null }]);
+  });
+
+  it('turns every boost prayer off for a null click, as it cleared the old offensive slot', () => {
+    const outcome = resolvePrayerActions(SINGLE_STATS, [click(null)], false);
+
+    expect(outcome.boost).toEqual([]);
+    expect(outcome.transitions).toEqual([
+      { slot: 'boost', from: PrayerType.ThickSkin, to: null },
+      { slot: 'boost', from: PrayerType.BurstOfStrength, to: null },
+      { slot: 'boost', from: PrayerType.ClarityOfThought, to: null },
+    ]);
+  });
+
+  it('refuses a new boost prayer with no points, leaving the lit ones alone', () => {
+    const outcome = resolvePrayerActions(SINGLE_STATS, [click(PrayerType.Chivalry)], false);
+
+    expect(outcome.boost).toEqual(SINGLE_STATS.boost);
+    expect(outcome.rejected).toEqual([PrayerType.Chivalry]);
+  });
+
+  it('lights a quick-prayer set of non-conflicting boosts together', () => {
+    const outcome = resolvePrayerActions(
+      NOTHING_ON,
+      [{ type: 'quickPrayers', selections: [PrayerType.ProtectMelee, PrayerType.ThickSkin, PrayerType.Deadeye] }],
+      true,
+    );
+
+    expect(outcome.protection).toBe(PrayerType.ProtectMelee);
+    expect(outcome.boost).toEqual([PrayerType.ThickSkin, PrayerType.Deadeye]);
+  });
+
+  it('lets a later quick-prayer selection win a conflict, as a later protection selection does', () => {
+    const outcome = resolvePrayerActions(
+      NOTHING_ON,
+      [{ type: 'quickPrayers', selections: [PrayerType.ThickSkin, PrayerType.BurstOfStrength, PrayerType.Piety] }],
+      true,
+    );
+
+    expect(outcome.boost).toEqual([PrayerType.Piety]);
+  });
+
+  it('pairs each prayer a quick-prayer set lights with what it displaced, after the plain removals', () => {
+    const outcome = resolvePrayerActions(
+      { ...NOTHING_ON, boost: [PrayerType.ThickSkin, PrayerType.BurstOfStrength] },
+      [{ type: 'quickPrayers', selections: [PrayerType.SharpEye] }],
+      true,
+    );
+
+    expect(outcome.boost).toEqual([PrayerType.SharpEye]);
+    expect(outcome.transitions).toEqual([
+      { slot: 'boost', from: PrayerType.ThickSkin, to: null },
+      { slot: 'boost', from: PrayerType.BurstOfStrength, to: PrayerType.SharpEye },
+    ]);
+  });
+});
+
+describe('prayerSetChanges', () => {
+  it('reports a single-prayer swap as one change, as the offensive slot did', () => {
+    expect(prayerSetChanges([PrayerType.Piety], [PrayerType.Rigour])).toEqual([
+      { from: PrayerType.Piety, to: PrayerType.Rigour },
+    ]);
+  });
+
+  it('reports unconflicted prayers as removals before additions', () => {
+    expect(prayerSetChanges([PrayerType.Preserve], [PrayerType.RapidHeal])).toEqual([
+      { from: PrayerType.Preserve, to: null },
+      { from: null, to: PrayerType.RapidHeal },
+    ]);
+  });
+
+  it('pairs each displaced prayer with at most one arrival', () => {
+    expect(prayerSetChanges([PrayerType.Piety], [PrayerType.BurstOfStrength, PrayerType.ClarityOfThought])).toEqual([
+      { from: PrayerType.Piety, to: PrayerType.BurstOfStrength },
+      { from: null, to: PrayerType.ClarityOfThought },
+    ]);
   });
 });

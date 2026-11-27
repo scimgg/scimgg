@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { ObjType } from '../../../rs/config/objtype/ObjType';
+import { WIKI_TIERED_PRAYER_ROWS, type WikiTieredPrayer } from '../../../types/__tests__/fixtures/wikiPrayerTable';
 import { createEmptyCombatSupplies } from '../../../types/encounterLoadout';
 import type { EquipmentStats } from '../../../types/equipmentStats';
 import { createEmptyStats, getItemStats } from '../../../types/equipmentStats';
@@ -71,7 +72,7 @@ function runtimeInput(overrides: Partial<PlayerAttackRuntimeInput> = {}): Player
       equipment: { weapon: 4587 },
       equipmentStats: equipment({ attackSlash: 80, meleeStrength: 120, attackSpeed: 4, attackRange: 1 }),
       activePrayer: null,
-      offensivePrayer: null,
+      boostPrayers: [],
       selectedAttackStyleIndex: 0,
     },
     target: { npcTypeId: 1234, formulaStats: NPC_STATS },
@@ -99,7 +100,7 @@ function directPlan({ input, attacker, target, equipmentStats }: DirectPlanInput
     target,
     formulaStyle: input.formulaStyle,
     equipmentStats,
-    prayerMultipliers: lookupPrayerMultipliersFromState(input.player.activePrayer, input.player.offensivePrayer),
+    prayerMultipliers: lookupPrayerMultipliersFromState(input.player.activePrayer, input.player.boostPrayers),
     attackSpeedTicks: input.attackSpeedTicks,
     delivery: input.delivery,
     application: input.application,
@@ -314,7 +315,7 @@ describe('planPlayerAttackFromRuntime', () => {
         ...runtimeInput().player,
         stats: boostedStats,
         selectedAttackStyleIndex: 1,
-        offensivePrayer: PrayerType.Piety,
+        boostPrayers: [PrayerType.Piety],
       },
       attackSpeedTicks: 7,
       delivery: { style: 'melee', attackKind: 'melee_slash', impactDelayTicks: 3 },
@@ -784,7 +785,7 @@ describe('planPlayerAttackFromRuntime', () => {
         },
         equipment: { weapon: 29000 },
         equipmentStats: equipment({ attackRanged: 120, meleeStrength: 80, rangedStrength: 0 }),
-        offensivePrayer: PrayerType.Rigour,
+        boostPrayers: [PrayerType.Rigour],
         selectedAttackStyleIndex: 1,
       },
       formulaStyle: 'ranged',
@@ -920,7 +921,7 @@ describe('planPlayerAttackFromRuntime', () => {
 });
 
 describe('offensive prayer multipliers', () => {
-  const boostFor = (prayer: PrayerType) => lookupPrayerMultipliersFromState(null, prayer);
+  const boostFor = (prayer: PrayerType) => lookupPrayerMultipliersFromState(null, [prayer]);
 
   it('boosts attack by 25%, strength by 28% and defence by 25% under Zeal', () => {
     expect(boostFor(PrayerType.Zeal)).toEqual({
@@ -963,5 +964,131 @@ describe('offensive prayer multipliers', () => {
       magicDamage: 1.03,
       defence: 1.05,
     });
+  });
+
+  it.each(WIKI_TIERED_PRAYER_ROWS)('applies the wiki boost of $prayer and nothing else', ({ prayer, boost }) => {
+    expect(boostFor(prayer)).toEqual({ ...DEFAULT_PRAYER_MULTIPLIERS, ...boost });
+  });
+
+  it('combines the three single-stat rows, each on its own stat', () => {
+    expect(
+      lookupPrayerMultipliersFromState(null, [
+        PrayerType.SteelSkin,
+        PrayerType.UltimateStrength,
+        PrayerType.IncredibleReflexes,
+      ]),
+    ).toEqual({ ...DEFAULT_PRAYER_MULTIPLIERS, attack: 1.15, strength: 1.15, defence: 1.15 });
+  });
+
+  // "The defence boost with multiple prayers is additive" (https://oldschool.runescape.wiki/w/Deadeye?oldid=15222979).
+  it.each([
+    [PrayerType.Deadeye, PrayerType.ThickSkin, 1.1],
+    [PrayerType.Deadeye, PrayerType.SteelSkin, 1.2],
+    [PrayerType.MysticVigour, PrayerType.RockSkin, 1.15],
+  ])('adds the Defence boosts of %s and %s to %d', (upgrade, skin, defence) => {
+    const multipliers = lookupPrayerMultipliersFromState(PrayerType.ProtectMelee, [skin, upgrade]);
+    // toBe, not toBeCloseTo: the formulas floor `level * multiplier`, so the sum must be the very
+    // double the literal is.
+    expect(multipliers.defence).toBe(defence);
+  });
+});
+
+/**
+ * Each tiered prayer and Chivalry through the whole player-attack path, with 99s everywhere.
+ *
+ * Wiki formulas (https://oldschool.runescape.wiki/w/Damage_per_second/Melee, /Ranged, /Magic):
+ * effective level = floor(99 × prayer) + stance + 8; attack roll = effective × (bonus + 64);
+ * melee and ranged max hit = floor((effective strength × (strength bonus + 64) + 320) / 640);
+ * magic max hit = floor(base × (1 + magic damage)).
+ * - melee: scimitar Accurate (+3 Attack, +0 Strength), slash +80, strength +120
+ * - ranged: Accurate (+3 both), ranged attack +60, ranged strength +100
+ * - magic: Casting (+0), magic attack +70, a 100 base max hit and no gear damage
+ *
+ * Unprayed: melee 110 × 144 = 15840 and floor((107 × 184 + 320) / 640) = 31; ranged 110 × 124 =
+ * 13640 and floor((110 × 164 + 320) / 640) = 28; magic 107 × 134 = 14338 and 100.
+ */
+const UNPRAYED_ATTACKS = {
+  meleeRoll: 15840,
+  meleeMax: 31,
+  rangedRoll: 13640,
+  rangedMax: 28,
+  magicRoll: 14338,
+  magicMax: 100,
+} as const;
+
+const PRAYED_ATTACKS: Record<WikiTieredPrayer, Partial<Record<keyof typeof UNPRAYED_ATTACKS, number>>> = {
+  [PrayerType.ThickSkin]: {},
+  [PrayerType.RockSkin]: {},
+  [PrayerType.SteelSkin]: {},
+  // floor(99 × 1.05) = 103, floor(99 × 1.1) = 108, floor(99 × 1.15) = 113: max hits from 111, 116, 121.
+  [PrayerType.BurstOfStrength]: { meleeMax: 32 },
+  [PrayerType.SuperhumanStrength]: { meleeMax: 33 },
+  [PrayerType.UltimateStrength]: { meleeMax: 35 },
+  // (103 + 11) × 144, (108 + 11) × 144, (113 + 11) × 144
+  [PrayerType.ClarityOfThought]: { meleeRoll: 16416 },
+  [PrayerType.ImprovedReflexes]: { meleeRoll: 17136 },
+  [PrayerType.IncredibleReflexes]: { meleeRoll: 17856 },
+  // (103 + 11) × 124 = 14136, floor((114 × 164 + 320) / 640) = 29; (108 + 11) × 124 = 14756, 30
+  [PrayerType.SharpEye]: { rangedRoll: 14136, rangedMax: 29 },
+  [PrayerType.HawkEye]: { rangedRoll: 14756, rangedMax: 30 },
+  // (103 + 8) × 134 = 14874; (108 + 8) × 134 = 15544 and floor(100 × 1.01) = 101
+  [PrayerType.MysticWill]: { magicRoll: 14874 },
+  [PrayerType.MysticLore]: { magicRoll: 15544, magicMax: 101 },
+  // Attack (113 + 11) × 144 = 17856; Strength floor(99 × 1.18) = 116, floor((124 × 184 + 320) / 640) = 36
+  [PrayerType.Chivalry]: { meleeRoll: 17856, meleeMax: 36 },
+};
+
+describe('tiered prayers and Chivalry in player attacks', () => {
+  const NO_GEAR_DAMAGE = { outgoingDamageMultiplier: 1, specialAttackDamageMultiplier: 1 };
+
+  function attacksWith(boostPrayers: PrayerType[]): Record<keyof typeof UNPRAYED_ATTACKS, number> {
+    const base = runtimeInput({ application: NO_GEAR_DAMAGE });
+    const diagnostics = (input: PlayerAttackRuntimeInput) => {
+      const plan = ready(planPlayerAttackFromRuntime(input));
+      if (plan.diagnostics === undefined) throw new TypeError('Expected plan diagnostics');
+      return plan.diagnostics;
+    };
+    const melee = diagnostics({ ...base, player: { ...base.player, boostPrayers } });
+    const ranged = diagnostics({
+      ...base,
+      player: {
+        ...base.player,
+        equipment: { weapon: 25888 },
+        equipmentStats: equipment({ attackRanged: 60, rangedStrength: 100, attackSpeed: 4, attackRange: 10 }),
+        boostPrayers,
+      },
+      formulaStyle: 'ranged',
+      delivery: { style: 'range', attackKind: 'range_arrow', impactDelayTicks: 3 },
+    });
+    const magic = diagnostics({
+      ...base,
+      player: {
+        ...base.player,
+        equipment: { weapon: 4675 },
+        equipmentStats: equipment({ attackMagic: 70, attackSpeed: 5, attackRange: 10 }),
+        selectedAttackStyleIndex: 3,
+        boostPrayers,
+      },
+      formulaStyle: 'magic',
+      resources: { kind: 'spell', source: 'none', spellId: 'Ice Barrage' },
+      magicBaseMaxHitOverride: 100,
+      delivery: { style: 'magic', attackKind: 'magic_fire', impactDelayTicks: 4 },
+    });
+    return {
+      meleeRoll: melee.baseAttackRoll,
+      meleeMax: melee.baseMaxHit,
+      rangedRoll: ranged.baseAttackRoll,
+      rangedMax: ranged.baseMaxHit,
+      magicRoll: magic.baseAttackRoll,
+      magicMax: magic.baseMaxHit,
+    };
+  }
+
+  it('starts from the unprayed numbers the wiki formulas give', () => {
+    expect(attacksWith([])).toEqual(UNPRAYED_ATTACKS);
+  });
+
+  it.each(WIKI_TIERED_PRAYER_ROWS)('changes exactly the attack numbers $prayer boosts', ({ prayer }) => {
+    expect(attacksWith([prayer])).toEqual({ ...UNPRAYED_ATTACKS, ...PRAYED_ATTACKS[prayer] });
   });
 });

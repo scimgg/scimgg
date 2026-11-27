@@ -118,7 +118,7 @@ export function resolveAttackRequest(input: AttackResolutionInput): NpcAttackReq
           attacker: formulaAttacker,
           target: playerFormulaActor(target),
           targetEquipmentStats: target.equipmentStats,
-          targetPrayerMultipliers: lookupPrayerMultipliersFromState(target.activePrayer, target.offensivePrayer),
+          targetPrayerMultipliers: lookupPrayerMultipliersFromState(target.activePrayer, target.boostPrayers),
           style: plan.formulaStyle,
           random,
           ...labelled,

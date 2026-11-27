@@ -882,7 +882,7 @@ describe("capture conformance: Yama's autos roll accuracy", () => {
     if (!player) throw new Error('no player');
     player.equipmentStats = { ...player.equipmentStats, defenceMagic: magicDefence, defenceRanged: rangedDefence };
     if (overhead) engine.queueProtectionPrayer(overhead);
-    if (offensive) engine.queueOffensivePrayer(offensive);
+    if (offensive) engine.queueBoostPrayer(offensive);
 
     let swings = 0;
     let misses = 0;

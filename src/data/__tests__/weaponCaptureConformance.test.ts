@@ -54,7 +54,7 @@ function attacker(weaponId: number, selectedAttackStyleIndex: number, special: b
     isRunning: false,
     history: new Map(),
     activePrayer: null,
-    offensivePrayer: null,
+    boostPrayers: [],
     independentPrayers: [],
     prayerState: { points: 99, maxPoints: 99, drainCounter: 0, activePrayers: [], prayerActivationTicks: {} },
     stats: Object.fromEntries(

@@ -26,11 +26,11 @@ import {
 
 interface PrayerContentProps {
   activePrayer: PrayerType | null;
-  offensivePrayer: PrayerType | null;
+  boostPrayers?: readonly PrayerType[];
   independentPrayers?: readonly PrayerType[];
   prayerVisualOverrides?: Readonly<Partial<Record<PrayerType, boolean>>>;
   onPrayerChange: (prayer: PrayerType | null) => void;
-  onOffensivePrayerChange?: (prayer: PrayerType | null) => void;
+  onBoostPrayerChange?: (prayer: PrayerType | null) => void;
   onIndependentPrayerChange?: (prayer: PrayerType) => void;
   prayerState?: PrayerState;
   reorderMode: boolean;
@@ -178,7 +178,7 @@ export function getSlotIndexFromPoint(
 export function isPrayerHighlighted(
   prayer: PrayerType,
   activePrayer: PrayerType | null,
-  offensivePrayer: PrayerType | null,
+  boostPrayers: readonly PrayerType[],
   visualOverrides: Readonly<Partial<Record<PrayerType, boolean>>> | undefined,
   independentPrayers: readonly PrayerType[] = [],
 ): boolean {
@@ -186,18 +186,20 @@ export function isPrayerHighlighted(
   if (visualOverride !== undefined) return visualOverride;
   const category = PRAYER_CATEGORIES[prayer];
   if (category === 'protection') return activePrayer === prayer;
-  if (category === 'offensive') return offensivePrayer === prayer;
+  if (category === 'boost') return boostPrayers.includes(prayer);
   if (category === 'independent') return independentPrayers.includes(prayer);
   return false;
 }
 
+const NO_PRAYERS: readonly PrayerType[] = [];
+
 export const PrayerContent: React.FC<PrayerContentProps> = ({
   activePrayer,
-  offensivePrayer,
+  boostPrayers = NO_PRAYERS,
   independentPrayers,
   prayerVisualOverrides,
   onPrayerChange,
-  onOffensivePrayerChange,
+  onBoostPrayerChange,
   onIndependentPrayerChange,
   prayerState,
   reorderMode,
@@ -271,8 +273,8 @@ export const PrayerContent: React.FC<PrayerContentProps> = ({
 
   const isActive = useCallback(
     (prayer: PrayerType): boolean =>
-      isPrayerHighlighted(prayer, activePrayer, offensivePrayer, prayerVisualOverrides, independentPrayers),
-    [activePrayer, offensivePrayer, prayerVisualOverrides, independentPrayers],
+      isPrayerHighlighted(prayer, activePrayer, boostPrayers, prayerVisualOverrides, independentPrayers),
+    [activePrayer, boostPrayers, prayerVisualOverrides, independentPrayers],
   );
 
   const handleClick = useCallback(
@@ -282,13 +284,13 @@ export const PrayerContent: React.FC<PrayerContentProps> = ({
       const category = PRAYER_CATEGORIES[slot.prayer];
       if (category === 'protection') {
         onPrayerChange(slot.prayer);
-      } else if (category === 'offensive') {
-        onOffensivePrayerChange?.(slot.prayer);
+      } else if (category === 'boost') {
+        onBoostPrayerChange?.(slot.prayer);
       } else if (category === 'independent') {
         onIndependentPrayerChange?.(slot.prayer);
       }
     },
-    [onOffensivePrayerChange, onIndependentPrayerChange, onPrayerChange],
+    [onBoostPrayerChange, onIndependentPrayerChange, onPrayerChange],
   );
 
   handleClickRef.current = handleClick;
@@ -538,7 +540,7 @@ export const PrayerContent: React.FC<PrayerContentProps> = ({
                       const category = PRAYER_CATEGORIES[slot.prayer];
                       const handled =
                         category === 'protection' ||
-                        (category === 'offensive' && onOffensivePrayerChange !== undefined) ||
+                        (category === 'boost' && onBoostPrayerChange !== undefined) ||
                         (category === 'independent' && onIndependentPrayerChange !== undefined);
                       if (handled) {
                         onReplayCursorClick?.(e.clientX, e.clientY, 'yellow', e.timeStamp);

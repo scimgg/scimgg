@@ -353,6 +353,26 @@ describe('prayer drain rates', () => {
     // 12 + 24 + 2 = 38; 21 + 38 = 59 < 60, so the extra 2 is the whole of what Preserve adds.
     expect(tickPrayerDrain(state, 0, 5).state.drainCounter).toBe(59);
   });
+
+  it('sums every lit boost prayer: three single-stat prayers beside an overhead', () => {
+    const lit = [
+      PrayerType.ProtectMelee,
+      PrayerType.SteelSkin,
+      PrayerType.SuperhumanStrength,
+      PrayerType.ClarityOfThought,
+    ];
+    const state = createState({
+      activePrayers: lit,
+      prayerActivationTicks: Object.fromEntries(lit.map((prayer) => [prayer, 0])),
+    });
+
+    // 12 + 12 + 6 + 1 = 31 per tick (https://oldschool.runescape.wiki/w/Prayer?oldid=15411470).
+    const first = tickPrayerDrain(state, 0, 5).state;
+    expect(first.drainCounter).toBe(31);
+    const second = tickPrayerDrain(first, 0, 6).state;
+    expect(second.points).toBe(98);
+    expect(second.drainCounter).toBe(2);
+  });
 });
 
 describe('isPreserveQualified', () => {

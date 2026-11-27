@@ -39,7 +39,7 @@ export type PendingInputOp =
   | { readonly type: 'pickup_ground_item'; readonly groundItemId: string };
 
 export function isPrayerOp(op: PendingInputOp): op is QueuedPrayerAction {
-  return op.type === 'protection' || op.type === 'offensive' || op.type === 'independent' || op.type === 'quickPrayers';
+  return op.type === 'protection' || op.type === 'boost' || op.type === 'independent' || op.type === 'quickPrayers';
 }
 
 /** How the encounter treats prayer restoration, as `itemRestrictions` expresses it. */
@@ -63,7 +63,7 @@ export interface PendingPrayerProjectionInput {
 }
 
 /**
- * Predict what this tick's queued inputs will do to the prayer slots, walking the FIFO in
+ * Predict what this tick's queued inputs will do to the lit prayers, walking the FIFO in
  * arrival order so a restore dose is seen by a prayer clicked after it.
  *
  * Filtering the queue down to prayer ops and asking `points > 0` once gets the headline case
@@ -144,7 +144,7 @@ export function buildPendingPrayerProjection(
   return {
     start: {
       protection: player.activePrayer,
-      offensive: player.offensivePrayer,
+      boost: player.boostPrayers,
       independent: player.independentPrayers,
       quickPrayersActive: player.quickPrayersActive,
     },

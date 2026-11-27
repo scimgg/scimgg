@@ -56,8 +56,9 @@ Licensed under [CC BY-NC-SA 3.0](https://creativecommons.org/licenses/by-nc-sa/3
   players' published setups, each cited by screenshot and date, and are not Wiki-derived.
 - **`src/data/tilePackPresets.ts`**: the Donofly and Yama Mage Contract tile packs, taken from the
   Wiki's Yama strategy page and its tile-marker module.
-- **The values transcribed from Wiki tables** in `src/data/spellRunes.ts` (rune costs) and
-  `src/data/itemEffects.ts` (food and potion effects), each citing its article.
+- **The values transcribed from Wiki tables** in `src/data/spellRunes.ts` (rune costs),
+  `src/data/itemEffects.ts` (food and potion effects) and `src/types/simulation.ts` (the prayer
+  table's drain effects and stat boosts, and its conflict groups), each citing its article.
 
 Elsewhere, Wiki articles are cited as evidence beside the code that implements individual mechanics.
 

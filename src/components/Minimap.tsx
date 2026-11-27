@@ -822,9 +822,9 @@ export const Minimap = forwardRef<MinimapHandle, MinimapProps>(function Minimap(
       isQuickPrayerActive={isQuickPrayerActive}
       hasPredictedPrayer={
         hasPredictedPrayer ??
-        (simulationState.pendingProtectionPrayer[1] !== null || simulationState.pendingOffensivePrayer[1] !== null)
+        (simulationState.pendingProtectionPrayer[1] !== null || simulationState.pendingBoostPrayers[1].length > 0)
       }
-      hasCommittedPrayer={simulationState.activePrayer !== null || simulationState.offensivePrayer !== null}
+      hasCommittedPrayer={simulationState.activePrayer !== null || simulationState.boostPrayers.length > 0}
       prayerEnabled={prayerEnabled}
       prayerFlickOrbEnabled={prayerFlickOrbEnabled}
       prayerFlickAlwaysOn={prayerFlickAlwaysOn}

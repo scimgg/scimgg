@@ -41,7 +41,7 @@ export type PlayerAttackRuntimeInput = {
   readonly player: Readonly<
     Pick<
       PlayerActor,
-      'stats' | 'equipment' | 'equipmentStats' | 'activePrayer' | 'offensivePrayer' | 'selectedAttackStyleIndex'
+      'stats' | 'equipment' | 'equipmentStats' | 'activePrayer' | 'boostPrayers' | 'selectedAttackStyleIndex'
     >
   >;
   readonly target: Readonly<Pick<NpcActor, 'npcTypeId' | 'formulaStats' | 'debuffs'>>;
@@ -96,7 +96,7 @@ export function planPlayerAttackFromRuntime(input: PlayerAttackRuntimeInput): Pl
     target,
     formulaStyle: input.formulaStyle,
     equipmentStats,
-    prayerMultipliers: lookupPrayerMultipliersFromState(input.player.activePrayer, input.player.offensivePrayer),
+    prayerMultipliers: lookupPrayerMultipliersFromState(input.player.activePrayer, input.player.boostPrayers),
     attackSpeedTicks: input.attackSpeedTicks,
     delivery: input.delivery,
     application: input.application,

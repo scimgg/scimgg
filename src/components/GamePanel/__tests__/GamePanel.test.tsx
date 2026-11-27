@@ -18,6 +18,7 @@ import { PANEL_FILTER_STORAGE_KEY } from '../../../hooks/panelFilterState';
 import type { UIPosition } from '../../../hooks/usePersistedSettings';
 import { MOBILE, PANEL, TAB_ICONS } from '../../../resourcePack';
 import { defaultOsmFrame } from '../../../test/helpers/osmFrame';
+import { WIKI_TIERED_PRAYER_ROWS } from '../../../types/__tests__/fixtures/wikiPrayerTable';
 import type { RunePouch } from '../../../types/encounterLoadout';
 import { createEmptyInventory, type Inventory } from '../../../types/inventory';
 import { PRAYER_FILTER_DEFAULTS } from '../../../types/panelFilters';
@@ -492,6 +493,68 @@ describe('GamePanel replay tab state', () => {
   });
 });
 
+describe('prayer book tiered prayers and Chivalry', () => {
+  const labelOf = (prayer: PrayerType): string => {
+    const slot = PRAYER_GRID.find((candidate) => candidate.prayer === prayer);
+    if (slot === undefined) throw new TypeError(`No book slot for ${prayer}`);
+    return slot.label;
+  };
+  const defenceStats = (defence: number) => makeStats({ defence: { current: defence, max: defence } });
+
+  it.each(WIKI_TIERED_PRAYER_ROWS)('sends a click on the $prayer slot as a boost prayer click', ({ prayer }) => {
+    const onBoostPrayerChange = vi.fn();
+    const onPrayerChange = vi.fn();
+    renderPanel('prayer', { simulationState: stubSimulationState(makeStats()), onBoostPrayerChange, onPrayerChange });
+    const button = screen.getByRole('button', { name: labelOf(prayer) });
+    expect(button.getAttribute('data-prayer')).toBe(prayer);
+    expect(button.getAttribute('aria-disabled')).toBe('false');
+
+    fireEvent.mouseDown(button, { button: 0 });
+    expect(onBoostPrayerChange).toHaveBeenCalledExactlyOnceWith(prayer);
+    expect(onPrayerChange).not.toHaveBeenCalled();
+  });
+
+  // "level 65 Defence and 60 Prayer" (https://oldschool.runescape.wiki/w/Chivalry?oldid=15293964).
+  it.each([
+    [64, false],
+    [65, true],
+  ] as const)('lets Chivalry be clicked at base Defence %i only from 65', (defence, clickable) => {
+    const onBoostPrayerChange = vi.fn();
+    renderPanel('prayer', { simulationState: stubSimulationState(defenceStats(defence)), onBoostPrayerChange });
+    const button = screen.getByRole('button', { name: 'Chivalry' });
+    expect(button.getAttribute('aria-disabled')).toBe(String(!clickable));
+
+    fireEvent.mouseDown(button, { button: 0 });
+    expect(onBoostPrayerChange).toHaveBeenCalledTimes(clickable ? 1 : 0);
+  });
+
+  it.each([
+    [64, false],
+    [65, true],
+  ] as const)('filters Chivalry at base Defence %i when unmet requirements are hidden', (baseDefenceLevel, shown) => {
+    renderWithProviders(
+      <PrayerContent
+        activePrayer={null}
+        onPrayerChange={vi.fn()}
+        reorderMode={false}
+        filteringEnabled
+        filterViewOpen={false}
+        onFilterViewOpenChange={vi.fn()}
+        filterSettings={{
+          hidden: [],
+          order: null,
+          filterOptions: { ...PRAYER_FILTER_DEFAULTS, showLackRequirements: false },
+        }}
+        availability={{ basePrayerLevel: 99, baseDefenceLevel, baseAttackLevel: 99, baseStrengthLevel: 99 }}
+        onToggleHidden={vi.fn()}
+        onReorder={vi.fn()}
+        onToggleFilterOption={vi.fn()}
+      />,
+    );
+    expect(screen.queryByRole('button', { name: 'Chivalry' }) !== null).toBe(shown);
+  });
+});
+
 describe('QuickPrayerSetup prayer upgrades', () => {
   it.each([
     [75, false, true],
@@ -501,7 +564,6 @@ describe('QuickPrayerSetup prayer upgrades', () => {
     renderWithProviders(
       <PrayerContent
         activePrayer={null}
-        offensivePrayer={null}
         onPrayerChange={vi.fn()}
         reorderMode={false}
         filteringEnabled
@@ -519,7 +581,7 @@ describe('QuickPrayerSetup prayer upgrades', () => {
   });
 
   it('activates Zeal from the Piety cell in the prayer book when unlocked', () => {
-    const onOffensivePrayerChange = vi.fn();
+    const onBoostPrayerChange = vi.fn();
     renderPanel('prayer', {
       simulationState: stubSimulationState(
         makeStats({
@@ -533,15 +595,15 @@ describe('QuickPrayerSetup prayer upgrades', () => {
           zealPrayer: true,
         },
       ),
-      onOffensivePrayerChange,
+      onBoostPrayerChange,
     });
     fireEvent.mouseDown(screen.getByRole('button', { name: 'Zeal' }), { button: 0 });
-    expect(onOffensivePrayerChange).toHaveBeenCalledWith(PrayerType.Zeal);
+    expect(onBoostPrayerChange).toHaveBeenCalledWith(PrayerType.Zeal);
     expect(screen.queryByRole('button', { name: 'Piety' })).toBeNull();
   });
 
   it.each(['attack', 'strength'] as const)('refuses Zeal below base %s 75 even when boosted', (skill) => {
-    const onOffensivePrayerChange = vi.fn();
+    const onBoostPrayerChange = vi.fn();
     renderPanel('prayer', {
       simulationState: stubSimulationState(
         makeStats({
@@ -553,10 +615,10 @@ describe('QuickPrayerSetup prayer upgrades', () => {
         }),
         { ...DEFAULT_MECHANICS_CONFIG, zealPrayer: true },
       ),
-      onOffensivePrayerChange,
+      onBoostPrayerChange,
     });
     fireEvent.mouseDown(screen.getByRole('button', { name: 'Zeal' }), { button: 0 });
-    expect(onOffensivePrayerChange).not.toHaveBeenCalled();
+    expect(onBoostPrayerChange).not.toHaveBeenCalled();
   });
 
   function renderSetup(quickPrayerSelections: string[], basePrayerLevel = 62, zealPrayer = false) {

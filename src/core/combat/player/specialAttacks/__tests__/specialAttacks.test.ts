@@ -534,7 +534,7 @@ describe('special attack defence rolls', () => {
         equipment: { weapon: weaponId },
         equipmentStats: { ...createEmptyStats(), attackStab: 60, attackSlash: 90, meleeStrength: 100 },
         activePrayer: null,
-        offensivePrayer: null,
+        boostPrayers: [],
         selectedAttackStyleIndex: 2,
         combatTimers: createDefaultTimers(),
       },

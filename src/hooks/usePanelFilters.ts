@@ -4,7 +4,7 @@ import { useReplayPanelPresentation } from '../contexts/ReplayPresentationContex
 import type { ReplayPanelFilters } from '../core/replayPresentation';
 import type { PrayerFilterOptions, SpellCategory, SpellFilterOptions } from '../types/panelFilters';
 import { PRAYER_FILTER_DEFAULTS, SPELL_FILTER_DEFAULTS } from '../types/panelFilters';
-import { PRAYER_CATEGORIES } from '../types/simulation';
+import { isPrayerType, prayersConflict } from '../types/simulation';
 import { loadSetting, saveSetting } from '../util/storage';
 import type { PanelFilterSettings, PrayerFilterSettings, SpellbookFilterSettings } from './panelFilterState';
 import { normalizePanelFilterSettings, PANEL_FILTER_STORAGE_KEY } from './panelFilterState';
@@ -136,14 +136,10 @@ export function usePanelFilters() {
       if (current.includes(prayer)) {
         return { ...prev, prayer: { ...prev.prayer, quickPrayerSelections: current.filter((p) => p !== prayer) } };
       }
-      // Exclusivity belongs to the two exclusive SLOTS only. `independent` is the absence of a
-      // group, not a third one: Preserve coexists with an overhead and an offensive prayer, so
-      // selecting it must evict nothing.
-      const category = PRAYER_CATEGORIES[prayer];
-      const filtered =
-        category === 'protection' || category === 'offensive'
-          ? current.filter((p) => PRAYER_CATEGORIES[p] !== category)
-          : current;
+      // Selecting a prayer deselects exactly what lighting it would turn off.
+      const filtered = isPrayerType(prayer)
+        ? current.filter((selected) => !isPrayerType(selected) || !prayersConflict(prayer, selected))
+        : current;
       return { ...prev, prayer: { ...prev.prayer, quickPrayerSelections: [...filtered, prayer] } };
     });
   }, []);

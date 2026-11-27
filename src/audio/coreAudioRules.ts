@@ -128,6 +128,21 @@ const PRAYER_ACTIVATION_SOUNDS: Record<string, number> = {
   [PrayerType.Preserve]: 2679, // PRAYER_ACTIVATE_RAPID_RESTORE_PRESERVE — shared with Rapid Restore
   [PrayerType.RapidRestore]: 2679,
   [PrayerType.RapidHeal]: 2678, // PRAYER_ACTIVATE_RAPID_HEAL
+  // The tiered prayers and Chivalry, from SoundEffectID.java at runelite/runelite@e3d1667.
+  [PrayerType.ThickSkin]: 2690, // PRAYER_ACTIVATE_THICK_SKIN
+  [PrayerType.BurstOfStrength]: 2688, // PRAYER_ACTIVATE_BURST_OF_STRENGTH
+  [PrayerType.ClarityOfThought]: 2664, // PRAYER_ACTIVATE_CLARITY_OF_THOUGHT
+  [PrayerType.SharpEye]: 2685, // PRAYER_ACTIVATE_SHARP_EYE_RIGOUR
+  [PrayerType.MysticWill]: 2670, // PRAYER_ACTIVATE_MYSTIC_WILL_AUGURY
+  [PrayerType.RockSkin]: 2684, // PRAYER_ACTIVATE_ROCK_SKIN
+  [PrayerType.SuperhumanStrength]: 2689, // PRAYER_ACTIVATE_SUPERHUMAN_STRENGTH
+  [PrayerType.ImprovedReflexes]: 2662, // PRAYER_ACTIVATE_IMPROVED_REFLEXES
+  [PrayerType.HawkEye]: 2666, // PRAYER_ACTIVATE_HAWK_EYE
+  [PrayerType.MysticLore]: 2668, // PRAYER_ACTIVATE_MYSTIC_LORE
+  [PrayerType.SteelSkin]: 2687, // PRAYER_ACTIVATE_STEEL_SKIN
+  [PrayerType.UltimateStrength]: 2691, // PRAYER_ACTIVATE_ULTIMATE_STRENGTH
+  [PrayerType.IncredibleReflexes]: 2667, // PRAYER_ACTIVATE_INCREDIBLE_REFLEXES
+  [PrayerType.Chivalry]: 3826, // PRAYER_ACTIVATE_CHIVALRY
 };
 const PRAYER_DEACTIVATE = 2663; // PRAYER_DEACTIVE_VWOOP
 const PRAYER_DEPLETE_TWINKLE = 2672; // PRAYER_DEPLETE_TWINKLE — drained to 0 or activation rejected
