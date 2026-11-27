@@ -26,6 +26,7 @@ import { snakelingDefinition } from '../../../npcs/zulrah/snakeling';
 import { getZulrahState, isInTailArea, isTailSafeTile, zulrahDefinition } from '../../../npcs/zulrah/zulrah';
 import { getBoundsFromRegion } from '../../../rs/collision/WalkabilityAnalyzer';
 import { enqueueEnginePendingHit } from '../../../test/helpers/pendingHits';
+import { createEmptyStats } from '../../../types/equipmentStats';
 import { parseInventoryFromSetup } from '../../../types/inventory';
 import { type Coordinate, type MechanicsConfig, PrayerType } from '../../../types/simulation';
 import { pickCloudSites, ZULRAH_CLOUD_FILL_ORDER, ZULRAH_CLOUD_SITES } from '../clouds';
@@ -41,6 +42,9 @@ import {
 } from '../rotation';
 import { ZULRAH_ACTOR_ID, ZULRAH_PLAYER_START, ZulrahEncounter } from '../ZulrahEncounter';
 import { ZulrahSceneObjectController } from '../ZulrahSceneObjectController';
+import {
+  ZULRAH_CAPTURE_TAIL_STUN,
+} from './fixtures/zulrahCapture';
 
 type Run = {
   readonly engine: SimulationEngine;
@@ -403,6 +407,18 @@ describe('Zulrah magma tail', () => {
     throw new Error('Magma never stared');
   }
 
+  /** As `runToStare`, for the phase's second and last tail, whose stun no later slam extends. */
+  function runToLastStare(run: Run) {
+    const first = runToStare(run);
+    for (let i = 0; i < 100; i++) {
+      run.tick();
+      const zulrah = run.zulrah();
+      const pending = zulrah ? getZulrahState(zulrah)?.pendingTail : null;
+      if (pending && pending !== first) return pending;
+    }
+    throw new Error('Magma never stared twice');
+  }
+
   it('locks the tile the player stood on and lands ZULRAH_TAIL.stareTicks later', () => {
     const run = startRun(5, { infiniteHealth: false, zulrahClouds: false });
     const pending = runToStare(run);
@@ -447,6 +463,66 @@ describe('Zulrah magma tail', () => {
     expect(run.world.getPlayer()?.activePrayer).toBe(PrayerType.ProtectMagic);
     expect(run.world.getPlayer()?.attackTarget ?? null).toBeNull();
     expect(run.world.getPlayer()?.position).toEqual(stuckAt);
+  });
+
+  // Capture 2 t3015: stunned through t3021, moving again on t3022.
+  const { hit: STUN_HIT, firstMove: STUN_FIRST_MOVE } = ZULRAH_CAPTURE_TAIL_STUN;
+  const stunnedTicks = STUN_FIRST_MOVE - STUN_HIT;
+
+  it('stuns for the captured window: from the landing tick to the tick before the first move', () => {
+    expect(ZULRAH_TAIL.stunTicks).toBe(stunnedTicks);
+    expect(PLAYER_STUNNED_SPOTANIM_ID).toBe(ZULRAH_CAPTURE_TAIL_STUN.spotAnimId);
+  });
+
+  it('stuns from the tick the tail lands: no step until the captured first-move tick', () => {
+    const run = startRun(5, { zulrahClouds: false });
+    const pending = runToLastStare(run);
+    while (run.world.tick < pending.landTick - 1) run.tick();
+    const away: Coordinate = [pending.target[0] + 4, pending.target[1]];
+    const moved: boolean[] = [];
+    // The player clicks away every tick from the landing tick on; the tail still catches it, since
+    // Zulrah's turn comes before the player's.
+    for (let i = 0; i <= stunnedTicks; i++) {
+      const before = [...(run.world.getPlayer()?.position ?? [0, 0])];
+      run.engine.advanceTick(away);
+      expect(run.world.tick).toBe(pending.landTick + i);
+      expect(run.engine.wasLastTickStunned(), `tick +${i}`).toBe(i < stunnedTicks);
+      const after = run.world.getPlayer()?.position ?? [0, 0];
+      moved.push(after[0] !== before[0] || after[1] !== before[1]);
+    }
+    expect(moved).toEqual([...Array.from({ length: stunnedTicks }, () => false), true]);
+  });
+
+  it('stuns from the tick the tail lands: no attack until the captured first-move tick', () => {
+    const run = startRun(5, { zulrahClouds: false });
+    // The first tail: Zulrah stays up after it, so it can be attacked once the stun ends.
+    const pending = runToStare(run);
+    while (run.world.tick < pending.landTick) run.tick();
+    // The second slam would stun again on the first free tick (as in the capture, t3008 then t3015), so
+    // it lands harmlessly: attacks off from here on.
+    run.engine.setMechanicsConfig({
+      infiniteHealth: true,
+      zulrahRotation: '1',
+      zulrahClouds: false,
+      zulrahAttacks: false,
+    });
+    expect(run.engine.wasLastTickStunned()).toBe(true);
+    const player = run.world.getPlayer();
+    if (!player) throw new Error('No player');
+    // A blowpipe's reach covers Zulrah's middle spot from the start tile; set by hand, as there is no item loader.
+    run.engine.setEquipment({ weapon: 12926 });
+    player.equipmentStats = { ...createEmptyStats(), attackSpeed: 2, attackRange: 6 };
+    const attacked: boolean[] = [];
+    for (let i = 1; i <= stunnedTicks; i++) {
+      const zulrah = run.zulrah();
+      if (zulrah) run.engine.setAttackTarget(zulrah.id);
+      run.tick();
+      attacked.push(
+        run.engine.getLastTickEvents().some((event) => event.type === 'attack_started' && event.sourceId === player.id),
+      );
+    }
+    // Ticks +1 to +7 after the landing tick (itself stunned, above).
+    expect(attacked).toEqual([...Array.from({ length: stunnedTicks - 1 }, () => false), true]);
   });
 
   it('faces the locked tile through the stare, then tracks the player again', () => {

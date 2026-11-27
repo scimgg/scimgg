@@ -1,11 +1,18 @@
 # Zulrah — open questions
 
 Implemented behavior the [facts spec](./zulrah-facts-spec.md) does not establish. Each row gives the
-simulator's value, its label, and the evidence that would settle it. There are no Zulrah captures;
-frame-stepped video against the 0.6 s tick is the means to settle these (`CONTRIBUTING.md`).
+simulator's value, its label, and the evidence that would settle it. Four private gameplay captures
+cover part of the fight: zulrah-packet-data-1.txt (**Z1**), rotation 3 from its magma phase into the
+next rotation; zulrah-packet-data-2.txt (**Z2**), rotation 2 from the opening through phase 10;
+zulrah-packet-data-3.txt (**Z3**), rotation 4 from phase 3 through phase 12; and
+zulrah-packet-data-4.txt (**Z4**), rotation 2 from phase 3 through phase 10 and into the next rotation,
+rotation 2 again.
+Further captures or frame-stepped video against the 0.6 s tick settle the rest (`CONTRIBUTING.md`).
 
 Labels: **POLICY**, a simulator choice no source decides; **INFERENCE**, derived from a source but
-not stated by it; **UNVERIFIED**, no source.
+not stated by it; **OBSERVATION**, seen in a capture but not yet a rule (one case, or not modeled);
+**UNVERIFIED**, no source; **FOR DISCUSSION**, a change made from the captures that is open for
+discussion with the contributor.
 
 Paths: **N/** = `src/npcs/zulrah/`, **E/** = `src/encounters/zulrah/`.
 
@@ -17,7 +24,9 @@ Paths: **N/** = `src/npcs/zulrah/`, **E/** = `src/encounters/zulrah/`.
 | Opening | Rise 4 ticks from the fight's first tick, then 12 ticks before the first barrage; `E/rotation.ts` | POLICY | Ticks from arriving to Zulrah appearing, and to its first spit |
 | Cloud barrage and snakeling turn length | 3 ticks, as attacks | POLICY | A cloud-only phase (rotation 1, phase 1) |
 | Tail stare | Slam 6 ticks after the stare starts; next stare 3 ticks after the slam; `N/constants.ts` `ZULRAH_TAIL` | UNVERIFIED | Tail animation start to hitsplat, and slam to next stare |
-| Stun length | 5 ticks; `ZULRAH_TAIL.stunTicks` | UNVERIFIED | Hitsplat to the player's first move |
+| Stun with a knockback | A hit on t blocks t..t+6 (`ZULRAH_TAIL.stunTicks` 7), knockback or not | OBSERVATION | With a knockback the player first moves a tick later: Z2 t3119 → t3127, Z1 t549 → t557. Consistent with 1 tick of knockback + the 7-tick stun. Z4 t2256 → t2265 is an upper bound only, as clicks were not made every tick. Without one Z4 agrees with Z2: hit t2064, first move t2071 |
+| Knockback | Not modeled; left to the contributor | OBSERVATION | Four of the ten captured tail hits pushed the player. Three pushed it west, each ending on 22,68: from 24,68 (Z1 t242, Z2 t3119, 2 tiles) and from 23,68 (Z1 t549, 1 tile, stopped at the island's edge). Z4 t2256 pushed it east, 2 tiles from 32,69 to 34,69, facing angle 512 (toward Zulrah). Each was a left tail. On the hit tick the game sends a teleport plus an exactmove over 30 cycles, the player faces Zulrah (angle 1536) and plays seq 1157 `human_troll_flyback`, and the `busy` varbit is set for that tick. The player first moves a tick later than without a knockback. No push for a player already on 22,68 (Z1 t249), on 32,70 at the north-east edge (Z2 t3008, t3015, t3247, t3254) or on 30,60 at the south edge (Z4 t2064, a left tail). Likely rule (inferred, from pushes west and east): up to 2 tiles directly away from Zulrah, stopping at the first unwalkable tile. The simulator has no forced player movement, so this needs shared engine support |
+| Stun start | The hit tick is the first stunned tick, as the engine runs Zulrah's turn before the player's | INFERENCE | "You're stunned!" answers clicks from the tick after the hit (Z2 t3248, with an attack click that tick); walking on the hit tick itself is not seen |
 
 ## Tail
 
@@ -27,8 +36,8 @@ Paths: **N/** = `src/npcs/zulrah/`, **E/** = `src/encounters/zulrah/`.
 | Locked tile | The player's tile when the stare starts | INFERENCE ("stare at the player's position") | Moving during the stare |
 | TAIL_LEFT vs TAIL_RIGHT | Alternates, left first | POLICY | Which animation plays for targets on each side |
 | Pillar safe tiles | 24,63 24,62 25,62 (west pillar) and 32,63 32,62 31,62 (east) take no slam while Zulrah is at the middle spot; `N/constants.ts` `ZULRAH_TAIL_SAFE_TILES` | REPORTED (from play) | — |
-| What the stun blocks | Moving and attacking; prayer, food, potions and gear still work | INFERENCE (Stun status page) | Praying, eating and switching while stunned |
-| Stun graphic | Spotanim 80 STUNNED on the player; no player animation | UNVERIFIED | A tail hit |
+| What the stun blocks | Moving and attacking; prayer, food, potions and gear still work | INFERENCE (Stun status page); Z1 t245 shows eating while stunned | Praying and switching while stunned |
+| Stun graphic | Spotanim 245 `stunned_thieving` on the player, on every hit | — | Measured (facts spec); seq 1157 belongs to the knockback, above |
 | Envenoms | No | INFERENCE (venom is stated for ranged and magic only) | A tail hit on an un-envenomed player |
 
 ## Facing

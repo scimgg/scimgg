@@ -1328,7 +1328,9 @@ export class SimulationEngine {
       clearPlayerAttackIntent(player);
     }
     // A stunned player cannot move or attack, but can still pray, eat, drink and switch gear.
-    const stunned = !inputLocked && resolveDynamic(rules?.playerStunned, this.buildEngineContext()) === true;
+    const isStunnedNow = (): boolean =>
+      !inputLocked && resolveDynamic(rules?.playerStunned, this.buildEngineContext()) === true;
+    let stunned = isStunnedNow();
     this.lastTickStunned = stunned;
     if (stunned) {
       player.pendingInputOps = player.pendingInputOps.filter(
@@ -1375,6 +1377,16 @@ export class SimulationEngine {
     this.processPlayerQueueBand();
     this.processPlayerTimerBand(nextTick, previousTick, specEnergyAtTickStart);
     cancelBlockedPlayerAttack(player, this.worldState);
+
+    // A stun applied since the tick started (a hazard, an NPC turn, a hit from the player's queue)
+    // already blocks this tick's walk and attack, because all of those act before the player does.
+    // The prayer, food and gear inputs the input band ran this tick stand.
+    if (!stunned && isStunnedNow()) {
+      stunned = true;
+      this.lastTickStunned = true;
+      player.pendingItemPickup = null;
+      clearPlayerAttackIntent(player);
+    }
 
     // BAND 4 — PLAYER pre-move interaction. Runs before the step below because standing
     // on the tile is a precondition, not something this tick's step can satisfy: clicking a

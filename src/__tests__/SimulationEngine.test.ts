@@ -15,10 +15,12 @@ import type {
   Encounter,
   EncounterCompletionOwnership,
   EncounterContext,
+  EncounterEngineRules,
   EncounterNpcDefeat,
   EncounterPlayerAttackContext,
   EncounterPlayerAttackInfo,
   EncounterPlayerAttackResolvedContext,
+  EncounterPlayerAttackStartedInfo,
   EncounterTickResult,
   EnvironmentalDamage,
   EquipmentClickSlot,
@@ -532,6 +534,36 @@ class AutoAttackPauseProbeEncounter extends TrackingNpcEncounter {
 class SurvivingPostTickEncounter extends TrackingNpcEncounter {
   override processPostTick(): EnvironmentalDamage[] {
     return [{ baseDamage: 4, attackType: 'typeless', source: 'TookDamage' }];
+  }
+}
+
+/**
+ * Stuns the player from its NPC band on `stunTick`, through ticks `stunTick .. stunTick + stunTicks - 1`
+ * (`playerStunned`), as an NPC hit landing in that band does. Records the ticks the player attacked on.
+ */
+class StunProbeEncounter extends TrackingNpcEncounter {
+  readonly playerAttackTicks: number[] = [];
+  private stunUntilTick = 0;
+
+  constructor(
+    npc: NpcActor,
+    private readonly stunTick: number | null,
+    private readonly stunTicks = 5,
+  ) {
+    super(npc);
+  }
+
+  getEngineRules(): EncounterEngineRules {
+    return { playerStunned: (ctx) => ctx.tick < this.stunUntilTick };
+  }
+
+  completeNpcBand(ctx: EncounterContext): EnvironmentalDamage[] {
+    if (ctx.tick === this.stunTick) this.stunUntilTick = ctx.tick + this.stunTicks;
+    return [];
+  }
+
+  onPlayerAttackStarted(info: EncounterPlayerAttackStartedInfo): void {
+    this.playerAttackTicks.push(info.tick);
   }
 }
 
@@ -4660,6 +4692,94 @@ describe('SimulationEngine', () => {
       advanceSafeTick(eng);
 
       expect(eng.getLastTickEvents().filter((event) => event.type === 'prayer_activation_failed')).toHaveLength(1);
+    });
+  });
+
+  describe('playerStunned', () => {
+    const STUN_TICK = 3;
+    const walkTarget: Coordinate = [10, 40];
+
+    function makeStunEngine(stunTick: number | null, npcPos: Coordinate = [20, 20]) {
+      const encounter = new StunProbeEncounter(createTrackingNpc(npcPos, 0), stunTick);
+      const eng = new SimulationEngine({ encounter, startPos: [10, 12] });
+      return { eng, encounter, player: getWorldState(eng).getPlayer()! };
+    }
+
+    it('blocks the walk on the tick an NPC-band stun lands, through its last tick', () => {
+      const { eng, player } = makeStunEngine(STUN_TICK);
+      const moved = new Map<number, boolean>();
+      const stunned = new Map<number, boolean>();
+      for (let tick = 1; tick <= STUN_TICK + 6; tick++) {
+        const before = [...player.position];
+        eng.advanceTick(walkTarget);
+        moved.set(tick, player.position[0] !== before[0] || player.position[1] !== before[1]);
+        stunned.set(tick, eng.wasLastTickStunned());
+      }
+
+      for (const tick of [1, 2, 8, 9]) expect(moved.get(tick), `tick ${tick}`).toBe(true);
+      for (let tick = STUN_TICK; tick < STUN_TICK + 5; tick++) {
+        expect(moved.get(tick), `tick ${tick}`).toBe(false);
+        expect(stunned.get(tick), `tick ${tick}`).toBe(true);
+      }
+      expect([stunned.get(2), stunned.get(8)]).toEqual([false, false]);
+    });
+
+    it('calls off the attack and pick-up started on the tick an NPC-band stun lands', () => {
+      // The NPC is adjacent, so an unstunned player attacks on the tick the target is set.
+      const attackOn = (stunTick: number | null) => {
+        const { eng, encounter, player } = makeStunEngine(stunTick, [10, 13]);
+        eng.advanceTick([10, 12]);
+        eng.advanceTick([10, 12]);
+        eng.applyAction({ type: 'attackTarget', targetId: 'tracking-npc' });
+        eng.advanceTick([10, 12]);
+        return { attacks: encounter.playerAttackTicks, target: player.attackTarget };
+      };
+      // The player stands on the pile, so an unstunned Take resolves on the tick it is clicked.
+      const pickUpOn = (stunTick: number | null) => {
+        const { eng, player } = makeStunEngine(stunTick);
+        const world = getWorldState(eng);
+        const pileId = world.nextGroundItemId();
+        world.groundItems.push({ id: pileId, itemId: 13441, quantity: 1, position: [10, 12], droppedTick: 0 });
+        eng.advanceTick([10, 12]);
+        eng.advanceTick([10, 12]);
+        eng.applyAction({ type: 'pickupGroundItem', groundItemId: pileId });
+        eng.advanceTick([10, 12]);
+        return { piles: world.groundItems.length, pending: player.pendingItemPickup };
+      };
+
+      expect(attackOn(null)).toEqual({ attacks: [STUN_TICK], target: 'tracking-npc' });
+      expect(attackOn(STUN_TICK)).toEqual({ attacks: [], target: null });
+      expect(pickUpOn(null)).toEqual({ piles: 0, pending: null });
+      expect(pickUpOn(STUN_TICK)).toEqual({ piles: 1, pending: null });
+    });
+
+    it('drops attack and pick-up inputs during a stun, but lets prayer, food and gear through', () => {
+      const ANGLERFISH = 13441;
+      const { eng, encounter, player } = makeStunEngine(1, [10, 13]);
+      eng.setEquipment({ head: 10828 });
+      eng.setInventory([{ id: ANGLERFISH }]);
+      player.vitals.hp = 50;
+      const world = getWorldState(eng);
+      const pileId = world.nextGroundItemId();
+      world.groundItems.push({ id: pileId, itemId: ANGLERFISH, quantity: 1, position: [10, 12], droppedTick: 0 });
+      eng.advanceTick([10, 12]);
+
+      eng.applyAction({ type: 'pickupGroundItem', groundItemId: pileId });
+      eng.applyAction({ type: 'attackTarget', targetId: 'tracking-npc' });
+      eng.queueProtectionPrayer(PrayerType.ProtectMelee);
+      eng.queueItemAction(0);
+      eng.queueUnequip('head');
+      eng.advanceTick([10, 20]);
+
+      expect(eng.wasLastTickStunned()).toBe(true);
+      expect(player.position).toEqual([10, 12]);
+      expect(player.attackTarget).toBeNull();
+      expect(player.pendingItemPickup).toBeNull();
+      expect(world.groundItems.map((item) => item.id)).toEqual([pileId]);
+      expect(encounter.playerAttackTicks).toEqual([]);
+      expect(player.activePrayer).toBe(PrayerType.ProtectMelee);
+      expect(player.vitals.hp).toBeGreaterThan(50);
+      expect(player.equipment.head).toBeUndefined();
     });
   });
 

@@ -38,16 +38,16 @@ export const ZULRAH_HIT_CAP = { above: 50, min: 45, max: 50 } as const;
  *   moving" (https://oldschool.runescape.wiki/w/Stun_(status)).
  */
 /**
- * The stunned player's graphic: STUNNED, spotanim 80 (RuneLite gameval SpotanimID), the generic
- * circling-birds stun. That Zulrah's tail uses it is not sourced; open question.
+ * The stunned player's graphic: spotanim 245 `stunned_thieving`, at height 124 (private gameplay
+ * capture zulrah-packet-data-1.txt, ticks 242, 249 and 549).
  */
-export const PLAYER_STUNNED_SPOTANIM_ID = 80;
+export const PLAYER_STUNNED_SPOTANIM_ID = 245;
 
 export const ZULRAH_TAIL = {
   stareTicks: 6,
   radius: 1,
   damage: [20, 30] as [number, number],
-  stunTicks: 5,
+  stunTicks: 7,
   /** Ticks after a slam lands before the next stare begins. */
   recoveryTicks: 3,
 } as const;

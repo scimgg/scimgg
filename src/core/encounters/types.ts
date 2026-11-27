@@ -156,7 +156,11 @@ export interface EncounterEngineRules {
    * pick-up inputs are dropped, the attack target is cleared and it does not walk), but prayer, food,
    * potion and gear inputs still go through. The wiki's stun status: stuns "disable a player's ability
    * to perform several game actions such as attacking and moving"
-   * (https://oldschool.runescape.wiki/w/Stun_(status)). Read once at the start of each tick.
+   * (https://oldschool.runescape.wiki/w/Stun_(status)). Read at the start of each tick, after
+   * `playerInputLocked`, and again after the hazards, NPC band, player hit queue and timers, just
+   * before the player moves and attacks: a stun applied by any of those (an NPC's hit) blocks that
+   * same tick's walk and attack, while the inputs already run that tick stand. Ignored while
+   * `playerInputLocked` holds.
    */
   playerStunned?: EncounterDynamic<boolean>;
 }

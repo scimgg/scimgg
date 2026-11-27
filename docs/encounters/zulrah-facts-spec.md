@@ -1,8 +1,8 @@
 # Zulrah — facts spec
 
-Sourced facts behind `src/encounters/zulrah/` and `src/npcs/zulrah/`. There are no Zulrah captures;
-the sources are the OSRS Wiki, a Jagex statement quoted on it, the pinned cache and RuneLite's
-gameval names. Unsettled behavior: [open questions](./zulrah-open-questions.md). Decisions past the
+Sourced facts behind `src/encounters/zulrah/` and `src/npcs/zulrah/`. The sources are four private
+gameplay captures (their facts are in `src/encounters/zulrah/__tests__/fixtures/zulrahCapture.ts`), the
+OSRS Wiki, a Jagex statement quoted on it, the pinned cache and RuneLite's gameval names. Unsettled behavior: [open questions](./zulrah-open-questions.md). Decisions past the
 evidence: [policy](./zulrah-policy.md).
 
 ## Sources
@@ -16,6 +16,10 @@ evidence: [policy](./zulrah-policy.md).
 | **WSt** | [Stun (status)](https://oldschool.runescape.wiki/w/Stun_(status)) | 2026-11-27 |
 | **C** | Pinned cache, OpenRS2 2772 (`npm run setup`): NpcType, SeqType, SpotAnimType, LocType, map squares 35_47 and 35_48 | — |
 | **G** | RuneLite gameval tables (BSD-2-Clause), `runelite/runelite` at `9af7b54deaac35b3153af06195d66c1d68fbea5a`, `runelite-api/src/main/java/net/runelite/api/gameval/{NpcID,AnimationID,SpotanimID,ObjectID}.java` | 2026-11-27 |
+| **Z1** | Private gameplay capture zulrah-packet-data-1.txt, ticks 229–605: rotation 3 from its magma phase, then the next rotation's phases 1–4 (rotation 3 again); the player dies at t567. Sim tile = world − (2240, 3008); an NPC's tile is its south-west tile | — |
+| **Z2** | Private gameplay capture zulrah-packet-data-2.txt, ticks 2957–3260: the boat arrival, the opening spawn and rotation 2 through phase 10. Same tile frame | — |
+| **Z3** | Private gameplay capture zulrah-packet-data-3.txt, ticks 810–1094: rotation 4 from phase 3's last snakeling orb through phase 12's first barrage (0-based), with one phase the table does not list; the player teleports out at t1092. Same tile frame | — |
+| **Z4** | Private gameplay capture zulrah-packet-data-4.txt, ticks 2006–2301: rotation 2 from phase 3's last snakeling orb through phase 10, then the next rotation, rotation 2 again, through phase 3's barrages (0-based); the player uses a blowpipe in melee armor, then a noxious halberd. Same tile frame | — |
 | **RL** | RuneLite (BSD-2-Clause) at the same commit, `runelite-client/src/main/java/net/runelite/client/plugins/timersandbuffs/TimersAndBuffsPlugin.java` (`VENOM_VALUE_CUTOFF`, `POISON_TICK_LENGTH`) | 2026-11-26 |
 
 ## Identity and stats
@@ -59,8 +63,14 @@ evidence: [policy](./zulrah-policy.md).
 | Zulrah is one NPC that "changes forms by diving into the swamp and resurfacing somewhere else" | W |
 | The dive plays the death animation "forwards and backwards at faster speeds" (Mod Ash, quoted) | W Trivia |
 
+## Measured in the captures
+
+| Fact | Source |
+|---|---|
+| Tail stun: without a knockback a hit on t blocks t..t+6, the player moving again on t+7 (hit t3015, "You're stunned!" on t3016–t3021, first move t3022; hit t3247, stunned t3248–t3253, the next hit on t3254; Z1 t249, first move t256). "You're stunned!" answers clicks from t+1. With a knockback the player first moves a tick later (t3119→t3127; Z1 t549→t557), and only those hits play player seq 1157 `human_troll_flyback` (t3119; Z1 t242, t549). Z4 the same without a knockback: hit t2064, stunned t2065–t2070, first move t2071. Z4's knockback, the only eastward one: hit t2256 on (32,69), teleport and exactmove to (34,69), the player facing angle 512 (toward Zulrah), seq 1157 and the `busy` varbit for that tick; first move t2265, an upper bound, as clicks were not made every tick. Stun graphic spotanim 245 `stunned_thieving`, height 124, on every hit. Eating works while stunned (Z1 t245) | Z1; Z2; Z4 |
 | Poison counter: steps every 30 ticks on one clock (t2962, t2992, … t3172); envenoming at -37 on t3193 first stepped on t3202, and an extended anti-venom+ sip on t3222 (venom → -59) next stepped on t3232, both on that phase. Messages: stepping to -39, "Your venom resistance is about to wear off." (t3112); to -38, "Your venom resistance has worn off, but you are still resistant to poison." (t3142) | Z2 |
 | Re-drinking extended anti-venom+ while its immunity runs resets the counter to the full -59. Reported by the project owner from play; not yet captured (Z2's sip, above, shows the step clock keeping its phase across a drink) | Reported |
+
 ## Cache ids
 
 | Id | Gameval name | Used for | Source |
@@ -74,6 +84,7 @@ evidence: [policy](./zulrah-policy.md).
 | seq 1721, 2405, 1741, 2413, 2408 | SNAKEBOSS_PET_IDLE, _WALK_FORWARD, _ATTACK, _SPAWN, _DEATH | snakeling | G |
 | spotanim 1044, 1045, 1046 | SNAKEBOSS_ORB, SNAKEBOSS_DOUBLE_ORB, SNAKEBOSS_FIREBALL | projectiles (assignment: [open questions](./zulrah-open-questions.md)) | G SpotanimID |
 | spotanim 1047 | SNAKEBOSS_EGG | snakeling orb (1044's model recoloured white) | G; C recolours |
+| spotanim 245 | `stunned_thieving` | the tail stun on the player | Z1 |
 | spotanim 1230 | SNAKEBOSS_MINION_SPELL | magic snakeling's bolt | G |
 | loc 11700 | SNAKEBOSS_POISONCLOUD | venom cloud (3x3, no collision, animated) | G ObjectID; C |
 | map squares | 35_47 and 35_48 (regions 9007/9008): the island's base and its north arms | WS tile-marker regions; C walkability |
