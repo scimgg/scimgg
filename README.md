@@ -66,6 +66,11 @@ is a shortcut for the common ones: `./dev` starts the dev server, `./dev harness
 harness](./docs/testing/ui-harness.md), and `./dev check` runs the type, lint and license checks.
 `./dev --help` lists them all.
 
+To run someone else's pull request without giving its code your credentials, use `./dev-sandbox
+--pr N` and `./dev-sandbox test --pr N`, which run it in Docker with no network and none of your
+files (see [`docs/sandbox.md`](./docs/sandbox.md)). They also run your own uncommitted changes with
+`--worktree`.
+
 ### Why there is a setup step
 
 No Jagex game assets are committed. `npm run setup` downloads them onto your machine from public
@@ -139,6 +144,8 @@ If you run your own copy:
   presentation.
 - [`docs/testing/`](./docs/testing/): the UI harness and the replay fixtures the capture-conformance
   tests read.
+- [`docs/sandbox.md`](./docs/sandbox.md): running pull requests and other code you did not write in
+  a Docker sandbox.
 - [`DESIGN.md`](./DESIGN.md): the visual design system.
 - [SECURITY.md](./SECURITY.md): how to report a vulnerability privately.
 
