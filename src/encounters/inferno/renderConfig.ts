@@ -7,15 +7,10 @@ import {
 } from '../../npcs/inferno/constants';
 import { INFERNO_SPOT_ANIM_IDS } from '../../npcs/inferno/visualEvents';
 import { FULL_MAP_SQUARE_GROUND_LEVEL, type LocExclusionRegion } from '../../render/environment/locRenderOptions';
-import type { EncounterRenderConfig } from '../../render/scene/encounterRenderConfig';
+import type { AuthoredEncounterRenderConfig } from '../../render/scene/encounterRenderConfig';
 import { ZUK_ALCOVE_STATIC_LOCS } from '../zuk/alcoveScenery';
 import { ZUK_WAVE_NPC_TYPES } from '../zuk/renderConfig';
-import {
-  INFERNO_MAP_SQUARE,
-  INFERNO_MAP_SQUARE_OFFSETS,
-  INFERNO_PILLAR_COLLAPSE_NPC_ID,
-  INFERNO_PILLAR_NPC_ID,
-} from './constants';
+import { INFERNO_PILLAR_COLLAPSE_NPC_ID, INFERNO_PILLAR_NPC_ID } from './constants';
 import { InfernoSceneObjectController } from './sceneObjects';
 
 /**
@@ -42,9 +37,7 @@ const holdDeathUntilRemoved = true;
  * are `ZUK_WAVE_NPC_TYPES`. No primary NPC: Zuk is drawn from the snapshot, so he is not in the
  * alcove before wave 69 adds him.
  */
-export const INFERNO_RENDER_CONFIG: EncounterRenderConfig = {
-  terrainMapSquare: INFERNO_MAP_SQUARE,
-  mapSquareOffsets: INFERNO_MAP_SQUARE_OFFSETS,
+export const INFERNO_RENDER_CONFIG: AuthoredEncounterRenderConfig = {
   spotAnimIds: [...new Set<number>([...INFERNO_WAVE_SPOT_ANIM_IDS, ...INFERNO_SPOT_ANIM_IDS])],
   preloadNpcTypes: [
     {

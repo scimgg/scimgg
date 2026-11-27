@@ -19,12 +19,14 @@ export const ZUK_SOUTH_MAP_Y = 82;
 export const ZUK_WEST_MAP_X = 34;
 export const ZUK_WEST_MAP_Y = 83;
 export const ZUK_MAP_SQUARE = { x: ZUK_MAP_X, y: ZUK_MAP_Y } as const;
+// The playable floor is all in the origin square (the bake's walkable tiles span x 17-45, y 17-46),
+// so the four neighbors only carry the surrounding terrain and scenery.
 export const ZUK_MAP_SQUARE_OFFSETS = [
   { dx: 0, dy: 0 },
-  { dx: ZUK_NORTH_MAP_X - ZUK_MAP_X, dy: ZUK_NORTH_MAP_Y - ZUK_MAP_Y },
-  { dx: ZUK_EAST_MAP_X - ZUK_MAP_X, dy: ZUK_EAST_MAP_Y - ZUK_MAP_Y },
-  { dx: ZUK_SOUTH_MAP_X - ZUK_MAP_X, dy: ZUK_SOUTH_MAP_Y - ZUK_MAP_Y },
-  { dx: ZUK_WEST_MAP_X - ZUK_MAP_X, dy: ZUK_WEST_MAP_Y - ZUK_MAP_Y },
+  { dx: ZUK_NORTH_MAP_X - ZUK_MAP_X, dy: ZUK_NORTH_MAP_Y - ZUK_MAP_Y, sceneryOnly: true },
+  { dx: ZUK_EAST_MAP_X - ZUK_MAP_X, dy: ZUK_EAST_MAP_Y - ZUK_MAP_Y, sceneryOnly: true },
+  { dx: ZUK_SOUTH_MAP_X - ZUK_MAP_X, dy: ZUK_SOUTH_MAP_Y - ZUK_MAP_Y, sceneryOnly: true },
+  { dx: ZUK_WEST_MAP_X - ZUK_MAP_X, dy: ZUK_WEST_MAP_Y - ZUK_MAP_Y, sceneryOnly: true },
 ] as const;
 
 /** Where a run that starts on wave 69 opens, and where the intro teleports the player (facing north). */

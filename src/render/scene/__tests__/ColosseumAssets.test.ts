@@ -36,8 +36,12 @@ import { AnimationSystem } from '../../backends/picogl/AnimationSystem';
 import { resolveEffectiveLocs } from '../../environment/locRenderFilter';
 import { FULL_MAP_SQUARE_GROUND_LEVEL } from '../../environment/locRenderOptions';
 import { ColosseumSceneCompositor } from '../ColosseumSceneCompositor';
+import { getEncounterRenderConfig } from '../encounterRenderConfig';
 
 const cachePath = findProjectCacheZip() ?? '';
+// What the app hands the compositor: the presentation module's config with the descriptor's map squares.
+const SOL_RESOLVED_RENDER_CONFIG = getEncounterRenderConfig('sol_heredit');
+if (!SOL_RESOLVED_RENDER_CONFIG) throw new Error('no Sol Heredit render config');
 const scene = new ColosseumSceneCompositor();
 const scenes: ColosseumSceneCompositor[] = [scene];
 afterEach(() => {
@@ -73,7 +77,7 @@ it.skipIf(skipWithoutRealCache())(
     );
     const animation = new AnimationSystem();
     animation.initialize(info, cache.getIndex(0), cache.getIndex(1), config.getArchive(12), cache.getIndex(22));
-    scene.setEncounterRenderConfig(SOL_HEREDIT_RENDER_CONFIG);
+    scene.setEncounterRenderConfig(SOL_RESOLVED_RENDER_CONFIG);
 
     await scene['loadEncounterNpc'](loader, animation);
     const frameLoader = animation.getSeqFrameLoader();
@@ -213,7 +217,7 @@ it.skipIf(skipWithoutRealCache())(
 
     const allLevels = new ColosseumSceneCompositor();
     scenes.push(allLevels);
-    allLevels.setEncounterRenderConfig(SOL_HEREDIT_RENDER_CONFIG);
+    allLevels.setEncounterRenderConfig(SOL_RESOLVED_RENDER_CONFIG);
     const meshes = await allLevels.buildTerrainMeshes3D(
       maps,
       new ArchiveUnderlayTypeLoader(info, config.getArchive(1)),
@@ -248,7 +252,7 @@ it.skipIf(skipWithoutRealCache())(
     const { localX, localY } = statue.location;
     const groundOnly = new ColosseumSceneCompositor();
     scenes.push(groundOnly);
-    groundOnly.setEncounterRenderConfig({ ...SOL_HEREDIT_RENDER_CONFIG, locRender: FULL_MAP_SQUARE_GROUND_LEVEL });
+    groundOnly.setEncounterRenderConfig({ ...SOL_RESOLVED_RENDER_CONFIG, locRender: FULL_MAP_SQUARE_GROUND_LEVEL });
     await Promise.all([allLevels.loadLocs(locTypes, entries), groundOnly.loadLocs(locTypes, entries)]);
     // Colosseum Additions' pillars: four 3x3 Pillars (52490), which it can hide and mark.
     expect(allLevels['locRenderer'].getLocFootprints(COLOSSEUM_PILLAR_LOC_IDS)).toEqual(

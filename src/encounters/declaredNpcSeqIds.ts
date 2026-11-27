@@ -2,7 +2,7 @@
  * Node-safe view of the encounter render configs, for build scripts (cache trimming, frame-sound
  * extraction) that must not import the presentation manifest's scene builders.
  */
-import type { EncounterRenderConfig } from '../render/scene/encounterRenderConfig';
+import type { AuthoredEncounterRenderConfig } from '../render/scene/encounterRenderConfig';
 import { INFERNO_RENDER_CONFIG } from './inferno/renderConfig';
 import { SOL_HEREDIT_RENDER_CONFIG } from './solHeredit/renderConfig';
 import { YAMA_ENCOUNTER_RENDER_CONFIG } from './yamaP3/renderConfig';
@@ -11,7 +11,7 @@ import { YAMA_ENCOUNTER_RENDER_CONFIG } from './yamaP3/renderConfig';
  * Every render config in `ENCOUNTER_PRESENTATION_MODULES`, keyed by kind. Listed by hand because
  * that manifest is browser-only; `frameSoundManifest.test.ts` fails if the two drift.
  */
-export const ENCOUNTER_RENDER_CONFIGS: ReadonlyMap<string, EncounterRenderConfig> = new Map([
+export const ENCOUNTER_RENDER_CONFIGS: ReadonlyMap<string, AuthoredEncounterRenderConfig> = new Map([
   ['yama_p3', YAMA_ENCOUNTER_RENDER_CONFIG],
   ['sol_heredit', SOL_HEREDIT_RENDER_CONFIG],
   ['inferno', INFERNO_RENDER_CONFIG],
@@ -25,7 +25,7 @@ export const ENCOUNTER_RENDER_CONFIGS: ReadonlyMap<string, EncounterRenderConfig
  * a hand-kept list.
  */
 export function collectDeclaredNpcSeqIds(
-  configs: ReadonlyMap<string, EncounterRenderConfig> = ENCOUNTER_RENDER_CONFIGS,
+  configs: ReadonlyMap<string, AuthoredEncounterRenderConfig> = ENCOUNTER_RENDER_CONFIGS,
 ): Map<number, string> {
   const ids = new Map<number, string>();
   const add = (seqId: number | undefined, label: string): void => {

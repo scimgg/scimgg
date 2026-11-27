@@ -174,20 +174,15 @@ describe('analyzeWalkability static loc exclusions', () => {
 
 describe('applyLocCollision', () => {
   it('sets OBJECT on a clipping NORMAL loc footprint', () => {
-    const flags = new Int32Array(SIZE * SIZE);
-    applyLocCollision(flags, SIZE, { id: 1, localX: 5, localY: 5, type: LocModelType.NORMAL, rotation: 0 }, locLoader);
-    expect((flags[5 + 5 * SIZE] & CollisionFlag.OBJECT) !== 0).toBe(true);
+    const map = createCollisionMap(SIZE, SIZE);
+    applyLocCollision(map, { id: 1, localX: 5, localY: 5, type: LocModelType.NORMAL, rotation: 0 }, locLoader);
+    expect(map.hasFlag(5, 5, CollisionFlag.OBJECT)).toBe(true);
   });
 
   it('is a no-op for an unknown loc id', () => {
-    const flags = new Int32Array(SIZE * SIZE);
-    applyLocCollision(
-      flags,
-      SIZE,
-      { id: 999, localX: 5, localY: 5, type: LocModelType.NORMAL, rotation: 0 },
-      locLoader,
-    );
-    expect(flags[5 + 5 * SIZE]).toBe(0);
+    const map = createCollisionMap(SIZE, SIZE);
+    applyLocCollision(map, { id: 999, localX: 5, localY: 5, type: LocModelType.NORMAL, rotation: 0 }, locLoader);
+    expect(map.getFlag(5, 5)).toBe(0);
   });
 
   it.each([
@@ -196,12 +191,12 @@ describe('applyLocCollision', () => {
     { rotation: 2, self: CollisionFlag.WALL_EAST, adjacent: [6, 5], adjacentFlag: CollisionFlag.WALL_WEST },
     { rotation: 3, self: CollisionFlag.WALL_SOUTH, adjacent: [5, 4], adjacentFlag: CollisionFlag.WALL_NORTH },
   ])('sets straight wall flags for rotation $rotation', ({ rotation, self, adjacent, adjacentFlag }) => {
-    const flags = new Int32Array(SIZE * SIZE);
-    applyLocCollision(flags, SIZE, { id: 1, localX: 5, localY: 5, type: LocModelType.WALL, rotation }, locLoader);
+    const map = createCollisionMap(SIZE, SIZE);
+    applyLocCollision(map, { id: 1, localX: 5, localY: 5, type: LocModelType.WALL, rotation }, locLoader);
 
     const [adjacentX, adjacentY] = adjacent;
-    expect((flags[5 + 5 * SIZE] & self) !== 0).toBe(true);
-    expect((flags[adjacentX + adjacentY * SIZE] & adjacentFlag) !== 0).toBe(true);
+    expect(map.hasFlag(5, 5, self)).toBe(true);
+    expect(map.hasFlag(adjacentX, adjacentY, adjacentFlag)).toBe(true);
   });
 });
 

@@ -119,6 +119,80 @@ Entering it goes through `resolveEncounterEntry` in `modules.ts`, which returns 
 Inferno's `retiredEntries` run setup (start wave 69), saved as a setup pick would be. Once entered,
 the address becomes `/inferno/`, and the saved start wave keeps a reload there at wave 69.
 
+## Map footprint
+
+The core descriptor owns an encounter's map squares. `mapSquare` is the origin square: its
+south-west tile is simulation (0, 0), and a tile with y ≥ 64 is simply in the square to the north
+(coordinates are translated by whole squares, never flipped). `mapSquareOffsets` lists every square
+the encounter loads, relative to the origin; omitted, it is the origin alone. Each offset is an
+arena square unless it is marked `sceneryOnly: true`. A presentation module never declares map
+squares: `withDescriptorMapBlock` ([`encounterMapBlock.ts`](../../src/render/scene/encounterMapBlock.ts))
+copies the origin and squares from the descriptor, for `getEncounterRenderConfig` and for a scene
+builder made without a render config.
+
+**The origin is the arena's south-west square.** Every arena offset has `dx >= 0` and `dy >= 0`,
+and some arena square sits in the origin's column and some in its row, so the arena's tiles all
+lie in `0 <= x < width`, `0 <= y < height`. Scenery-only squares may lie anywhere, the origin
+included: an L-shaped arena declares its empty corner as the scenery-only origin. Any arena shape
+can be declared this way, and a negative arena origin would buy nothing but origin bookkeeping in
+every consumer, so `resolveEncounterMapFootprint` rejects one ("choose the arena's south-west map
+square as mapSquare") and the registry test checks every descriptor.
+
+[`resolveEncounterMapFootprint`](../../src/core/encounters/mapFootprint.ts) resolves a descriptor once
+(the result keeps its identity) into the scene's squares and the arena's block of
+[`mapSquareBlock.ts`](../../src/rs/map/mapSquareBlock.ts) entries:
+
+- **Scene squares** (`sceneOffsets`), every declared square: the terrain mesh and locs (render
+  config `mapSquareOffsets`), `loadMapLocs`, the cache trim ([`cacheRoots.ts`](../../scripts/cacheRoots.ts))
+  and the collision bake (`CacheManager.buildArenaConfig`). A scene of several squares widens the
+  loc filter's bounds to all of them; the origin alone keeps the encounter's own filter, or the
+  default arena clip. The bake writes every square's static collision, and the descriptor's
+  `dynamicLocs` (origin-local, so they may reach a neighbor), into one block map before it reads
+  any walkable tile, so a loc on a seam blocks on both sides: a large object's far tiles, a wall's
+  reciprocal flag.
+- **Arena block**, the squares not marked scenery only, with their rectangle from tile (0, 0),
+  `arenaTileExtent` (width and height in tiles). Grid resolves it for the displayed kind through `getEncounterMapFootprint`
+  (variant kinds through their parent descriptor). It covers:
+  - the minimap, which loads only the arena squares and composes them north up into one bitmap at
+    4 px per tile: a 1x2 arena is 256x512, the north square at raster (0, 0) and the south at
+    (0, 256). The canvas is laid out at one square's scale behind the unchanged aperture, so px per
+    tile stay uniform and a taller bitmap is not squeezed; missing squares stay black. One transform
+    (`minimapTerrainTransform`) places the terrain for the first render, a yaw change and every
+    frame, and NPC dots use the same spacing. It rasterizes once per footprint or load, and a load
+    for another footprint never paints;
+  - the 2D Debug view's projection extent (`RenderViewport`'s `tileExtent`);
+  - 3D picking (`Projection3D.setPickableMapSquareBlock`) and `SceneCompositor`'s hover,
+    destination and true-tile indicators and 2D grid lines (render config `arenaMapSquareOffsets`).
+    A tile in a hole of a sparse layout is not arena even though the rectangle contains it;
+  - the actor height grid (`composeTerrainHeights`): the arena squares composed into one grid from
+    tile (0, 0), each vertex taken from the square it is the south-west corner of. A lone origin
+    square keeps its own grid;
+  - RuneLite ground-marker interchange ([`tilePackIO.ts`](../../src/util/tilePackIO.ts)). Import
+    skips an entry that is not an object with a numeric region and a whole local tile (0-63), keeps
+    regions of arena squares, and adds the square's tile offset to the local coordinates. Export
+    writes every marker, in region `floor(sim / 64)` from the origin on each axis, and local
+    `sim - 64 * floor(sim / 64)` (0-63, even for a marker south or west of the arena); a marker
+    outside the arena is exported but does not import back. For a 1x2 arena at 35_47, sim (28, 64)
+    is region 9008, local (28, 0). Native marker packs and replay markers
+    already hold simulation coordinates and are not rewritten.
+
+Movement does not read the footprint: the baked walkable region and collision (`ArenaConfig`)
+decide where actors stand. The player's move gate (`isValidArenaCoordinate`) follows the arena
+config's bounds, or the origin square when it has none, and the pathfinder's 128-tile window is
+relative to the start. Replays store simulation coordinates and take the footprint from the
+encounter's metadata; nothing about it is serialized.
+
+The Inferno loads and bakes five squares but presents one: its playable floor (x 17-45, y 17-46)
+is all in 35_83, so its four neighbors are scenery only.
+
+Known limits:
+
+- Yama's `FireballController` clips explosion tiles to the origin square.
+- The Debug view accepts a click anywhere in the arena rectangle; a hole in a sparse layout is left
+  to walkability.
+- Scenery-only squares are outside the actor height grid, so an encounter scene object placed there
+  samples the nearest arena edge; cache locs use their own square's terrain.
+
 ## Determinism and run setup
 
 Use the shared [`mulberry32`](../../src/core/rng.ts); never hand-roll a PRNG. Persist every

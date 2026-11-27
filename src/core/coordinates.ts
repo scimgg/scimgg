@@ -1,5 +1,5 @@
 import type { Coordinate, TileString } from '../types/simulation';
-import { GRID_SIZE, isInArena } from './constants';
+import { GRID_SIZE, getArenaBounds, isInArena } from './constants';
 
 export function strToCoord(tile: TileString): Coordinate {
   const parts = tile.split(',');
@@ -28,7 +28,13 @@ export function isValidCoordinate(coord: Coordinate): boolean {
   return x >= 0 && x < GRID_SIZE && y >= 0 && y < GRID_SIZE;
 }
 
+/**
+ * Whether the player may stand on `coord`. Movement belongs to the arena config: with bounds (the
+ * baked walkable region's), those decide, so an arena reaching into a neighboring map square is
+ * walkable there. Not every installed config has bounds (Yama's placeholder until the cache's
+ * arena analysis succeeds, the module's initial state); those keep the origin map square.
+ */
 export function isValidArenaCoordinate(coord: Coordinate): boolean {
   const [x, y] = coord;
-  return isValidCoordinate(coord) && isInArena(x, y);
+  return (getArenaBounds() !== null || isValidCoordinate(coord)) && isInArena(x, y);
 }

@@ -1,12 +1,20 @@
 /**
- * RuneLite marker coordinates are region-local, with `regionId` encoded from
- * the encounter map square. RuneLite colors use alpha-first `#AARRGGBB`; local
- * markers use `#RRGGBB` and separate opacity. Sim x/y ARE the region-local coordinates, which
- * holds only while an encounter sits in a single region.
+ * RuneLite marker coordinates are region-local: `regionId` is a map square (`x << 8 | y`) and
+ * `regionX`/`regionY` the tile within it (0-63). Simulation (0, 0) is the south-west tile of the
+ * encounter's origin square, so a marker in the square `(dx, dy)` from the origin sits at
+ * simulation `(dx * 64 + regionX, dy * 64 + regionY)`.
+ *
+ * Import keeps only points in the encounter footprint's arena squares. Export writes every marker,
+ * in the region that holds its tile, so a marker outside the arena (in a scenery-only square or
+ * beyond the footprint) is exported but not imported back. RuneLite colors use alpha-first
+ * `#AARRGGBB`; local markers use `#RRGGBB` and separate opacity.
  */
 
+import { type EncounterMapFootprint, resolveEncounterMapFootprint } from '../core/encounters/mapFootprint';
 import { encounterRegistry } from '../encounters/registry';
 import { normalizeMarkerArray } from '../hooks/tileMarkerState';
+import { MAP_SQUARE_SIZE } from '../rs/map/MapLoader';
+import { getMapSquareOffsetOfTile } from '../rs/map/mapSquareBlock';
 import type { RuneLiteGroundMarkerPoint, TileMarker } from '../types/tileMarkers';
 import { DEFAULT_MARKER_COLOR, DEFAULT_MARKER_OPACITY } from '../types/tileMarkers';
 
@@ -44,17 +52,42 @@ function toRuneLiteColor(color: string, opacity: number): string {
 
 // Resolve contract variants through their parent arena descriptor, the way tile packs and
 // loadouts already do; a variant kind carries no map square of its own.
-function getEncounterRegionId(encounterKind: string): number | null {
+function getEncounterFootprint(encounterKind: string): EncounterMapFootprint | null {
   const desc = encounterRegistry.getDescriptorForKind(encounterKind);
-  if (!desc) return null;
-  return (desc.mapSquare.x << 8) | desc.mapSquare.y;
+  return desc ? resolveEncounterMapFootprint(desc) : null;
+}
+
+function regionIdOf(mapX: number, mapY: number): number {
+  return (mapX << 8) | mapY;
+}
+
+const isRegionTile = (value: unknown): value is number =>
+  Number.isInteger(value) && (value as number) >= 0 && (value as number) < MAP_SQUARE_SIZE;
+
+/**
+ * Whether a pasted entry can be placed: an object with a numeric region and a whole tile (0-63)
+ * inside it. Checked before the region's offset is added, so a tile past the region's edge cannot
+ * land in the neighboring square.
+ */
+function isPlaceablePoint(point: unknown): point is RuneLiteGroundMarkerPoint {
+  if (typeof point !== 'object' || point === null) return false;
+  const { regionId, regionX, regionY } = point as Record<string, unknown>;
+  return typeof regionId === 'number' && Number.isFinite(regionId) && isRegionTile(regionX) && isRegionTile(regionY);
 }
 
 export function importRuneLiteMarkers(jsonString: string, encounterKind: string): TileMarker[] | null {
-  const regionId = getEncounterRegionId(encounterKind);
-  if (regionId === null) return null;
+  const footprint = getEncounterFootprint(encounterKind);
+  if (footprint === null) return null;
+  const { origin } = footprint;
+  // Each arena square's region id, mapped to where its tile (0, 0) sits in simulation coordinates.
+  const arenaRegions = new Map(
+    footprint.arenaBlock.map(({ dx, dy, tileOffsetX, tileOffsetY }) => [
+      regionIdOf(origin.x + dx, origin.y + dy),
+      { tileOffsetX, tileOffsetY },
+    ]),
+  );
 
-  let parsed: RuneLiteGroundMarkerPoint[];
+  let parsed: unknown;
   try {
     parsed = JSON.parse(jsonString);
     if (!Array.isArray(parsed)) return null;
@@ -64,7 +97,9 @@ export function importRuneLiteMarkers(jsonString: string, encounterKind: string)
 
   const markers: Partial<TileMarker>[] = [];
   for (const point of parsed) {
-    if (Math.round(point.regionId) !== regionId) continue;
+    if (!isPlaceablePoint(point)) continue;
+    const region = arenaRegions.get(Math.round(point.regionId));
+    if (!region) continue;
 
     // The JSON is whatever was on the clipboard, so `color` is only trusted to be a
     // string once checked; `parseRuneLiteColor` calls string methods on it.
@@ -74,31 +109,36 @@ export function importRuneLiteMarkers(jsonString: string, encounterKind: string)
         : { color: DEFAULT_MARKER_COLOR, opacity: DEFAULT_MARKER_OPACITY };
 
     markers.push({
-      x: Math.round(point.regionX),
-      y: Math.round(point.regionY),
+      x: region.tileOffsetX + point.regionX,
+      y: region.tileOffsetY + point.regionY,
       color,
       opacity,
       ...(typeof point.label === 'string' ? { label: point.label } : {}),
     });
   }
 
-  // Through the same gate as stored markers: a pasted point with a missing or
-  // non-numeric coordinate becomes NaN above, which no renderer and no recording accepts.
+  // Through the same gate as stored markers: the replay format's coordinate range, one marker per tile.
   return normalizeMarkerArray(markers);
 }
 
 export function exportRuneLiteMarkers(markers: TileMarker[], encounterKind: string): string | null {
-  const regionId = getEncounterRegionId(encounterKind);
-  if (regionId === null) return null;
+  const footprint = getEncounterFootprint(encounterKind);
+  if (footprint === null) return null;
+  const { origin } = footprint;
 
-  const points: RuneLiteGroundMarkerPoint[] = markers.map((marker) => ({
-    regionId,
-    regionX: marker.x,
-    regionY: marker.y,
-    z: 0,
-    color: toRuneLiteColor(marker.color, marker.opacity),
-    ...(marker.label ? { label: marker.label } : {}),
-  }));
+  const points: RuneLiteGroundMarkerPoint[] = markers.map((marker) => {
+    // Floored, so a marker south or west of the origin square lands in the region at -1 with a
+    // local coordinate in 0-63, never a negative remainder.
+    const { dx, dy } = getMapSquareOffsetOfTile(marker.x, marker.y);
+    return {
+      regionId: regionIdOf(origin.x + dx, origin.y + dy),
+      regionX: marker.x - dx * MAP_SQUARE_SIZE,
+      regionY: marker.y - dy * MAP_SQUARE_SIZE,
+      z: 0,
+      color: toRuneLiteColor(marker.color, marker.opacity),
+      ...(marker.label ? { label: marker.label } : {}),
+    };
+  });
 
   return JSON.stringify(points);
 }

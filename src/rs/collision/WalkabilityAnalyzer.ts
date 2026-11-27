@@ -1,5 +1,5 @@
 import { LocModelType } from '../config/loctype/LocModelType';
-import type { MapSquareData, MapSquareLocations } from '../map/MapLoader';
+import { MAP_SQUARE_SIZE, type MapSquareData, type MapSquareLocations } from '../map/MapLoader';
 import { CollisionFlag } from './CollisionFlag';
 
 export interface LocCollisionInfo {
@@ -11,98 +11,76 @@ export interface LocCollisionInfo {
 
 export type LocCollisionLoader = (locId: number) => LocCollisionInfo | undefined;
 
-function setBlockedByFloorDec(flags: Int32Array, sizeX: number, x: number, y: number): void {
-  if (x >= 0 && x < sizeX && y >= 0 && y < sizeX) {
-    flags[x + y * sizeX] |= CollisionFlag.FLOOR_DECORATION;
-  }
-}
-
-function setFlag(flags: Int32Array, sizeX: number, sizeY: number, x: number, y: number, flag: number): void {
-  if (x >= 0 && x < sizeX && y >= 0 && y < sizeY) {
-    flags[x + y * sizeX] |= flag;
-  }
-}
-
 /**
  * Applies directional wall collision flags for a wall loc.
  * Walls block movement THROUGH them by setting directional flags on both sides.
  * objectType: 0=straight wall, 1/3=diagonal corner, 2=L-corner
  */
-function applyWallCollision(
-  flags: Int32Array,
-  sizeX: number,
-  sizeY: number,
-  x: number,
-  y: number,
-  objectType: number,
-  rotation: number,
-): void {
+function applyWallCollision(map: CollisionMap, x: number, y: number, objectType: number, rotation: number): void {
   if (objectType === 0) {
     if (rotation === 0) {
-      setFlag(flags, sizeX, sizeY, x, y, CollisionFlag.WALL_WEST);
-      setFlag(flags, sizeX, sizeY, x - 1, y, CollisionFlag.WALL_EAST);
+      map.flag(x, y, CollisionFlag.WALL_WEST);
+      map.flag(x - 1, y, CollisionFlag.WALL_EAST);
     }
     if (rotation === 1) {
-      setFlag(flags, sizeX, sizeY, x, y, CollisionFlag.WALL_NORTH);
-      setFlag(flags, sizeX, sizeY, x, y + 1, CollisionFlag.WALL_SOUTH);
+      map.flag(x, y, CollisionFlag.WALL_NORTH);
+      map.flag(x, y + 1, CollisionFlag.WALL_SOUTH);
     }
     if (rotation === 2) {
-      setFlag(flags, sizeX, sizeY, x, y, CollisionFlag.WALL_EAST);
-      setFlag(flags, sizeX, sizeY, x + 1, y, CollisionFlag.WALL_WEST);
+      map.flag(x, y, CollisionFlag.WALL_EAST);
+      map.flag(x + 1, y, CollisionFlag.WALL_WEST);
     }
     if (rotation === 3) {
-      setFlag(flags, sizeX, sizeY, x, y, CollisionFlag.WALL_SOUTH);
-      setFlag(flags, sizeX, sizeY, x, y - 1, CollisionFlag.WALL_NORTH);
+      map.flag(x, y, CollisionFlag.WALL_SOUTH);
+      map.flag(x, y - 1, CollisionFlag.WALL_NORTH);
     }
   }
 
   if (objectType === 1 || objectType === 3) {
     if (rotation === 0) {
-      setFlag(flags, sizeX, sizeY, x, y, CollisionFlag.WALL_NORTH_WEST);
-      setFlag(flags, sizeX, sizeY, x - 1, y + 1, CollisionFlag.WALL_SOUTH_EAST);
+      map.flag(x, y, CollisionFlag.WALL_NORTH_WEST);
+      map.flag(x - 1, y + 1, CollisionFlag.WALL_SOUTH_EAST);
     }
     if (rotation === 1) {
-      setFlag(flags, sizeX, sizeY, x, y, CollisionFlag.WALL_NORTH_EAST);
-      setFlag(flags, sizeX, sizeY, x + 1, y + 1, CollisionFlag.WALL_SOUTH_WEST);
+      map.flag(x, y, CollisionFlag.WALL_NORTH_EAST);
+      map.flag(x + 1, y + 1, CollisionFlag.WALL_SOUTH_WEST);
     }
     if (rotation === 2) {
-      setFlag(flags, sizeX, sizeY, x, y, CollisionFlag.WALL_SOUTH_EAST);
-      setFlag(flags, sizeX, sizeY, x + 1, y - 1, CollisionFlag.WALL_NORTH_WEST);
+      map.flag(x, y, CollisionFlag.WALL_SOUTH_EAST);
+      map.flag(x + 1, y - 1, CollisionFlag.WALL_NORTH_WEST);
     }
     if (rotation === 3) {
-      setFlag(flags, sizeX, sizeY, x, y, CollisionFlag.WALL_SOUTH_WEST);
-      setFlag(flags, sizeX, sizeY, x - 1, y - 1, CollisionFlag.WALL_NORTH_EAST);
+      map.flag(x, y, CollisionFlag.WALL_SOUTH_WEST);
+      map.flag(x - 1, y - 1, CollisionFlag.WALL_NORTH_EAST);
     }
   }
 
   if (objectType === 2) {
     if (rotation === 0) {
-      setFlag(flags, sizeX, sizeY, x, y, CollisionFlag.WALL_WEST | CollisionFlag.WALL_NORTH);
-      setFlag(flags, sizeX, sizeY, x - 1, y, CollisionFlag.WALL_EAST);
-      setFlag(flags, sizeX, sizeY, x, y + 1, CollisionFlag.WALL_SOUTH);
+      map.flag(x, y, CollisionFlag.WALL_WEST | CollisionFlag.WALL_NORTH);
+      map.flag(x - 1, y, CollisionFlag.WALL_EAST);
+      map.flag(x, y + 1, CollisionFlag.WALL_SOUTH);
     }
     if (rotation === 1) {
-      setFlag(flags, sizeX, sizeY, x, y, CollisionFlag.WALL_NORTH | CollisionFlag.WALL_EAST);
-      setFlag(flags, sizeX, sizeY, x, y + 1, CollisionFlag.WALL_SOUTH);
-      setFlag(flags, sizeX, sizeY, x + 1, y, CollisionFlag.WALL_WEST);
+      map.flag(x, y, CollisionFlag.WALL_NORTH | CollisionFlag.WALL_EAST);
+      map.flag(x, y + 1, CollisionFlag.WALL_SOUTH);
+      map.flag(x + 1, y, CollisionFlag.WALL_WEST);
     }
     if (rotation === 2) {
-      setFlag(flags, sizeX, sizeY, x, y, CollisionFlag.WALL_EAST | CollisionFlag.WALL_SOUTH);
-      setFlag(flags, sizeX, sizeY, x + 1, y, CollisionFlag.WALL_WEST);
-      setFlag(flags, sizeX, sizeY, x, y - 1, CollisionFlag.WALL_NORTH);
+      map.flag(x, y, CollisionFlag.WALL_EAST | CollisionFlag.WALL_SOUTH);
+      map.flag(x + 1, y, CollisionFlag.WALL_WEST);
+      map.flag(x, y - 1, CollisionFlag.WALL_NORTH);
     }
     if (rotation === 3) {
-      setFlag(flags, sizeX, sizeY, x, y, CollisionFlag.WALL_SOUTH | CollisionFlag.WALL_WEST);
-      setFlag(flags, sizeX, sizeY, x, y - 1, CollisionFlag.WALL_NORTH);
-      setFlag(flags, sizeX, sizeY, x - 1, y, CollisionFlag.WALL_EAST);
+      map.flag(x, y, CollisionFlag.WALL_SOUTH | CollisionFlag.WALL_WEST);
+      map.flag(x, y - 1, CollisionFlag.WALL_NORTH);
+      map.flag(x - 1, y, CollisionFlag.WALL_EAST);
     }
   }
 }
 
 function applyWallProjectileCollision(
-  flags: Int32Array,
-  sizeX: number,
-  sizeY: number,
+  map: CollisionMap,
   x: number,
   y: number,
   objectType: number,
@@ -110,90 +88,62 @@ function applyWallProjectileCollision(
 ): void {
   if (objectType === 0) {
     if (rotation === 0) {
-      setFlag(flags, sizeX, sizeY, x, y, CollisionFlag.WALL_WEST_PROJECTILE_BLOCKER);
-      setFlag(flags, sizeX, sizeY, x - 1, y, CollisionFlag.WALL_EAST_PROJECTILE_BLOCKER);
+      map.flag(x, y, CollisionFlag.WALL_WEST_PROJECTILE_BLOCKER);
+      map.flag(x - 1, y, CollisionFlag.WALL_EAST_PROJECTILE_BLOCKER);
     }
     if (rotation === 1) {
-      setFlag(flags, sizeX, sizeY, x, y, CollisionFlag.WALL_NORTH_PROJECTILE_BLOCKER);
-      setFlag(flags, sizeX, sizeY, x, y + 1, CollisionFlag.WALL_SOUTH_PROJECTILE_BLOCKER);
+      map.flag(x, y, CollisionFlag.WALL_NORTH_PROJECTILE_BLOCKER);
+      map.flag(x, y + 1, CollisionFlag.WALL_SOUTH_PROJECTILE_BLOCKER);
     }
     if (rotation === 2) {
-      setFlag(flags, sizeX, sizeY, x, y, CollisionFlag.WALL_EAST_PROJECTILE_BLOCKER);
-      setFlag(flags, sizeX, sizeY, x + 1, y, CollisionFlag.WALL_WEST_PROJECTILE_BLOCKER);
+      map.flag(x, y, CollisionFlag.WALL_EAST_PROJECTILE_BLOCKER);
+      map.flag(x + 1, y, CollisionFlag.WALL_WEST_PROJECTILE_BLOCKER);
     }
     if (rotation === 3) {
-      setFlag(flags, sizeX, sizeY, x, y, CollisionFlag.WALL_SOUTH_PROJECTILE_BLOCKER);
-      setFlag(flags, sizeX, sizeY, x, y - 1, CollisionFlag.WALL_NORTH_PROJECTILE_BLOCKER);
+      map.flag(x, y, CollisionFlag.WALL_SOUTH_PROJECTILE_BLOCKER);
+      map.flag(x, y - 1, CollisionFlag.WALL_NORTH_PROJECTILE_BLOCKER);
     }
   }
 
   if (objectType === 1 || objectType === 3) {
     if (rotation === 0) {
-      setFlag(flags, sizeX, sizeY, x, y, CollisionFlag.WALL_NORTH_WEST_PROJECTILE_BLOCKER);
-      setFlag(flags, sizeX, sizeY, x - 1, y + 1, CollisionFlag.WALL_SOUTH_EAST_PROJECTILE_BLOCKER);
+      map.flag(x, y, CollisionFlag.WALL_NORTH_WEST_PROJECTILE_BLOCKER);
+      map.flag(x - 1, y + 1, CollisionFlag.WALL_SOUTH_EAST_PROJECTILE_BLOCKER);
     }
     if (rotation === 1) {
-      setFlag(flags, sizeX, sizeY, x, y, CollisionFlag.WALL_NORTH_EAST_PROJECTILE_BLOCKER);
-      setFlag(flags, sizeX, sizeY, x + 1, y + 1, CollisionFlag.WALL_SOUTH_WEST_PROJECTILE_BLOCKER);
+      map.flag(x, y, CollisionFlag.WALL_NORTH_EAST_PROJECTILE_BLOCKER);
+      map.flag(x + 1, y + 1, CollisionFlag.WALL_SOUTH_WEST_PROJECTILE_BLOCKER);
     }
     if (rotation === 2) {
-      setFlag(flags, sizeX, sizeY, x, y, CollisionFlag.WALL_SOUTH_EAST_PROJECTILE_BLOCKER);
-      setFlag(flags, sizeX, sizeY, x + 1, y - 1, CollisionFlag.WALL_NORTH_WEST_PROJECTILE_BLOCKER);
+      map.flag(x, y, CollisionFlag.WALL_SOUTH_EAST_PROJECTILE_BLOCKER);
+      map.flag(x + 1, y - 1, CollisionFlag.WALL_NORTH_WEST_PROJECTILE_BLOCKER);
     }
     if (rotation === 3) {
-      setFlag(flags, sizeX, sizeY, x, y, CollisionFlag.WALL_SOUTH_WEST_PROJECTILE_BLOCKER);
-      setFlag(flags, sizeX, sizeY, x - 1, y - 1, CollisionFlag.WALL_NORTH_EAST_PROJECTILE_BLOCKER);
+      map.flag(x, y, CollisionFlag.WALL_SOUTH_WEST_PROJECTILE_BLOCKER);
+      map.flag(x - 1, y - 1, CollisionFlag.WALL_NORTH_EAST_PROJECTILE_BLOCKER);
     }
   }
 
   if (objectType === 2) {
     if (rotation === 0) {
-      setFlag(
-        flags,
-        sizeX,
-        sizeY,
-        x,
-        y,
-        CollisionFlag.WALL_WEST_PROJECTILE_BLOCKER | CollisionFlag.WALL_NORTH_PROJECTILE_BLOCKER,
-      );
-      setFlag(flags, sizeX, sizeY, x - 1, y, CollisionFlag.WALL_EAST_PROJECTILE_BLOCKER);
-      setFlag(flags, sizeX, sizeY, x, y + 1, CollisionFlag.WALL_SOUTH_PROJECTILE_BLOCKER);
+      map.flag(x, y, CollisionFlag.WALL_WEST_PROJECTILE_BLOCKER | CollisionFlag.WALL_NORTH_PROJECTILE_BLOCKER);
+      map.flag(x - 1, y, CollisionFlag.WALL_EAST_PROJECTILE_BLOCKER);
+      map.flag(x, y + 1, CollisionFlag.WALL_SOUTH_PROJECTILE_BLOCKER);
     }
     if (rotation === 1) {
-      setFlag(
-        flags,
-        sizeX,
-        sizeY,
-        x,
-        y,
-        CollisionFlag.WALL_NORTH_PROJECTILE_BLOCKER | CollisionFlag.WALL_EAST_PROJECTILE_BLOCKER,
-      );
-      setFlag(flags, sizeX, sizeY, x, y + 1, CollisionFlag.WALL_SOUTH_PROJECTILE_BLOCKER);
-      setFlag(flags, sizeX, sizeY, x + 1, y, CollisionFlag.WALL_WEST_PROJECTILE_BLOCKER);
+      map.flag(x, y, CollisionFlag.WALL_NORTH_PROJECTILE_BLOCKER | CollisionFlag.WALL_EAST_PROJECTILE_BLOCKER);
+      map.flag(x, y + 1, CollisionFlag.WALL_SOUTH_PROJECTILE_BLOCKER);
+      map.flag(x + 1, y, CollisionFlag.WALL_WEST_PROJECTILE_BLOCKER);
     }
     if (rotation === 2) {
-      setFlag(
-        flags,
-        sizeX,
-        sizeY,
-        x,
-        y,
-        CollisionFlag.WALL_EAST_PROJECTILE_BLOCKER | CollisionFlag.WALL_SOUTH_PROJECTILE_BLOCKER,
-      );
-      setFlag(flags, sizeX, sizeY, x + 1, y, CollisionFlag.WALL_WEST_PROJECTILE_BLOCKER);
-      setFlag(flags, sizeX, sizeY, x, y - 1, CollisionFlag.WALL_NORTH_PROJECTILE_BLOCKER);
+      map.flag(x, y, CollisionFlag.WALL_EAST_PROJECTILE_BLOCKER | CollisionFlag.WALL_SOUTH_PROJECTILE_BLOCKER);
+      map.flag(x + 1, y, CollisionFlag.WALL_WEST_PROJECTILE_BLOCKER);
+      map.flag(x, y - 1, CollisionFlag.WALL_NORTH_PROJECTILE_BLOCKER);
     }
     if (rotation === 3) {
-      setFlag(
-        flags,
-        sizeX,
-        sizeY,
-        x,
-        y,
-        CollisionFlag.WALL_SOUTH_PROJECTILE_BLOCKER | CollisionFlag.WALL_WEST_PROJECTILE_BLOCKER,
-      );
-      setFlag(flags, sizeX, sizeY, x, y - 1, CollisionFlag.WALL_NORTH_PROJECTILE_BLOCKER);
-      setFlag(flags, sizeX, sizeY, x - 1, y, CollisionFlag.WALL_EAST_PROJECTILE_BLOCKER);
+      map.flag(x, y, CollisionFlag.WALL_SOUTH_PROJECTILE_BLOCKER | CollisionFlag.WALL_WEST_PROJECTILE_BLOCKER);
+      map.flag(x, y - 1, CollisionFlag.WALL_NORTH_PROJECTILE_BLOCKER);
+      map.flag(x - 1, y, CollisionFlag.WALL_EAST_PROJECTILE_BLOCKER);
     }
   }
 }
@@ -277,22 +227,6 @@ export function createCollisionMap(sizeX: number, sizeY: number): CollisionMap &
   };
 }
 
-function setBlockedByFloor(flags: Int32Array, sizeX: number, x: number, y: number): void {
-  if (x >= 0 && x < sizeX && y >= 0 && y < sizeX) {
-    flags[x + y * sizeX] |= CollisionFlag.FLOOR;
-  }
-}
-
-function setBlockedByObject(flags: Int32Array, sizeX: number, x: number, y: number, blocksProjectile: boolean): void {
-  if (x >= 0 && x < sizeX && y >= 0 && y < sizeX) {
-    let flag = CollisionFlag.OBJECT;
-    if (blocksProjectile) {
-      flag |= CollisionFlag.OBJECT_PROJECTILE_BLOCKER;
-    }
-    flags[x + y * sizeX] |= flag;
-  }
-}
-
 function isObjectCollisionLocType(locType: number): boolean {
   return (
     locType === LocModelType.NORMAL ||
@@ -370,9 +304,9 @@ export interface CollisionLocInput {
  */
 export type ExcludedStaticLocIds = ReadonlySet<number>;
 
+/** Writes one loc's collision into `map` by its cache clip rules, with `loc`'s tile in the map's coordinates. */
 export function applyLocCollision(
-  flags: Int32Array,
-  size: number,
+  map: CollisionMap,
   loc: { id: number; localX: number; localY: number; type: number; rotation: number },
   locLoader: LocCollisionLoader,
 ): void {
@@ -383,15 +317,18 @@ export function applyLocCollision(
 
   if (locType === LocModelType.FLOOR_DECORATION) {
     if (locInfo.clipType === 1) {
-      setBlockedByFloorDec(flags, size, loc.localX, loc.localY);
+      map.flag(loc.localX, loc.localY, CollisionFlag.FLOOR_DECORATION);
     }
   } else if (isObjectCollisionLocType(locType)) {
     if (locInfo.clipType !== 0) {
       const sizeX = (loc.rotation & 1) === 0 ? locInfo.sizeX : locInfo.sizeY;
       const sizeY = (loc.rotation & 1) === 0 ? locInfo.sizeY : locInfo.sizeX;
+      const flag = locInfo.blocksProjectile
+        ? CollisionFlag.OBJECT | CollisionFlag.OBJECT_PROJECTILE_BLOCKER
+        : CollisionFlag.OBJECT;
       for (let dx = 0; dx < sizeX; dx++) {
         for (let dy = 0; dy < sizeY; dy++) {
-          setBlockedByObject(flags, size, loc.localX + dx, loc.localY + dy, locInfo.blocksProjectile);
+          map.flag(loc.localX + dx, loc.localY + dy, flag);
         }
       }
     }
@@ -402,28 +339,41 @@ export function applyLocCollision(
     locType === LocModelType.WALL_RECT_CORNER
   ) {
     if (locInfo.clipType !== 0) {
-      applyWallCollision(flags, size, size, loc.localX, loc.localY, locType, loc.rotation);
+      applyWallCollision(map, loc.localX, loc.localY, locType, loc.rotation);
       if (locInfo.blocksProjectile) {
-        applyWallProjectileCollision(flags, size, size, loc.localX, loc.localY, locType, loc.rotation);
+        applyWallProjectileCollision(map, loc.localX, loc.localY, locType, loc.rotation);
       }
     }
   }
 }
 
-export function analyzeWalkability(
-  mapData: MapSquareData,
-  locations?: MapSquareLocations,
+/** One map square's collision inputs, and where its tile (0, 0) sits in the collision map they go into. */
+export interface MapSquareCollisionSource {
+  readonly mapData: MapSquareData;
+  readonly locations?: MapSquareLocations;
+  /** Encounter-declared placements absent from the cache's loc list, in the square's local tiles. */
+  readonly extraLocs?: readonly CollisionLocInput[];
+  readonly tileOffsetX: number;
+  readonly tileOffsetY: number;
+}
+
+/**
+ * Writes one map square's static collision into `collisionMap`: its blocked floor, then its locs and
+ * `extraLocs` by their cache clip rules. A loc's flags past the square's edge (a large object's far
+ * tiles, the far side of a wall on the edge) land in the neighboring square wherever `collisionMap`
+ * covers it, so a bake over several squares applies every square before reading any walkable tiles.
+ */
+export function applyMapSquareCollision(
+  collisionMap: CollisionMap,
+  source: MapSquareCollisionSource,
   locLoader?: LocCollisionLoader,
   level: number = 0,
-  extraLocs?: readonly CollisionLocInput[],
   excludedStaticLocIds?: ExcludedStaticLocIds,
-): { collisionMap: CollisionMap; bounds: ArenaBounds; walkableTiles: Set<string> } {
-  const size = 64;
-  const collisionMap = createCollisionMap(size, size);
-  const { tileRenderFlags, tileUnderlays } = mapData;
-
-  for (let x = 0; x < size; x++) {
-    for (let y = 0; y < size; y++) {
+): void {
+  const { mapData, locations, extraLocs, tileOffsetX, tileOffsetY } = source;
+  const { tileRenderFlags } = mapData;
+  for (let x = 0; x < MAP_SQUARE_SIZE; x++) {
+    for (let y = 0; y < MAP_SQUARE_SIZE; y++) {
       const renderFlag = tileRenderFlags[level]?.[x]?.[y] ?? 0;
 
       if ((renderFlag & 0x1) === 1) {
@@ -432,70 +382,82 @@ export function analyzeWalkability(
           realLevel = level - 1;
         }
         if (realLevel >= 0 && realLevel === level) {
-          setBlockedByFloor(collisionMap.flags, size, x, y);
+          collisionMap.flag(x + tileOffsetX, y + tileOffsetY, CollisionFlag.FLOOR);
         }
       }
     }
   }
 
-  if (locLoader) {
-    if (locations) {
-      for (const loc of locations.locations) {
-        if (loc.level !== level) continue;
-        if (excludedStaticLocIds?.has(loc.id)) continue;
-        applyLocCollision(collisionMap.flags, size, loc, locLoader);
-      }
-    }
-    // Bake encounter-declared dynamic loc placements (e.g. packet-spawned locs
-    // absent from the static map data) using the same cache clipType rules, so
-    // they block and are excluded from the walkable region below.
-    if (extraLocs) {
-      for (const loc of extraLocs) {
-        if (loc.level !== level) continue;
-        applyLocCollision(collisionMap.flags, size, loc, locLoader);
-      }
-    }
-  }
-
-  const walkableTiles = new Set<string>();
-  let minX = size,
-    maxX = 0,
-    minY = size,
-    maxY = 0;
-  let foundAny = false;
-
-  for (let x = 0; x < size; x++) {
-    for (let y = 0; y < size; y++) {
-      const hasUnderlay = (tileUnderlays[level]?.[x]?.[y] ?? 0) > 0;
-      const isBlocked = collisionMap.hasFlag(x, y, CollisionFlag.FLOOR_BLOCKED | CollisionFlag.OBJECT);
-
-      if (hasUnderlay && !isBlocked) {
-        walkableTiles.add(`${x},${y}`);
-        foundAny = true;
-        if (x < minX) minX = x;
-        if (x > maxX) maxX = x;
-        if (y < minY) minY = y;
-        if (y > maxY) maxY = y;
-      }
-    }
-  }
-
-  if (!foundAny) {
-    minX = 0;
-    maxX = size - 1;
-    minY = 0;
-    maxY = size - 1;
-  }
-
-  const bounds: ArenaBounds = {
-    minX,
-    maxX,
-    minY,
-    maxY,
-    width: maxX - minX + 1,
-    height: maxY - minY + 1,
+  if (!locLoader) return;
+  const applyLoc = (loc: CollisionLocInput): void => {
+    if (loc.level !== level) return;
+    applyLocCollision(
+      collisionMap,
+      tileOffsetX === 0 && tileOffsetY === 0
+        ? loc
+        : { ...loc, localX: loc.localX + tileOffsetX, localY: loc.localY + tileOffsetY },
+      locLoader,
+    );
   };
+  if (locations) {
+    for (const loc of locations.locations) {
+      if (excludedStaticLocIds?.has(loc.id)) continue;
+      applyLoc(loc);
+    }
+  }
+  // Encounter-declared dynamic loc placements (e.g. packet-spawned locs absent from the static map
+  // data) follow the same cache clipType rules, so they block and leave the walkable tiles too.
+  for (const loc of extraLocs ?? []) applyLoc(loc);
+}
 
+/**
+ * Adds to `into` the tiles of one map square, in `collisionMap`'s coordinates, that have an underlay
+ * and no floor or object block there.
+ */
+export function collectWalkableTiles(
+  collisionMap: CollisionMap,
+  source: Pick<MapSquareCollisionSource, 'mapData' | 'tileOffsetX' | 'tileOffsetY'>,
+  level: number = 0,
+  into: Set<string> = new Set<string>(),
+): Set<string> {
+  const { mapData, tileOffsetX, tileOffsetY } = source;
+  for (let x = 0; x < MAP_SQUARE_SIZE; x++) {
+    for (let y = 0; y < MAP_SQUARE_SIZE; y++) {
+      const hasUnderlay = (mapData.tileUnderlays[level]?.[x]?.[y] ?? 0) > 0;
+      const mapX = x + tileOffsetX;
+      const mapY = y + tileOffsetY;
+      if (hasUnderlay && !collisionMap.hasFlag(mapX, mapY, CollisionFlag.FLOOR_BLOCKED | CollisionFlag.OBJECT)) {
+        into.add(`${mapX},${mapY}`);
+      }
+    }
+  }
+  return into;
+}
+
+/** One map square's collision and walkable tiles on its own, in its local tiles. */
+export function analyzeWalkability(
+  mapData: MapSquareData,
+  locations?: MapSquareLocations,
+  locLoader?: LocCollisionLoader,
+  level: number = 0,
+  extraLocs?: readonly CollisionLocInput[],
+  excludedStaticLocIds?: ExcludedStaticLocIds,
+): { collisionMap: CollisionMap; bounds: ArenaBounds; walkableTiles: Set<string> } {
+  const collisionMap = createCollisionMap(MAP_SQUARE_SIZE, MAP_SQUARE_SIZE);
+  const source = { mapData, locations, extraLocs, tileOffsetX: 0, tileOffsetY: 0 };
+  applyMapSquareCollision(collisionMap, source, locLoader, level, excludedStaticLocIds);
+  const walkableTiles = collectWalkableTiles(collisionMap, source, level);
+  const bounds: ArenaBounds =
+    walkableTiles.size > 0
+      ? getBoundsFromRegion(walkableTiles)
+      : {
+          minX: 0,
+          maxX: MAP_SQUARE_SIZE - 1,
+          minY: 0,
+          maxY: MAP_SQUARE_SIZE - 1,
+          width: MAP_SQUARE_SIZE,
+          height: MAP_SQUARE_SIZE,
+        };
   return { collisionMap, bounds, walkableTiles };
 }
 

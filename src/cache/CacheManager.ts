@@ -13,12 +13,15 @@ import type { CacheInfo as RsCacheInfo } from '../rs/cache/CacheInfo';
 import { CacheSystem } from '../rs/cache/CacheSystem';
 import {
   analyzeWalkability,
+  applyMapSquareCollision,
   type CollisionLocInput,
   type CollisionMap,
+  collectWalkableTiles,
   type ExcludedStaticLocIds,
   findContiguousRegion,
   getBoundsFromRegion,
   type LocCollisionLoader,
+  type MapSquareCollisionSource,
 } from '../rs/collision/WalkabilityAnalyzer';
 import { Bzip2 } from '../rs/compression/Bzip2';
 import { ArchiveEnumTypeLoader, type EnumTypeLoader } from '../rs/config/enumtype/EnumTypeLoader';
@@ -1038,7 +1041,7 @@ export class CacheManager {
   }
 
   /**
-   * Build a cache-derived {@link ArenaConfig} for one map square: real loc
+   * Build a cache-derived {@link ArenaConfig} for a map square and its declared neighbors: real loc
    * collision (walls, pillars, any clipping loc) baked from the cache via each
    * loc's `clipType`, plus any encounter-declared `extraLocs` (dynamic /
    * packet-spawned locs absent from the static map data), with the walkable
@@ -1090,41 +1093,33 @@ export class CacheManager {
         walkableTiles = analysis.walkableTiles;
       } else {
         const radius = Math.max(...mapSquareBlock.flatMap(({ dx, dy }) => [Math.abs(dx), Math.abs(dy)]));
-        collisionMap = createBlockCollisionMap(radius);
-        walkableTiles = new Set<string>();
-        const analyses = await Promise.all(
-          mapSquareBlock.map(async ({ dx, dy, tileOffsetX, tileOffsetY }) => {
+        const blockMap = createBlockCollisionMap(radius);
+        const loaded = await Promise.all(
+          mapSquareBlock.map(async ({ dx, dy, tileOffsetX, tileOffsetY }): Promise<MapSquareCollisionSource | null> => {
             const squareX = mapX + dx;
             const squareY = mapY + dy;
             const squareData = dx === 0 && dy === 0 ? mapData : await this.mapLoader?.loadMapSquare(squareX, squareY);
             if (!squareData) return null;
             const locations = await this.mapLoader?.loadLocations(squareX, squareY, this.getXteaKey(squareX, squareY));
-            const analysis = analyzeWalkability(
-              squareData,
-              locations ?? undefined,
-              locCollisionLoader,
-              0,
-              dx === 0 && dy === 0 ? extraLocs : undefined,
-              excludedStaticLocIds,
-            );
-            return { analysis, tileOffsetX, tileOffsetY };
+            return {
+              mapData: squareData,
+              locations: locations ?? undefined,
+              // In origin-local tiles, which are the block's, so a placement lands in whichever square holds it.
+              extraLocs: dx === 0 && dy === 0 ? extraLocs : undefined,
+              tileOffsetX,
+              tileOffsetY,
+            };
           }),
         );
-
-        for (const entry of analyses) {
-          if (!entry) continue;
-          const { analysis, tileOffsetX, tileOffsetY } = entry;
-          for (let localX = 0; localX < MAP_SQUARE_SIZE; localX++) {
-            for (let localY = 0; localY < MAP_SQUARE_SIZE; localY++) {
-              const flag = analysis.collisionMap.getFlag(localX, localY);
-              if (flag !== 0) collisionMap.flag(localX + tileOffsetX, localY + tileOffsetY, flag);
-            }
-          }
-          for (const tile of analysis.walkableTiles) {
-            const [localX, localY] = tile.split(',').map(Number);
-            walkableTiles.add(`${localX + tileOffsetX},${localY + tileOffsetY}`);
-          }
+        const squares = loaded.filter((square) => square !== null);
+        // Every square's collision goes into the block before any walkable tile is read, so a loc on
+        // a seam blocks on both sides of it: a large object's far tiles, a wall's reciprocal flag.
+        for (const square of squares) {
+          applyMapSquareCollision(blockMap, square, locCollisionLoader, 0, excludedStaticLocIds);
         }
+        walkableTiles = new Set<string>();
+        for (const square of squares) collectWalkableTiles(blockMap, square, 0, walkableTiles);
+        collisionMap = blockMap;
       }
 
       const arenaRegion = findContiguousRegion(walkableTiles, seedX, seedY, collisionMap);

@@ -21,7 +21,6 @@ import {
   buildOverlayMinimapHsls,
   computeTileLights,
   drawMapSquareTerrain,
-  MAP_SQUARE_SIZE,
 } from '../src/components/minimapTerrain';
 import { INFERNO_ARENA_MAP_IMAGE } from '../src/encounters/inferno/arenaMapImage';
 import { INFERNO_MAP_SQUARE } from '../src/encounters/inferno/constants';
@@ -30,7 +29,7 @@ import { CacheSystem } from '../src/rs/cache/CacheSystem';
 import { IndexType } from '../src/rs/cache/IndexType';
 import { Bzip2 } from '../src/rs/compression/Bzip2';
 import { ArchiveOverlayTypeLoader, ArchiveUnderlayTypeLoader } from '../src/rs/config/flotype/FloTypeLoader';
-import { MapLoader } from '../src/rs/map/MapLoader';
+import { MAP_SQUARE_SIZE, MapLoader } from '../src/rs/map/MapLoader';
 import { SpriteTextureLoader } from '../src/rs/texture/SpriteTextureLoader';
 import { readCacheZipFiles } from '../src/test/helpers/cacheZipFiles';
 import { FULL_CACHE_ZIP, PINNED_CACHE } from './pinnedCache';
