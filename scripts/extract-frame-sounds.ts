@@ -1,7 +1,8 @@
 /**
  * Extract frameSounds from SeqType cache data for every animation sequence the
  * app can play: core player clips, weapon attack clips, spotanim sequences (encounter
- * render config effects included), and every NPC clip declared by an encounter render config.
+ * render config effects included), every NPC clip declared by an encounter render config, and
+ * the cache idle and walk clips a loaded NPC type falls back to.
  *
  * Usage: npx tsx scripts/extract-frame-sounds.ts
  *
@@ -23,10 +24,16 @@ import {
   WEAPON_ANIMATION_SETS,
   WEAPON_COMBAT_VISUALS,
 } from '../src/data/weaponCombatVisuals.generated';
-import { collectDeclaredNpcSeqIds, collectDeclaredSpotAnimIds } from '../src/encounters/renderConfigs';
+import {
+  collectDeclaredNpcSeqIds,
+  collectDeclaredSpotAnimIds,
+  collectLoadedNpcTypes,
+} from '../src/encounters/renderConfigs';
+import { npcBaseSeqIds } from '../src/render/npc/npcBaseSeqIds';
 import type { CacheInfo } from '../src/rs/cache/CacheInfo';
 import { CacheSystem } from '../src/rs/cache/CacheSystem';
 import { Bzip2 } from '../src/rs/compression/Bzip2';
+import { ArchiveNpcTypeLoader } from '../src/rs/config/npctype/NpcTypeLoader';
 import type { SeqSoundEffect, SeqType } from '../src/rs/config/seqtype/SeqType';
 import { ArchiveSeqTypeLoader } from '../src/rs/config/seqtype/SeqTypeLoader';
 import { SpotAnimID } from '../src/rs/config/spotanimtype/SpotAnimID';
@@ -37,6 +44,7 @@ import { FULL_CACHE_ZIP, PINNED_CACHE } from './pinnedCache';
 const SCRIPT_DIR = import.meta.dirname;
 
 const CONFIG_INDEX = 2;
+const NPC_ARCHIVE = 9;
 const SEQ_ARCHIVE = 12;
 const SPOTANIM_ARCHIVE = 13;
 
@@ -51,8 +59,9 @@ const CACHE_INFO: CacheInfo = {
 
 /**
  * Sequences no encounter render config declares. NPC clips do NOT belong here: they are collected
- * from the render configs by `collectDeclaredNpcSeqIds`, so a newly declared clip is extracted
- * without anyone remembering this list.
+ * from the render configs by `collectDeclaredNpcSeqIds`, and the cache clips a loaded type falls
+ * back to by `collectNpcBaseSeqIds`, so a newly declared clip is extracted without anyone
+ * remembering this list.
  */
 const CORE_SEQ_IDS: Record<number, string> = {
   714: 'Player eat',
@@ -112,14 +121,29 @@ function collectSpotAnimSeqIds(spotLoader: ArchiveSpotAnimTypeLoader, spotAnimId
   return ids;
 }
 
-function collectAllSeqIds(): Map<number, string> {
+/**
+ * Every loaded NPC type's idle and walk, resolved as the renderer resolves them: the render config's
+ * overrides, else the cache type's own. No render config names a cache default (Sol Heredit walks on
+ * cache seq 10878), so only the cache can say what it is.
+ */
+function collectNpcBaseSeqIds(npcLoader: ArchiveNpcTypeLoader): Map<number, string> {
+  const ids = new Map<number, string>();
+  for (const { npcTypeId, overrides, label } of collectLoadedNpcTypes()) {
+    const { idleSeqId, walkSeqId } = npcBaseSeqIds(npcLoader.load(npcTypeId), overrides);
+    if (idleSeqId >= 0 && !ids.has(idleSeqId)) ids.set(idleSeqId, `${label} idle`);
+    if (walkSeqId >= 0 && !ids.has(walkSeqId)) ids.set(walkSeqId, `${label} walk`);
+  }
+  return ids;
+}
+
+function collectAllSeqIds(npcLoader: ArchiveNpcTypeLoader): Map<number, string> {
   const ids = new Map<number, string>();
 
   for (const [id, label] of Object.entries(CORE_SEQ_IDS)) {
     ids.set(Number(id), label);
   }
 
-  for (const [seqId, label] of collectDeclaredNpcSeqIds()) {
+  for (const [seqId, label] of [...collectDeclaredNpcSeqIds(), ...collectNpcBaseSeqIds(npcLoader)]) {
     if (!ids.has(seqId)) ids.set(seqId, label);
   }
 
@@ -203,8 +227,9 @@ async function main(): Promise<void> {
   const seqArchive = configIndex.getArchive(SEQ_ARCHIVE);
   const loader = new ArchiveSeqTypeLoader(CACHE_INFO, seqArchive);
   const spotLoader = new ArchiveSpotAnimTypeLoader(CACHE_INFO, configIndex.getArchive(SPOTANIM_ARCHIVE));
+  const npcLoader = new ArchiveNpcTypeLoader(CACHE_INFO, configIndex.getArchive(NPC_ARCHIVE));
 
-  const seqIds = collectAllSeqIds();
+  const seqIds = collectAllSeqIds(npcLoader);
   const spotAnimIds = collectPlayedSpotAnimIds();
   for (const [seqId, label] of collectSpotAnimSeqIds(spotLoader, spotAnimIds)) {
     if (!seqIds.has(seqId)) {

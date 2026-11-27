@@ -3,8 +3,10 @@
  * (cache trimming, frame-sound extraction) that must not import the presentation manifest's scene
  * builders.
  */
+import type { NpcBaseSeqOverrides } from '../render/npc/npcBaseSeqIds';
 import type { AuthoredEncounterRenderConfig } from '../render/scene/encounterRenderConfig';
 import { INFERNO_RENDER_CONFIG } from './inferno/renderConfig';
+import { LOBBY_BOSS_NPCS } from './lobby/metadata';
 import { SOL_HEREDIT_RENDER_CONFIG } from './solHeredit/renderConfig';
 import { YAMA_ENCOUNTER_RENDER_CONFIG } from './yamaP3/renderConfig';
 
@@ -48,6 +50,39 @@ export function collectDeclaredNpcSeqIds(
     }
   }
   return ids;
+}
+
+/** An NPC type a scene loads, with the idle and walk overrides it loads with. */
+export interface LoadedNpcType {
+  readonly npcTypeId: number;
+  readonly overrides: NpcBaseSeqOverrides | undefined;
+  readonly label: string;
+}
+
+/**
+ * Every NPC type a scene loads: each render config's primary NPC (with its preload entry, if any)
+ * and preloaded types, and the lobby's bosses, which load with no overrides. Where a type has no
+ * idle or walk override the scene plays its cache type's own (`npcBaseSeqIds`), so a consumer of
+ * every playable clip resolves those against the cache: no render config names them.
+ */
+export function collectLoadedNpcTypes(
+  configs: ReadonlyMap<string, AuthoredEncounterRenderConfig> = ENCOUNTER_RENDER_CONFIGS,
+): LoadedNpcType[] {
+  const loaded: LoadedNpcType[] = [];
+  for (const [kind, config] of configs) {
+    const preloads = config.preloadNpcTypes ?? [];
+    const primary = config.primaryNpc;
+    if (primary && !preloads.some((npc) => npc.npcTypeId === primary.npcTypeId)) {
+      loaded.push({ npcTypeId: primary.npcTypeId, overrides: undefined, label: `${kind} npc ${primary.npcTypeId}` });
+    }
+    for (const npc of preloads) {
+      loaded.push({ npcTypeId: npc.npcTypeId, overrides: npc, label: `${kind} npc ${npc.npcTypeId}` });
+    }
+  }
+  for (const boss of LOBBY_BOSS_NPCS) {
+    loaded.push({ npcTypeId: boss.npcTypeId, overrides: undefined, label: `lobby boss ${boss.npcTypeId}` });
+  }
+  return loaded;
 }
 
 /**

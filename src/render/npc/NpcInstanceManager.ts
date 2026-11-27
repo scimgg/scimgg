@@ -48,6 +48,7 @@ import {
 } from './animationTypes';
 import { NpcAnimationController, npcPrimarySpec } from './NpcAnimationController';
 import { NpcFacingController, type NpcFacingStep } from './NpcFacingController';
+import { npcBaseSeqIds } from './npcBaseSeqIds';
 import { deriveNpcRenderFacingIntent, type NpcRenderFacingIntent } from './npcFacingIntent';
 import { interpolateNpcPosition, npcCrawlProgress } from './npcRenderPosition';
 import { isNpcStandingAt } from './npcStanding';
@@ -2376,8 +2377,7 @@ export class NpcInstanceManager {
     npcType: Pick<NpcType, 'idleSeqId' | 'walkSeqId'>,
     config: NpcTypeLoadConfig | undefined,
   ): NpcAnimationSet | null {
-    const idleSeqId = config?.idleSeqId ?? npcType.idleSeqId;
-    const walkSeqId = config?.walkSeqId ?? npcType.walkSeqId;
+    const { idleSeqId, walkSeqId } = npcBaseSeqIds(npcType, config);
 
     if (idleSeqId === -1) {
       const animationSet: NpcAnimationSet = {};

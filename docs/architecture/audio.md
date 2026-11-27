@@ -22,8 +22,11 @@ confirm or deny one.
   built with a tracker (`configureEncounterScene`). A paused, discontinuous or rebuilt frame only
   calls `silentSync()`. NPC clips and encounter effects reach `extracted-frame-sounds.json` through
   `scripts/extract-frame-sounds.ts`, which collects every seq the render configs declare
-  (`collectDeclaredNpcSeqIds`) and the sequence of every effect they declare
-  (`collectDeclaredSpotAnimIds`); `frameSoundManifest.test.ts` fails when either is missing.
+  (`collectDeclaredNpcSeqIds`), the cache idle and walk each loaded NPC type falls back to without
+  an override (`collectLoadedNpcTypes` through `npcBaseSeqIds`, as the renderer resolves them), and
+  the sequence of every effect they declare (`collectDeclaredSpotAnimIds`);
+  `frameSoundManifest.test.ts` fails when any is missing. `npm run check:cache-runtime` plays its
+  scenes' frame sounds against the trimmed cache and fails on one the trim dropped.
 
 ## Event sounds
 

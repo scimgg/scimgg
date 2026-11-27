@@ -8,6 +8,8 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import type { AudioEngine } from '../src/audio/AudioEngine';
+import { FrameSoundTracker } from '../src/audio/FrameSoundTracker';
 import { CacheManager } from '../src/cache/CacheManager';
 import { toCollisionLocInput } from '../src/core/arena/collisionSpec';
 import { isAmmoCompatible, weaponRequiresExternalAmmo } from '../src/core/combat/ammoCompatibility';
@@ -123,6 +125,30 @@ let tracing: ReturnType<typeof installArchiveReadTracing>;
 let virtualNowMs = 1_000;
 let cacheManager: CacheManager;
 let cacheId = 0;
+
+/**
+ * Stands in for the app's audio engine behind each scene's frame-sound tracker: each sound played
+ * reads its patch from the cache as `cacheSoundBufferLoader` does, so a sound the trim dropped fails
+ * the archive report like any other read. Frame sounds are cache data on whatever animation plays,
+ * so no list in `src/` names them all.
+ */
+const playedSounds = new Map<number, string>();
+const notInCacheSounds = new Map<number, string>();
+const soundReadingEngine = {
+  play(soundId: number, _options?: unknown, trigger = 'unknown') {
+    if (!playedSounds.has(soundId)) playedSounds.set(soundId, trigger);
+    const index = need(cacheManager.getSoundEffectIndex(), 'sound effect index');
+    if (!index.archiveExists(soundId)) {
+      if (!notInCacheSounds.has(soundId)) notInCacheSounds.set(soundId, trigger);
+      return;
+    }
+    try {
+      index.getFile(soundId, 0);
+    } catch {
+      // The app logs and goes silent; the archive report names the read.
+    }
+  },
+} as unknown as AudioEngine;
 
 /** Session seed for `Math.random`, reset before each engine so its encounter seeds are fixed. */
 const DEFAULT_RANDOM_SEED = 1;
@@ -240,7 +266,11 @@ async function openEncounter(
   }
 
   const renderConfig = getEncounterRenderConfig(kind);
-  const scene = createSceneBuilderForKind(kind, { cacheManager, encounterRenderConfig: renderConfig });
+  const scene = createSceneBuilderForKind(kind, {
+    cacheManager,
+    encounterRenderConfig: renderConfig,
+    frameSoundTracker: new FrameSoundTracker(soundReadingEngine),
+  });
   const compositor = compositorOf(scene);
   const animationSystem = need(cacheManager.getAnimationSystem(), 'animation system');
   const npcModelLoader = need(cacheManager.getNpcModelLoader(), 'npc model loader');
@@ -422,6 +452,13 @@ it('serves every archive the production runtime reads from the trimmed cache', a
       runner.ran(label),
     );
     problems.push(...uncovered.map((entry) => `uncovered encounter kind ${entry}`));
+    // Frame sounds must really play, or the trim's frame-sound coverage goes unchecked.
+    if (![...playedSounds.values()].some((trigger) => trigger.startsWith('frame:'))) {
+      problems.push('no animation frame sound was played');
+    }
+  }
+  for (const [soundId, trigger] of notInCacheSounds) {
+    problems.push(`sound ${soundId} (${trigger}) is not in the trimmed cache`);
   }
   if (archiveProblems.length > 0) {
     problems.push(
