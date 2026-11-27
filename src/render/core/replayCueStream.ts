@@ -1,3 +1,4 @@
+import type { ActorCueLife } from './actorCueLife';
 import type { ReplayEffectDestination } from './replayEffectIndex';
 
 /** One cue as emitted on a recorded frame. Encounter indexes own the cue data and its id. */
@@ -8,6 +9,8 @@ export type ReplayCue<Cue> = {
   /** The emitting tick. Cue delays count client cycles from its start. */
   readonly tick: number;
   readonly order: number;
+  /** The life of the actor an actor-bound cue (a clip, an `attached` graphic) rides; see `ActorCueLife`. */
+  readonly life?: ActorCueLife;
 };
 
 /**

@@ -19,6 +19,8 @@ import { SpotAnimRenderer } from '../SpotAnimRenderer';
 import type { SpotAnimTransform } from '../spotAnimTypes';
 
 type History = { readonly frames: readonly ReplayDisplayFrame[]; readonly throughFrameIndex: number };
+/** A live frame's actors when no NPC is shown: no cue's actor life ends. */
+const NO_CUE_ACTORS = { npcs: [], currentTick: 0 } as const;
 
 /** The cue player as a scene drives it from a history: one shared effect index per history. */
 class ReplayedCuePlayer extends EncounterCuePlayer {
@@ -161,10 +163,10 @@ describe('EncounterCuePlayer', () => {
     const live = fixture();
     restored.controller.reconstruct({ frames: [{ state: initial, events: [] }], throughFrameIndex: 0 }, { cycle: 0 });
     restored.update(0);
-    restored.controller.consumeEvents([]);
+    restored.controller.consumeEvents([], NO_CUE_ACTORS);
     for (const scene of [restored, live]) {
       scene.move([40, 46]);
-      scene.controller.consumeEvents([emitted]);
+      scene.controller.consumeEvents([emitted], NO_CUE_ACTORS);
     }
     const start = base + cue.startDelayCycles;
     for (const cycle of [start, start + 1, start + 10]) expect(restored.update(cycle)).toEqual(live.update(cycle));
@@ -183,7 +185,7 @@ describe('EncounterCuePlayer', () => {
     const start = base + cue.startDelayCycles;
     const handoff = start + 5;
     live.move(state.playerPosition);
-    live.controller.consumeEvents([emitted]);
+    live.controller.consumeEvents([emitted], NO_CUE_ACTORS);
     for (let cycle = start; cycle <= handoff; cycle++) live.update(cycle);
     restored.move(state.playerPosition);
     restored.controller.reconstruct(
@@ -194,7 +196,7 @@ describe('EncounterCuePlayer', () => {
     const [id, flight] = [...restored.controller['flights']['flights'].entries()][0];
     const motion = flight.runtime['motion'];
     const rendererInstance = restored.renderer['activeInstances'].get(id);
-    restored.controller.consumeEvents([]);
+    restored.controller.consumeEvents([], NO_CUE_ACTORS);
     expect(restored.controller['flights']['flights'].get(id)).toBe(flight);
     expect(flight.runtime['motion']).toBe(motion);
     expect(flight.runtime['cycle']).toBe(handoff);
@@ -240,9 +242,10 @@ describe('EncounterCuePlayer', () => {
 
   it('reaches the target at packet endtime when a delayed blast launches on a nonzero tick', () => {
     const { controller, update } = fixture();
-    controller.consumeEvents([
-      event({ tick: 2, projectiles: [{ ...projectile, startDelayCycles: 50, endDelayCycles: 126 }] }),
-    ]);
+    controller.consumeEvents(
+      [event({ tick: 2, projectiles: [{ ...projectile, startDelayCycles: 50, endDelayCycles: 126 }] })],
+      NO_CUE_ACTORS,
+    );
     update(110);
     const motion = [...controller['flights']['flights'].values()][0]?.runtime['motion'];
     if (!motion) expect.fail('Expected initialized flight');
@@ -256,9 +259,10 @@ describe('EncounterCuePlayer', () => {
 
   it.each([186, 186.5, 187])('draws nothing at or after packet endtime when sampled at cycle %s', (cycle) => {
     const { controller, update } = fixture();
-    controller.consumeEvents([
-      event({ tick: 2, projectiles: [{ ...projectile, startDelayCycles: 50, endDelayCycles: 126 }] }),
-    ]);
+    controller.consumeEvents(
+      [event({ tick: 2, projectiles: [{ ...projectile, startDelayCycles: 50, endDelayCycles: 126 }] })],
+      NO_CUE_ACTORS,
+    );
     expect(update(185.5).map((mesh) => mesh.id)).toEqual(['effect-1375']);
 
     const meshes = update(cycle);
@@ -307,7 +311,7 @@ describe('EncounterCuePlayer', () => {
       { state: { ...state, currentTick: 1, npcs: [] }, events: [] },
     ];
     const reference = fixture();
-    reference.controller.consumeEvents([emitted]);
+    reference.controller.consumeEvents([emitted], NO_CUE_ACTORS);
     for (let cycle = 0; cycle <= 60; cycle++) reference.update(cycle);
     const sought = fixture();
     sought.controller.reconstruct({ frames, throughFrameIndex: 0 }, { cycle: 60 });
@@ -360,7 +364,7 @@ describe('EncounterCuePlayer', () => {
     };
     const fine = sample([...Array.from({ length: 61 }, (_, cycle) => cycle), 60.5]);
     const reference = fixture();
-    reference.controller.consumeEvents(frames[0].events);
+    reference.controller.consumeEvents(frames[0].events, NO_CUE_ACTORS);
     for (const cycle of [...Array.from({ length: 61 }, (_, index) => index), 60.5]) {
       const tick = Math.floor(cycle / 30);
       const fraction = cycle / 30 - tick;
@@ -513,23 +517,26 @@ describe('EncounterCuePlayer', () => {
     'aligns native -Z projectile head with $direction flight at midpoint: $spotAnimId',
     ({ spotAnimId, targetX, targetY, startHeight, endHeight }) => {
       const { controller, update } = fixture();
-      controller.consumeEvents([
-        event({
-          projectiles: [
-            {
-              ...projectile,
-              spotAnimId,
-              sourcePosition: [5.5, 5.5],
-              target: { kind: 'tile', position: [targetX, targetY] },
-              endDelayCycles: 19,
-              startOffset: 0,
-              slope: 0,
-              startHeight,
-              endHeight,
-            },
-          ],
-        }),
-      ]);
+      controller.consumeEvents(
+        [
+          event({
+            projectiles: [
+              {
+                ...projectile,
+                spotAnimId,
+                sourcePosition: [5.5, 5.5],
+                target: { kind: 'tile', position: [targetX, targetY] },
+                endDelayCycles: 19,
+                startOffset: 0,
+                slope: 0,
+                startHeight,
+                endHeight,
+              },
+            ],
+          }),
+        ],
+        NO_CUE_ACTORS,
+      );
 
       const meshes = update(9.5);
 
@@ -600,7 +607,7 @@ describe('EncounterCuePlayer', () => {
       const pathY = fraction < 0.5 ? 5 + fraction * 4 : 9 - fraction * 4;
       const targetX = actorId === 'moving-npc' && fraction === 0 ? 12 + tick : 10 + tick + fraction * 2;
       prefix.move([targetX, actorId === 'player' ? pathY : 5]);
-      prefix.controller.consumeEvents(history[tick]?.events ?? []);
+      prefix.controller.consumeEvents(history[tick]?.events ?? [], NO_CUE_ACTORS);
       prefix.update(cycle);
     }
     const expected = prefix.update(destination);
@@ -611,7 +618,7 @@ describe('EncounterCuePlayer', () => {
     const actual = sought.update(destination);
     const destinationOnly = fixture(resolveSurfaceHeight);
     destinationOnly.move([12, 5]);
-    destinationOnly.controller.consumeEvents(history[0]?.events ?? []);
+    destinationOnly.controller.consumeEvents(history[0]?.events ?? [], NO_CUE_ACTORS);
 
     expect(actual).toEqual(expected);
     expect(actual).not.toEqual(destinationOnly.update(destination));
@@ -680,15 +687,18 @@ describe('EncounterCuePlayer', () => {
 
   it('uses independent start and exclusive end cycles when a Jad batch overlaps', () => {
     const { controller, update } = fixture();
-    controller.consumeEvents([
-      event({
-        projectiles: [
-          { ...projectile, spotAnimId: 448, startDelayCycles: 92, endDelayCycles: 116 },
-          { ...projectile, spotAnimId: 449, startDelayCycles: 96, endDelayCycles: 120 },
-          { ...projectile, spotAnimId: 450, startDelayCycles: 100, endDelayCycles: 126 },
-        ],
-      }),
-    ]);
+    controller.consumeEvents(
+      [
+        event({
+          projectiles: [
+            { ...projectile, spotAnimId: 448, startDelayCycles: 92, endDelayCycles: 116 },
+            { ...projectile, spotAnimId: 449, startDelayCycles: 96, endDelayCycles: 120 },
+            { ...projectile, spotAnimId: 450, startDelayCycles: 100, endDelayCycles: 126 },
+          ],
+        }),
+      ],
+      NO_CUE_ACTORS,
+    );
 
     const samples = [91, 92, 96, 100, 115.5, 116, 120, 126].map((cycle) => update(cycle).map((mesh) => mesh.id));
 
@@ -706,7 +716,7 @@ describe('EncounterCuePlayer', () => {
 
   it('uses resolved source XY, raw offsets and terrain height when launching', () => {
     const { controller, update } = fixture();
-    controller.consumeEvents([event()]);
+    controller.consumeEvents([event()], NO_CUE_ACTORS);
 
     const meshes = update(0);
 
@@ -718,7 +728,7 @@ describe('EncounterCuePlayer', () => {
     { source: 0, target: 0 },
   ])('uses separate scene references without changing packet offsets: %j', ({ source, target }) => {
     const { controller, update } = fixture((worldX) => (worldX < 3 ? source : target));
-    controller.consumeEvents([event()]);
+    controller.consumeEvents([event()], NO_CUE_ACTORS);
 
     const launch = update(0)[0];
     const midpoint = update(12)[0];
@@ -729,11 +739,14 @@ describe('EncounterCuePlayer', () => {
 
   it('resamples the moving actor center rather than its footprint elevation', () => {
     const { controller, update, move } = fixture((worldX, worldY) => -128 * (worldX + worldY));
-    controller.consumeEvents([
-      event({
-        projectiles: [{ ...projectile, target: { kind: 'actor', actorId: 'target', size: 4, position: [10, 5] } }],
-      }),
-    ]);
+    controller.consumeEvents(
+      [
+        event({
+          projectiles: [{ ...projectile, target: { kind: 'actor', actorId: 'target', size: 4, position: [10, 5] } }],
+        }),
+      ],
+      NO_CUE_ACTORS,
+    );
     update(10);
     move([12.25, 8.5]);
 
@@ -746,7 +759,7 @@ describe('EncounterCuePlayer', () => {
 
   it('preserves the current trajectory when a live target moves and the clock is held', () => {
     const { controller, update, move } = fixture();
-    controller.consumeEvents([event({ projectiles: [{ ...projectile, slope: 16 }] })]);
+    controller.consumeEvents([event({ projectiles: [{ ...projectile, slope: 16 }] })], NO_CUE_ACTORS);
     update(0);
     const before = update(10);
     move([20, 10]);
@@ -764,18 +777,21 @@ describe('EncounterCuePlayer', () => {
 
   it('uses the explicit SW fallback plus actor size when the target disappears', () => {
     const { controller, update, move } = fixture();
-    controller.consumeEvents([
-      event({
-        projectiles: [
-          {
-            ...projectile,
-            endDelayCycles: 1,
-            startOffset: 0,
-            target: { kind: 'actor', actorId: 'gone', size: 4, position: [8, 3] },
-          },
-        ],
-      }),
-    ]);
+    controller.consumeEvents(
+      [
+        event({
+          projectiles: [
+            {
+              ...projectile,
+              endDelayCycles: 1,
+              startOffset: 0,
+              target: { kind: 'actor', actorId: 'gone', size: 4, position: [8, 3] },
+            },
+          ],
+        }),
+      ],
+      NO_CUE_ACTORS,
+    );
     move(null);
 
     const meshes = update(0.5);
@@ -785,12 +801,12 @@ describe('EncounterCuePlayer', () => {
 
   it('retains a sampled moving destination after target loss without sharing it with another flight', () => {
     const { controller, update, move } = fixture((worldX, worldY) => -128 * (worldX + worldY));
-    controller.consumeEvents([event()]);
+    controller.consumeEvents([event()], NO_CUE_ACTORS);
     update(0);
     move([20, 10]);
     update(10);
     move(null);
-    controller.consumeEvents([event({ eventId: 2 })]);
+    controller.consumeEvents([event({ eventId: 2 })], NO_CUE_ACTORS);
 
     const meshes = update(23.9999);
 
@@ -803,12 +819,12 @@ describe('EncounterCuePlayer', () => {
 
   it('forgets a sampled destination when clear resets a reused flight id', () => {
     const { controller, update, move } = fixture();
-    controller.consumeEvents([event()]);
+    controller.consumeEvents([event()], NO_CUE_ACTORS);
     move([20, 10]);
     update(10);
 
     controller.clear();
-    controller.consumeEvents([event()]);
+    controller.consumeEvents([event()], NO_CUE_ACTORS);
     move(null);
     const mesh = update(23.9999)[0];
 
@@ -818,7 +834,7 @@ describe('EncounterCuePlayer', () => {
 
   it('expires at endtime without advancing or retaining an expired flight', () => {
     const { controller, update } = fixture();
-    controller.consumeEvents([event()]);
+    controller.consumeEvents([event()], NO_CUE_ACTORS);
     update(23.9);
 
     const meshes = update(24);
@@ -832,7 +848,7 @@ describe('EncounterCuePlayer', () => {
     const cache = renderer['meshCache'].get(1375);
     if (!cache) throw new Error('Missing test cache');
     renderer['meshCache'].delete(1375);
-    controller.consumeEvents([event()]);
+    controller.consumeEvents([event()], NO_CUE_ACTORS);
     const unloaded = update(5);
     renderer['meshCache'].set(1375, cache);
 
@@ -844,7 +860,7 @@ describe('EncounterCuePlayer', () => {
 
   it('uses cache frame lengths and tail frameStep rather than stretching animation to flight', () => {
     const { renderer, controller, update } = fixture();
-    controller.consumeEvents([event()]);
+    controller.consumeEvents([event()], NO_CUE_ACTORS);
     update(0);
 
     update(11);
@@ -858,12 +874,15 @@ describe('EncounterCuePlayer', () => {
     const cache = renderer['meshCache'].get(451);
     if (!cache) expect.fail('Expected graphic cache');
     cache.frameLengths = [10];
-    controller.consumeEvents([
-      event({
-        projectiles: [],
-        graphics: [{ spotAnimId: 451, target: { kind: 'tile', position: [3, 4] }, delayCycles: 70, height: 92 }],
-      }),
-    ]);
+    controller.consumeEvents(
+      [
+        event({
+          projectiles: [],
+          graphics: [{ spotAnimId: 451, target: { kind: 'tile', position: [3, 4] }, delayCycles: 70, height: 92 }],
+        }),
+      ],
+      NO_CUE_ACTORS,
+    );
 
     expect(update(79.999)).toHaveLength(1);
     expect(update(80)).toEqual([]);
@@ -871,12 +890,15 @@ describe('EncounterCuePlayer', () => {
 
   it('attaches only explicit graphics with their cache lifetime and supplied height', () => {
     const { controller, update, move } = fixture(() => -1280);
-    controller.consumeEvents([
-      event({
-        projectiles: [],
-        graphics: [{ spotAnimId: 444, target: projectile.target, delayCycles: 120, height: 256 }],
-      }),
-    ]);
+    controller.consumeEvents(
+      [
+        event({
+          projectiles: [],
+          graphics: [{ spotAnimId: 444, target: projectile.target, delayCycles: 120, height: 256 }],
+        }),
+      ],
+      NO_CUE_ACTORS,
+    );
     expect(update(119)).toEqual([]);
     update(120);
     move([12, 8]);
@@ -895,12 +917,15 @@ describe('EncounterCuePlayer', () => {
     const cache = renderer['meshCache'].get(451);
     if (!cache) throw new Error('Missing test cache');
     cache.frameLengths = lengths;
-    controller.consumeEvents([
-      event({
-        projectiles: [],
-        graphics: [{ spotAnimId: 451, target: { kind: 'tile', position: [3, 4] }, delayCycles: 0, height: 92 }],
-      }),
-    ]);
+    controller.consumeEvents(
+      [
+        event({
+          projectiles: [],
+          graphics: [{ spotAnimId: 451, target: { kind: 'tile', position: [3, 4] }, delayCycles: 0, height: 92 }],
+        }),
+      ],
+      NO_CUE_ACTORS,
+    );
 
     const meshes = update(0);
     cache.frameLengths = [30];
@@ -914,12 +939,15 @@ describe('EncounterCuePlayer', () => {
     const cache = renderer['meshCache'].get(451);
     if (!cache) throw new Error('Missing test cache');
     renderer['meshCache'].delete(451);
-    controller.consumeEvents([
-      event({
-        projectiles: [],
-        graphics: [{ spotAnimId: 451, target: { kind: 'tile', position: [3, 4] }, delayCycles: 2, height: 92 }],
-      }),
-    ]);
+    controller.consumeEvents(
+      [
+        event({
+          projectiles: [],
+          graphics: [{ spotAnimId: 451, target: { kind: 'tile', position: [3, 4] }, delayCycles: 2, height: 92 }],
+        }),
+      ],
+      NO_CUE_ACTORS,
+    );
 
     const missing = update(2);
     renderer['meshCache'].set(451, cache);
@@ -933,13 +961,16 @@ describe('EncounterCuePlayer', () => {
     const cache = renderer['meshCache'].get(451);
     if (!cache) expect.fail('Expected graphic cache');
     renderer['meshCache'].delete(451);
-    controller.consumeEvents([
-      event({
-        tick: 10,
-        projectiles: [],
-        graphics: [{ spotAnimId: 451, target: { kind: 'tile', position: [3, 4] }, delayCycles: 15, height: 64 }],
-      }),
-    ]);
+    controller.consumeEvents(
+      [
+        event({
+          tick: 10,
+          projectiles: [],
+          graphics: [{ spotAnimId: 451, target: { kind: 'tile', position: [3, 4] }, delayCycles: 15, height: 64 }],
+        }),
+      ],
+      NO_CUE_ACTORS,
+    );
     const pending = update(310);
     renderer['meshCache'].set(451, cache);
 
@@ -958,13 +989,13 @@ describe('EncounterCuePlayer', () => {
       transform: { kind: 'static', value: { position: [0, 0, 0] } },
       lifecycle: { kind: 'manual' },
     });
-    controller.consumeEvents([event(), event(), event({ eventId: 2 })]);
+    controller.consumeEvents([event(), event(), event({ eventId: 2 })], NO_CUE_ACTORS);
     expect(update(0)).toHaveLength(3);
 
     controller.clear();
 
     expect(update(0).map((mesh) => mesh.id)).toEqual(['effect-451']);
-    controller.consumeEvents([event()]);
+    controller.consumeEvents([event()], NO_CUE_ACTORS);
     expect(update(0)).toHaveLength(2);
     controller.clear();
     expect(update(0)).toHaveLength(1);
@@ -1001,12 +1032,15 @@ describe('EncounterCuePlayer', () => {
   it("rides an attached graphic on its actor's rendered model, turning with it, and hides it while the actor is absent", () => {
     const { controller, renderer, update, attach, move } = fixture();
     const yawOf = (matrix: readonly number[]) => (Math.atan2(matrix[8], matrix[0]) * 2048) / (2 * Math.PI);
-    controller.consumeEvents([
-      event({
-        projectiles: [],
-        graphics: [{ spotAnimId: 444, target: { kind: 'attached', actorId: 'sol' }, delayCycles: 2, height: 64 }],
-      }),
-    ]);
+    controller.consumeEvents(
+      [
+        event({
+          projectiles: [],
+          graphics: [{ spotAnimId: 444, target: { kind: 'attached', actorId: 'sol' }, delayCycles: 2, height: 64 }],
+        }),
+      ],
+      NO_CUE_ACTORS,
+    );
     attach({ position: [10, 20, 1], yaw2048: 512 });
     // The tracked-anchor actor position is ignored: an attachment follows only the rendered model.
     move([40, 40]);
@@ -1040,20 +1074,23 @@ describe('EncounterCuePlayer', () => {
 
   it('draws a tracked graphic on its recorded fallback while its actor is not rendered, unlike an attached one', () => {
     const { controller, update, move } = fixture();
-    controller.consumeEvents([
-      event({
-        projectiles: [],
-        graphics: [
-          {
-            spotAnimId: 444,
-            target: { kind: 'actor', actorId: 'gone', size: 2, position: [8, 3] },
-            delayCycles: 0,
-            height: 128,
-          },
-          { spotAnimId: 451, target: { kind: 'attached', actorId: 'gone' }, delayCycles: 0, height: 128 },
-        ],
-      }),
-    ]);
+    controller.consumeEvents(
+      [
+        event({
+          projectiles: [],
+          graphics: [
+            {
+              spotAnimId: 444,
+              target: { kind: 'actor', actorId: 'gone', size: 2, position: [8, 3] },
+              delayCycles: 0,
+              height: 128,
+            },
+            { spotAnimId: 451, target: { kind: 'attached', actorId: 'gone' }, delayCycles: 0, height: 128 },
+          ],
+        }),
+      ],
+      NO_CUE_ACTORS,
+    );
     move(null);
 
     const meshes = update(1);
@@ -1063,21 +1100,32 @@ describe('EncounterCuePlayer', () => {
 
   it('plays same-cycle clips in emission order and every clip in start order, whatever order they were added in', () => {
     const { controller } = fixture();
-    controller.consumeEvents([
-      event({
-        eventId: 1,
-        tick: 1,
-        projectiles: [],
-        animations: [
-          { actorId: 'a', clipId: 'late', delayCycles: 20 },
-          { actorId: 'a', clipId: 'first', delayCycles: 5 },
-          { actorId: 'a', clipId: 'second', delayCycles: 5 },
-        ],
-      }),
-    ]);
-    controller.consumeEvents([
-      event({ eventId: 2, tick: 1, projectiles: [], animations: [{ actorId: 'a', clipId: 'third', delayCycles: 5 }] }),
-    ]);
+    controller.consumeEvents(
+      [
+        event({
+          eventId: 1,
+          tick: 1,
+          projectiles: [],
+          animations: [
+            { actorId: 'a', clipId: 'late', delayCycles: 20 },
+            { actorId: 'a', clipId: 'first', delayCycles: 5 },
+            { actorId: 'a', clipId: 'second', delayCycles: 5 },
+          ],
+        }),
+      ],
+      NO_CUE_ACTORS,
+    );
+    controller.consumeEvents(
+      [
+        event({
+          eventId: 2,
+          tick: 1,
+          projectiles: [],
+          animations: [{ actorId: 'a', clipId: 'third', delayCycles: 5 }],
+        }),
+      ],
+      NO_CUE_ACTORS,
+    );
 
     expect(controller.takeAnimations(34)).toEqual([]);
     expect(controller.takeAnimations(40).map(({ cue, cycle }) => [cue.clipId, cycle])).toEqual([

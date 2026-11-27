@@ -97,28 +97,31 @@ describe('ProjectileController', () => {
   it('applies shared flight culling and sorting to player and Inferno projectiles', () => {
     const { controller, renderer, visuals, timing } = flightFixture();
     const inferno = new EncounterCuePlayer(renderer);
-    inferno.consumeEvents([
-      {
-        type: 'encounter_visual',
-        eventId: 1,
-        tick: 0,
-        animations: [],
-        graphics: [],
-        projectiles: [
-          {
-            spotAnimId: 1375,
-            sourcePosition: [0, 0],
-            target: { kind: 'tile', position: [10, 0] },
-            startDelayCycles: 0,
-            endDelayCycles: 60,
-            startOffset: 0,
-            slope: 0,
-            startHeight: 0,
-            endHeight: 0,
-          },
-        ],
-      },
-    ]);
+    inferno.consumeEvents(
+      [
+        {
+          type: 'encounter_visual',
+          eventId: 1,
+          tick: 0,
+          animations: [],
+          graphics: [],
+          projectiles: [
+            {
+              spotAnimId: 1375,
+              sourcePosition: [0, 0],
+              target: { kind: 'tile', position: [10, 0] },
+              startDelayCycles: 0,
+              endDelayCycles: 60,
+              startOffset: 0,
+              slope: 0,
+              startHeight: 0,
+              endHeight: 0,
+            },
+          ],
+        },
+      ],
+      { npcs: [], currentTick: 0 },
+    );
     controller.launchProjectile({ ...visuals, hitSpotanim: -1 }, 29000, [0, 0], [10, 0], 1, 0, 0, undefined, timing);
 
     controller.update(renderer, 0, 0, null);

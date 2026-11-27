@@ -37,6 +37,8 @@ import { writeViewProjection } from '../spotAnimViewRejection';
  */
 
 const initialSkipSort = perfFlags.skipTransparentSort;
+/** A live frame's actors when no NPC is shown: no cue's actor life ends. */
+const NO_CUE_ACTORS = { npcs: [], currentTick: 0 } as const;
 afterEach(() => {
   perfFlags.skipTransparentSort = initialSkipSort;
   vi.restoreAllMocks();
@@ -272,7 +274,7 @@ describe.skipIf(skipWithoutRealCache('pinned'))('a ripple-sized spotanim burst',
       perfFlags.skipTransparentSort = skipSort;
       const { renderer, controller } = await setUp();
       const digest = new Digest();
-      controller.consumeEvents([burst(7, 1)]);
+      controller.consumeEvents([burst(7, 1)], NO_CUE_ACTORS);
       const onPlayer = new Map<number, string>();
       for (const cycle of CYCLES) {
         controller.takeAnimations(cycle);
@@ -284,7 +286,7 @@ describe.skipIf(skipWithoutRealCache('pinned'))('a ripple-sized spotanim burst',
             onPlayer.set(eventId, `${onPlayer.get(eventId) ?? ''}${shown ? '+' : '-'}`);
         }
         // A second burst lands mid-ripple, on the same tiles, under new ids.
-        if (cycle === 50) controller.consumeEvents([burst(8, 2)]);
+        if (cycle === 50) controller.consumeEvents([burst(8, 2)], NO_CUE_ACTORS);
       }
       expect(digest.commands).toBeGreaterThan(169 * 40);
       // Each graphic on the player shows, detaches, shows again where they came back, then expires.
@@ -384,8 +386,8 @@ describe.skipIf(skipWithoutRealCache('pinned'))('a ripple-sized spotanim burst',
           Array.from(command.modelMatrix),
           isResidentMesh3DCommand(command) ? command.meshSourcePart : (command as NpcMesh3DCommand).positions.length,
         ]);
-      full.controller.consumeEvents([burst(7, 1)]);
-      culled.controller.consumeEvents([burst(7, 1)]);
+      full.controller.consumeEvents([burst(7, 1)], NO_CUE_ACTORS);
+      culled.controller.consumeEvents([burst(7, 1)], NO_CUE_ACTORS);
       let kept = 0;
       let leftOut = 0;
       for (const cycle of CYCLES) {
@@ -431,7 +433,7 @@ describe.skipIf(skipWithoutRealCache('pinned'))('a ripple-sized spotanim burst',
       const { renderer, controller } = await setUp();
       renderer.setBatchableSpotAnimFamilies([COLOSSEUM_SPOTANIMS.solMelee]);
       const digest = new Digest();
-      controller.consumeEvents([burst(7, 1)]);
+      controller.consumeEvents([burst(7, 1)], NO_CUE_ACTORS);
       const sources = new Set<object>();
       let atlasParts: ReturnType<NonNullable<Mesh3DCommand['instanceAtlas']>['materialize']> | undefined;
       const checked = new Set<number>();
@@ -464,7 +466,7 @@ describe.skipIf(skipWithoutRealCache('pinned'))('a ripple-sized spotanim burst',
           expect(part?.perVertexFaceBias).toEqual(own?.perVertexFaceBias);
         }
         // As the pinned run: a second burst lands mid-ripple.
-        if (cycle === 50) controller.consumeEvents([burst(8, 2)]);
+        if (cycle === 50) controller.consumeEvents([burst(8, 2)], NO_CUE_ACTORS);
       }
       // One atlas for the whole burst: 3 variants × 10 frames, one part each, every one drawn.
       expect(sources.size).toBe(1);
@@ -480,7 +482,7 @@ describe.skipIf(skipWithoutRealCache('pinned'))('a ripple-sized spotanim burst',
       renderer.setBatchableSpotAnimFamilies([]);
       for (const source of sources) expect((source as { retired: boolean }).retired).toBe(true);
       const queue: RenderQueue = { replayPresentationReady: true, commands: [] };
-      controller.consumeEvents([burst(9, 10)]);
+      controller.consumeEvents([burst(9, 10)], NO_CUE_ACTORS);
       controller.update(cueFrame(300));
       renderer.tick(10, 10);
       renderer.render(queue);

@@ -1793,7 +1793,7 @@ describe('Zuk seeded healer amounts', () => {
     const controller = new EncounterCuePlayer(renderer);
     const events = collectTickEvents(engine, 8);
 
-    controller.consumeEvents(events);
+    controller.consumeEvents(events, engine.getState());
     controller.update({
       cycle: 240,
       resolveActor: (id) => world.getNpc(id)?.position ?? null,

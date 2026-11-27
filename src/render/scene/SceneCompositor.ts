@@ -1154,16 +1154,16 @@ export class SceneCompositor {
    * removed ones.
    *
    * An actor the simulation removed outright (`actor_despawned`, an OSRS `del`) leaves nothing drawn:
-   * no model or corpse, no clip still to start and no graphic riding it. `actor_presentations_removed`
-   * drops every presentation of its NPC types, corpses the simulation already pruned included.
+   * no model or corpse, and (the cue player's own reading of the removal) no clip still to start and
+   * no graphic riding it. `actor_presentations_removed` drops every presentation of its NPC types,
+   * corpses the simulation already pruned included.
    */
   private syncEncounterCues(events: readonly GameEvent[], ctx: RenderContext): void {
     this.syncEncounterCueSource(events, ctx);
     for (const event of events) {
-      if (isCoreEvent(event, 'actor_despawned')) {
+      if (isCoreEvent(event, 'actor_despawned'))
         this.npcInstanceManager.removePresentation(this.actorRenderIdOf(event.actorId));
-        this.cues.removeActor(event.actorId);
-      } else if (isActorPresentationsRemovedEvent(event))
+      else if (isActorPresentationsRemovedEvent(event))
         this.npcInstanceManager.removePresentationsByNpcType(event.npcTypeIds);
     }
   }
@@ -1177,7 +1177,7 @@ export class SceneCompositor {
     const history = ctx.replayHistory;
     const index = this.replayEffectIndex;
     if (!history || !index) {
-      this.cues.consumeEvents(events);
+      this.cues.consumeEvents(events, ctx.simulationState);
       this.cueHistory = undefined;
       return;
     }
@@ -1502,7 +1502,8 @@ export class SceneCompositor {
    * Plays, on the NPC clock, each cue clip due by now and each trigger the encounter derives from its
    * snapshot (`encounterNpcTriggers`), each at its own start cycle, in start order (emission order,
    * then the encounter's, within a cycle), stepping the clock to each start and then to now. A cue clip
-   * on an actor no longer standing, or under a clip key its type does not declare, is skipped. Returns
+   * on an actor no longer standing, or under a clip key its type does not declare, is skipped; one of an
+   * actor life that has ended never reaches here (see `ActorCueLife`). Returns
    * no triggers for the frame-time update: everything has been applied.
    */
   protected getEncounterAttackTriggers(

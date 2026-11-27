@@ -271,7 +271,7 @@ describe('live Inferno damage callbacks to audio and defend cues', () => {
     const events = simulation.getLastTickEvents();
     player.onEvents(events, [0, 0]);
     const visuals = new EncounterCuePlayer(new SpotAnimRenderer());
-    visuals.consumeEvents(events);
+    visuals.consumeEvents(events, simulation.getState());
 
     expect(actor.vitals.hp).toBe(16);
     expect(events.filter((event) => event.type === 'zuk_hit')).toMatchObject(

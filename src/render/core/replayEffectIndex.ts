@@ -87,7 +87,7 @@ export class ReplayEffectIndex {
       const source = this.frames[this.indexedLength];
       // Each frame's events are read once, however many indexes consume them.
       const frame = { state: source.state, events: source.events };
-      this.cues.append(frame.events, this.indexedLength);
+      this.cues.append(frame, this.indexedLength);
       this.actors.append(frame, this.indexedLength);
       this.encounter?.append(source, this.indexedLength);
       const presentActorIds = new Set<string>();

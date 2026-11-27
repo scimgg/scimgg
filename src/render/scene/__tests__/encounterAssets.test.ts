@@ -15,7 +15,7 @@ import {
 } from '../../../test/helpers/sceneObservation';
 import { OSRS_TICK_MS } from '../../../types/simulation';
 import type { EncounterRenderConfig } from '../encounterRenderConfig';
-import { configureEncounterScene } from '../encounterSceneBuilder';
+import { configureEncounterScene, createEncounterSceneBuilder } from '../encounterSceneBuilder';
 import { SceneCompositor } from '../SceneCompositor';
 import { SceneBuilderRegistry, sceneBuilderFactoryFor } from '../sceneBuilderFactory';
 import type { RenderContext } from '../types';
@@ -231,15 +231,16 @@ describe('encounter replay readiness', () => {
 });
 
 describe('the common encounter scene', () => {
-  it('is what a presentation module without a scene builder gets, configured from its render config', () => {
+  it('is what a presentation module without a scene builder gets, configured from its options', () => {
     const eventAudioPlayer = new EventAudioPlayer(new AudioEngine());
     const frameSoundTracker = new FrameSoundTracker(new AudioEngine());
     const cacheManager = {} as CacheManager;
 
-    const scene = sceneBuilderFactoryFor({ kind: 'common', renderConfig: WITH_PRIMARY })({
+    const scene = sceneBuilderFactoryFor({ kind: 'common' })({
       cacheManager,
       eventAudioPlayer,
       frameSoundTracker,
+      encounterRenderConfig: WITH_PRIMARY,
     });
     if (!(scene instanceof SceneCompositor)) expect.fail('Expected the common scene');
     scenes.push(scene);
@@ -249,23 +250,29 @@ describe('the common encounter scene', () => {
     expect(scene['eventAudioPlayer']).toBe(eventAudioPlayer);
     expect(scene['frameSoundTracker']).toBe(frameSoundTracker);
     expect(scene['groundItemLoaderSource']).toBe(cacheManager);
+  });
 
-    // The render config the app passes still wins over the module's own.
-    const passed = sceneBuilderFactoryFor({ kind: 'common', renderConfig: WITH_PRIMARY })({
+  it('takes its authored config, unless the app passes one', () => {
+    const cacheManager = {} as CacheManager;
+    // A kind with no core descriptor keeps its authored config as it is.
+    const authored = createEncounterSceneBuilder('common', WITH_PRIMARY, { cacheManager });
+    const passed = createEncounterSceneBuilder('common', WITH_PRIMARY, {
       cacheManager,
       encounterRenderConfig: PRIMARYLESS,
     });
-    if (!(passed instanceof SceneCompositor)) expect.fail('Expected the common scene');
-    scenes.push(passed);
+    if (!(authored instanceof SceneCompositor) || !(passed instanceof SceneCompositor))
+      expect.fail('Expected the common scene');
+    scenes.push(authored, passed);
+    expect(authored['encounterRenderConfig']).toBe(WITH_PRIMARY);
     expect(passed['encounterRenderConfig']).toBe(PRIMARYLESS);
   });
 
   it("keeps a module's own scene builder, and still fails on a kind nothing registered", () => {
     const own = vi.fn();
-    expect(sceneBuilderFactoryFor({ kind: 'common', sceneBuilder: own, renderConfig: WITH_PRIMARY })).toBe(own);
+    expect(sceneBuilderFactoryFor({ kind: 'common', sceneBuilder: own })).toBe(own);
 
     const registry = new SceneBuilderRegistry();
-    registry.register('common', sceneBuilderFactoryFor({ kind: 'common', renderConfig: WITH_PRIMARY }));
+    registry.register('common', sceneBuilderFactoryFor({ kind: 'common' }));
     expect(() => registry.create('unknown', { cacheManager: {} as CacheManager })).toThrow(
       'Unknown scene builder kind: "unknown"',
     );

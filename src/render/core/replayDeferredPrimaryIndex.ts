@@ -1,9 +1,11 @@
+import type { ActorCueLife } from './actorCueLife';
 import type { ReplayEffectDestination } from './replayEffectIndex';
 import { canReplacePrimary, type PrimarySample, type PrimarySpec, primaryPhase } from './replayPrimaryIndex';
 
-type DeferredCue = { readonly cycle: number; readonly clipId: string };
+/** A clip due on the actor at `cycle`, for the actor's `life` when it was emitted for one. */
+type DeferredCue = { readonly cycle: number; readonly clipId: string; readonly life?: ActorCueLife };
 type Source = { readonly frameIndex: number; readonly tick: number; readonly cues: readonly DeferredCue[] };
-type Timed<Clip> = { readonly cycle: number; readonly spec: PrimarySpec<Clip> };
+type Timed<Clip> = { readonly cycle: number; readonly spec: PrimarySpec<Clip>; readonly life?: ActorCueLife };
 type Sweep<Clip> = {
   readonly cues: Timed<Clip>[];
   sourceCursor: number;
@@ -59,7 +61,13 @@ export class ReplayDeferredPrimaryIndex<Clip> {
       life = { metadata, sweep: createSweep(), clips: new Map(), pending: false };
       this.lives.set(destination.spawnTick, life);
     }
-    if (destination.cycle < life.sweep.cycle || destination.throughFrameIndex < life.sweep.throughFrameIndex) {
+    if (
+      destination.cycle < life.sweep.cycle ||
+      destination.throughFrameIndex < life.sweep.throughFrameIndex ||
+      // A clip taken from a life that has ended since (an id reused with no spawn tick to tell the
+      // lives apart) goes with it: the sweep is rebuilt without it.
+      life.sweep.current?.life?.isEndedBy(destination)
+    ) {
       life.sweep = createSweep();
     }
     const sweep = life.sweep;
@@ -70,7 +78,7 @@ export class ReplayDeferredPrimaryIndex<Clip> {
       if (source.frameIndex > destination.throughFrameIndex || source.tick * 30 > destination.cycle) break;
       const incoming: Timed<Clip>[] = [];
       for (const cue of source.cues) {
-        if (cue.cycle < destination.spawnTick * 30) continue;
+        if (cue.cycle < destination.spawnTick * 30 || cue.life?.isEndedBy(destination)) continue;
         let spec = life.clips.get(cue.clipId);
         if (spec === undefined) {
           spec = resolve(cue.clipId);
@@ -80,7 +88,7 @@ export class ReplayDeferredPrimaryIndex<Clip> {
           life.pending = true;
           break;
         }
-        if (spec) incoming.push({ cycle: cue.cycle, spec });
+        if (spec) incoming.push({ cycle: cue.cycle, spec, life: cue.life });
       }
       if (life.pending) break;
       for (const cue of incoming) {

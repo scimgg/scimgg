@@ -93,8 +93,8 @@ const ZUK_PRIMARY_RENDER_CONFIG: EncounterRenderConfig = {
 class SceneProbe extends InfernoSceneCompositor {
   readonly manager = this.npcInstanceManager;
   readonly effects = this.spotAnimRenderer;
-  events(events: EncounterVisualEvent[]): void {
-    this.cues.consumeEvents(events);
+  events(events: EncounterVisualEvent[], actors: Pick<SimulationState, 'npcs' | 'currentTick'>): void {
+    this.cues.consumeEvents(events, actors);
   }
   sync(npcs: NpcSnapshot[]): void {
     this.syncNpcInstances(npcs, false);
@@ -2219,16 +2219,19 @@ describe('Zuk scene builder', () => {
       ],
     };
     scene.sync(state.npcs);
-    scene.events([
-      {
-        type: 'encounter_visual',
-        tick: 0,
-        eventId: 1,
-        projectiles: [],
-        graphics: [],
-        animations: [{ actorId: ZUK_ACTOR_ID, clipId: 'attack', delayCycles: 5 }],
-      },
-    ]);
+    scene.events(
+      [
+        {
+          type: 'encounter_visual',
+          tick: 0,
+          eventId: 1,
+          projectiles: [],
+          graphics: [],
+          animations: [{ actorId: ZUK_ACTOR_ID, clipId: 'attack', delayCycles: 5 }],
+        },
+      ],
+      state,
+    );
     scene.animate(state, 0);
     scene.animate(state, 4 / 30);
     const before = scene.manager.getInstanceFrameStates()[0]?.animController?.getFrameState();
@@ -2245,16 +2248,19 @@ describe('Zuk scene builder', () => {
     scene.animate(state, 15 / 30);
     expect(scene.manager.getInstanceFrameStates()[0]?.animController?.getFrameState()?.seqId).toBe(ZUK_SEQS.zuk.idle);
     scene.resetIntroState();
-    scene.events([
-      {
-        type: 'encounter_visual',
-        tick: 0,
-        eventId: 1,
-        projectiles: [],
-        graphics: [],
-        animations: [{ actorId: ZUK_ACTOR_ID, clipId: 'attack', delayCycles: 0 }],
-      },
-    ]);
+    scene.events(
+      [
+        {
+          type: 'encounter_visual',
+          tick: 0,
+          eventId: 1,
+          projectiles: [],
+          graphics: [],
+          animations: [{ actorId: ZUK_ACTOR_ID, clipId: 'attack', delayCycles: 0 }],
+        },
+      ],
+      state,
+    );
     scene.animate(state, 0);
     expect(scene.manager.getInstanceFrameStates()[0]?.animController?.getFrameState()?.seqId).toBe(ZUK_SEQS.zuk.attack);
     scene.dispose();

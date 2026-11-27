@@ -18,7 +18,8 @@ import {
   syntheticNpcAssets,
   VIEWPORT,
 } from '../../../test/helpers/sceneObservation';
-import type { Coordinate, SimulationState } from '../../../types/simulation';
+import type { RestoredPresentation } from '../../../types/restoredPresentation';
+import type { Coordinate, NpcState, SimulationState } from '../../../types/simulation';
 import type { EncounterRenderConfig } from '../encounterRenderConfig';
 import { createEncounterSceneBuilder } from '../encounterSceneBuilder';
 import { SceneCompositor } from '../SceneCompositor';
@@ -36,8 +37,14 @@ const GLOW_SPOT_ANIM_ID = 9102;
 const PLAYER_TILE: Coordinate = [20, 20];
 const LAST_TICK = 4;
 
+/** The brute's successor under its id: another NPC type, declaring a slam of its own. */
+const SUCCESSOR = { npcTypeId: 9002, spawnTick: 2, idleSeqId: 9210, slamSeqId: 9202 };
+
 const RENDER_CONFIG: EncounterRenderConfig = {
-  preloadNpcTypes: [{ npcTypeId: BRUTE.npcTypeId, idleSeqId: IDLE_SEQ_ID, attackClips: { slam: SLAM_SEQ_ID } }],
+  preloadNpcTypes: [
+    { npcTypeId: BRUTE.npcTypeId, idleSeqId: IDLE_SEQ_ID, attackClips: { slam: SLAM_SEQ_ID } },
+    { npcTypeId: SUCCESSOR.npcTypeId, idleSeqId: SUCCESSOR.idleSeqId, attackClips: { slam: SUCCESSOR.slamSeqId } },
+  ],
   spotAnimIds: [ROCK_SPOT_ANIM_ID, GLOW_SPOT_ANIM_ID],
 };
 
@@ -65,27 +72,37 @@ function bruteTick(events: TickEvents, tick: number): void {
   });
 }
 
-/** The run, recorded tick by tick through the recorder every run takes. */
-function recordBruteRun(): readonly ReplayDisplayFrame[] {
+/** A run recorded tick by tick through the recorder every run takes; `tick` emits and names the NPCs. */
+function recordRun(
+  lastTick: number,
+  tick: (events: TickEvents, tick: number) => readonly NpcState[],
+): readonly ReplayDisplayFrame[] {
   const engine = new SimulationEngine({ encounter: new LobbyEncounter(), combatSeed: 1 });
   const base = engine.getState();
   const recorder = new ReplayRecorder();
   recorder.startRun(engine.getRunConfig());
   const events = new TickEvents();
-  for (let tick = 0; tick <= LAST_TICK; tick++) {
-    events.setTick(tick);
-    bruteTick(events, tick);
+  for (let current = 0; current <= lastTick; current++) {
+    events.setTick(current);
+    const npcs = tick(events, current);
     const state: SimulationState = {
       ...base,
-      currentTick: tick,
+      currentTick: current,
       playerPosition: [...PLAYER_TILE],
       playerPreviousPosition: [...PLAYER_TILE],
       playerMovementPath: [],
-      npcs: [legacyNpc(BRUTE.id, BRUTE.npcTypeId, BRUTE.position, BRUTE.size)],
+      npcs: [...npcs],
     };
-    recorder.recordFrame(tick, state.playerPosition, state, events.flush());
+    recorder.recordFrame(current, state.playerPosition, state, events.flush());
   }
   return recorder.getDisplayFrames();
+}
+
+function recordBruteRun(): readonly ReplayDisplayFrame[] {
+  return recordRun(LAST_TICK, (events, tick) => {
+    bruteTick(events, tick);
+    return [legacyNpc(BRUTE.id, BRUTE.npcTypeId, BRUTE.position, BRUTE.size)];
+  });
 }
 
 describe('a new encounter on the default scene builder', () => {
@@ -170,6 +187,184 @@ describe('a new encounter on the default scene builder', () => {
       [`${BRUTE.id}:${SLAM_SEQ_ID}`, String(ROCK_SPOT_ANIM_ID), String(GLOW_SPOT_ANIM_ID)].sort(),
     );
     expect(keys(forward).sort()).toEqual([String(ROCK_SPOT_ANIM_ID), String(GLOW_SPOT_ANIM_ID)].sort());
+  });
+});
+
+describe("an actor's cues on a new life under its id", () => {
+  const arena = getArenaConfig();
+  const unbounded = getArenaAllowUnboundedFallback();
+  afterEach(() => {
+    vi.restoreAllMocks();
+    setArenaConfig(arena, unbounded);
+  });
+
+  const REPLACED_LAST_TICK = 7;
+  /**
+   * How the brute's life ends at tick 1, and the successor that takes its id from tick 2 on: removed,
+   * then a new spawn of another type that declares the same clip key; or, with no removal, a new spawn
+   * of the same type in its place.
+   */
+  const ENDINGS = [
+    { ending: 'despawned', successorTypeId: SUCCESSOR.npcTypeId, slamSeqId: SUCCESSOR.slamSeqId },
+    { ending: 'respawned in place', successorTypeId: BRUTE.npcTypeId, slamSeqId: SLAM_SEQ_ID },
+  ] as const;
+  type Ending = (typeof ENDINGS)[number];
+
+  /**
+   * The brute schedules a slam and a glow on itself for cycle 100 and throws a rock that flies until
+   * 200; its life ends before then, and its successor slams and glows on its own batch at tick 4.
+   */
+  function recordReplacedBrute({ ending, successorTypeId }: Ending): readonly ReplayDisplayFrame[] {
+    return recordRun(REPLACED_LAST_TICK, (events, tick) => {
+      const glow = {
+        spotAnimId: GLOW_SPOT_ANIM_ID,
+        target: { kind: 'attached', actorId: BRUTE.id },
+        height: 64,
+      } as const;
+      if (tick === 0)
+        emitEncounterVisual(events, {
+          animations: [{ actorId: BRUTE.id, clipId: 'slam', delayCycles: 100 }],
+          projectiles: [
+            {
+              spotAnimId: ROCK_SPOT_ANIM_ID,
+              sourcePosition: [BRUTE.position[0] + 1, BRUTE.position[1] + 1],
+              target: { kind: 'actor', actorId: 'player', size: 1, position: PLAYER_TILE },
+              startDelayCycles: 0,
+              endDelayCycles: 200,
+              slope: 16,
+              startOffset: 64,
+              startHeight: 80,
+              endHeight: 40,
+            },
+          ],
+          graphics: [{ ...glow, delayCycles: 100 }],
+        });
+      if (tick === 4)
+        emitEncounterVisual(events, {
+          animations: [{ actorId: BRUTE.id, clipId: 'slam', delayCycles: 0 }],
+          projectiles: [],
+          graphics: [{ ...glow, delayCycles: 0 }],
+        });
+      const brute = legacyNpc(BRUTE.id, BRUTE.npcTypeId, BRUTE.position, BRUTE.size);
+      if (tick === 0) return [brute];
+      if (tick === 1) {
+        if (ending === 'respawned in place') return [brute];
+        events.emit({ type: 'actor_despawned', actorId: BRUTE.id });
+        return [];
+      }
+      return [legacyNpc(BRUTE.id, successorTypeId, BRUTE.position, BRUTE.size, { spawnTick: SUCCESSOR.spawnTick })];
+    });
+  }
+
+  const idle = new Set([IDLE_SEQ_ID, SUCCESSOR.idleSeqId]);
+  /** Only the successor's own slam and glow, and the rock, which no life ends; from `from` on. */
+  const windowsFor = ({ slamSeqId }: Ending, from = 0) => ({
+    effects: { [ROCK_SPOT_ANIM_ID]: [from, 199], [GLOW_SPOT_ANIM_ID]: [120, 179] },
+    clips: { [`${BRUTE.id}:${slamSeqId}`]: [120, 129] },
+  });
+  const shownAt = (ending: Ending, cycle: number) => {
+    const { effects, clips } = windowsFor(ending);
+    return Object.entries({ ...effects, ...clips })
+      .filter(([, [first, last]]) => first <= cycle && cycle <= last)
+      .map(([key]) => key)
+      .sort();
+  };
+  const shown = (observation: SceneObservation) =>
+    [
+      ...new Set(observation.effects.map(({ spotAnimId }) => String(spotAnimId))),
+      ...Object.entries(observation.poses)
+        .filter(([, { seqId }]) => !idle.has(seqId))
+        .map(([actorId, { seqId }]) => `${actorId}:${seqId}`),
+    ].sort();
+
+  async function scene(frames: readonly ReplayDisplayFrame[]) {
+    const built = createEncounterSceneBuilder('brute', RENDER_CONFIG);
+    if (!(built instanceof SceneCompositor)) throw new Error('Expected the common scene');
+    const { loader, animation } = syntheticNpcAssets((id) =>
+      id === SUCCESSOR.npcTypeId || id === BRUTE.npcTypeId ? BRUTE.size : 1,
+    );
+    await built.loadNpc(loader, animation);
+    installSyntheticSpotAnims(built, RENDER_CONFIG.spotAnimIds ?? []);
+    const context = {
+      speedMultiplier: 1,
+      interaction: { hoveredTile: null, targetTile: null },
+      options: SCENE_OPTIONS,
+    };
+    const build = (ctx: Parameters<SceneCompositor['build']>[0]) =>
+      observeScene(built, built.build(ctx, IDENTITY_PROJECTION, VIEWPORT));
+    return {
+      scene: built,
+      live: (cycle: number) => {
+        const frame = frames[Math.min(REPLACED_LAST_TICK, Math.floor(cycle / 30))];
+        if (!frame) throw new RangeError(`No frame for cycle ${cycle}`);
+        return build({ ...context, simulationState: frame.state, events: frame.events, interpolatedTick: cycle / 30 });
+      },
+      replay: (cycle: number) => build({ ...context, ...replayContextAt(frames, cycle, false) }),
+      /**
+       * Live play handed over by a restored presentation of the history through `tick`, which shows
+       * the end of that tick; `live` then draws on from there.
+       */
+      restoreAt: (tick: number) => {
+        const frame = frames[tick];
+        if (!frame) throw new RangeError(`No frame for tick ${tick}`);
+        const timeMs = (tick + 1) * 600;
+        const restoration: RestoredPresentation = {
+          engine: new SimulationEngine({ encounter: new LobbyEncounter(), combatSeed: 1 }),
+          tick,
+          timeMs,
+          history: { frames: frames.slice(0, tick + 1), throughFrameIndex: tick },
+        };
+        const timeline = { timelineKey: 'restored', paused: false };
+        const at = (cycle: number, paused: boolean) => {
+          const shown = frames[Math.min(frames.length - 1, Math.floor(cycle / 30))];
+          if (!shown) throw new RangeError(`No frame for cycle ${cycle}`);
+          return build({
+            ...context,
+            simulationState: shown.state,
+            events: shown.events,
+            interpolatedTick: cycle / 30,
+            restoredPresentation: restoration,
+            timeline: { ...timeline, paused, timeMs: cycle * 20 },
+          });
+        };
+        const restored = build({
+          ...context,
+          simulationState: frame.state,
+          events: frame.events,
+          interpolatedTick: tick + 1,
+          restoredPresentation: restoration,
+          frameDeltaMs: 0,
+          timeline: { ...timeline, paused: true, timeMs },
+        });
+        return { restored, live: (cycle: number) => at(cycle, false) };
+      },
+    };
+  }
+
+  it.each(
+    ENDINGS,
+  )("never plays the old life's slam or glow on a successor once the brute is $ending: live, in replay, after a seek or a handoff", async (ending) => {
+    const frames = recordReplacedBrute(ending);
+    const opened: SceneCompositor[] = [];
+    const open = async () => {
+      const result = await scene(frames);
+      opened.push(result.scene);
+      return result;
+    };
+    try {
+      expect(activeWindows((await open()).live, 0, 239, idle)).toEqual(windowsFor(ending));
+      expect(activeWindows((await open()).replay, 0, 239, idle)).toEqual(windowsFor(ending));
+      for (const cycle of [99, 100, 105, 119, 120, 125, 150])
+        expect(shown((await open()).replay(cycle)), `seek to ${cycle}`).toEqual(shownAt(ending, cycle));
+
+      // Restored at the end of tick 2, before the old life's slam and glow are due: live play takes
+      // over what the history still owes, and none of it is the old life's.
+      const handoff = (await open()).restoreAt(2);
+      expect(shown(handoff.restored)).toEqual(shownAt(ending, 90));
+      expect(activeWindows(handoff.live, 91, 239, idle)).toEqual(windowsFor(ending, 91));
+    } finally {
+      for (const built of opened) built.dispose();
+    }
   });
 });
 

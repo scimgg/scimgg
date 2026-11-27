@@ -3,7 +3,9 @@ import {
   type EncounterGraphicCue,
   isEncounterVisualEvent,
 } from '../../core/events/encounterVisual';
-import type { GameEvent } from '../../core/events/types';
+import { type GameEvent, isCoreEvent } from '../../core/events/types';
+import type { NpcSnapshot } from '../../types/simulation';
+import { type ActorCueLife, ActorCueLives } from '../core/actorCueLife';
 import { encounterCueId } from '../core/encounterCueIndex';
 import type { ReplayEffectDestination, ReplayEffectIndex } from '../core/replayEffectIndex';
 import { getTerrainHeightInterpolated } from '../shared/renderUtils';
@@ -20,10 +22,19 @@ export type EncounterCueFrame = NpcProjectileFrame & {
   readonly resolveAttachment: (actorId: string) => SpotAnimTransform | null;
 };
 
-/** A clip due to start on an actor at `cycle`. */
-export type DueEncounterClip = { readonly cue: EncounterClipCue; readonly cycle: number };
+/** A clip due to start on an actor at `cycle`, for the life of the actor it was emitted for. */
+export type DueEncounterClip = { readonly cue: EncounterClipCue; readonly cycle: number; readonly life: ActorCueLife };
 
-type Graphic = { readonly cue: EncounterGraphicCue; readonly start: number; readonly playback: OneShotSpotAnim };
+/** The actors a live frame shows, after its tick: what its cues' actor lives are worked out from. */
+export type EncounterCueActors = { readonly npcs: readonly NpcSnapshot[]; readonly currentTick: number };
+
+type Graphic = {
+  readonly cue: EncounterGraphicCue;
+  readonly start: number;
+  readonly playback: OneShotSpotAnim;
+  /** An `attached` graphic's actor life; see `ActorCueLife`. */
+  readonly life?: ActorCueLife;
+};
 
 /**
  * Plays the scene's `encounter_visual` cues: the clips still to start, the NPC projectiles in flight
@@ -34,13 +45,19 @@ type Graphic = { readonly cue: EncounterGraphicCue; readonly start: number; read
  * history's shared effect index, everything owed at its destination: started flights are re-flown
  * from history, graphics resume at their own start, and clips are left to the actors' primary
  * timelines, except those not yet started, which a restored presentation hands to live play.
+ *
+ * A clip or an `attached` graphic plays only for the life of its actor it was emitted for: the
+ * actor's removal or a new spawn under its id drops it, live as in replay, and in the cues a restored
+ * presentation hands over.
  */
 export class EncounterCuePlayer {
   private readonly seenEvents = new Set<number>();
   private readonly flights: NpcProjectileFlights;
   private readonly graphics = new Map<string, Graphic>();
   private animations: DueEncounterClip[] = [];
-  private replay: { readonly index: ReplayEffectIndex; readonly throughFrameIndex: number } | undefined;
+  /** Live play's actor lives; in replay, the index's own lives answer at the destination. */
+  private readonly lives = new ActorCueLives();
+  private replay: { readonly index: ReplayEffectIndex; readonly destination: ReplayEffectDestination } | undefined;
   /** The frame the latest `update` was given; every graphic's transform resolves against it. */
   private frame: EncounterCueFrame | null = null;
 
@@ -55,27 +72,40 @@ export class EncounterCuePlayer {
     this.flights = new NpcProjectileFlights(renderer);
   }
 
-  /** Takes each batch in `events` once. Even an empty live frame retires historical aiming. */
-  consumeEvents(events: readonly GameEvent[]): void {
+  /**
+   * Takes each batch in `events` once, and each actor removal (`actor_despawned`) in event order with
+   * them; `actors` is the frame's state. Even an empty live frame retires historical aiming.
+   */
+  consumeEvents(events: readonly GameEvent[], actors: EncounterCueActors): void {
+    if (this.replay) this.adoptReplayLives(this.replay.destination);
     this.replay = undefined;
+    this.lives.observe(actors.npcs, { frameIndex: 0, tick: actors.currentTick });
     let added = false;
     for (const event of events) {
-      if (this.seenEvents.has(event.eventId) || !isEncounterVisualEvent(event)) continue;
+      if (this.seenEvents.has(event.eventId)) continue;
+      if (isCoreEvent(event, 'actor_despawned')) {
+        this.seenEvents.add(event.eventId);
+        this.lives.remove(event.actorId, { frameIndex: 0, tick: event.tick });
+        continue;
+      }
+      if (!isEncounterVisualEvent(event)) continue;
       this.seenEvents.add(event.eventId);
       const base = event.tick * 30;
       for (const [ordinal, cue] of event.projectiles.entries())
         this.flights.add(encounterCueId(event.eventId, 'projectile', ordinal), cue, base);
       for (const [ordinal, cue] of event.graphics.entries()) {
         const id = encounterCueId(event.eventId, 'graphic', ordinal);
-        this.graphics.set(id, this.createGraphic(id, cue, base + cue.delayCycles));
+        const life = cue.target.kind === 'attached' ? this.lives.lifeOf(cue.target.actorId) : undefined;
+        this.graphics.set(id, this.createGraphic(id, cue, base + cue.delayCycles, life));
       }
       for (const cue of event.animations) {
-        this.animations.push({ cue, cycle: base + cue.delayCycles });
+        this.animations.push({ cue, cycle: base + cue.delayCycles, life: this.lives.lifeOf(cue.actorId) });
         added = true;
       }
     }
     // Stable: same-cycle clips keep emission order.
     if (added) this.animations.sort((left, right) => left.cycle - right.cycle);
+    this.dropEndedLives(undefined);
   }
 
   /**
@@ -85,27 +115,18 @@ export class EncounterCuePlayer {
    */
   syncReplay(index: ReplayEffectIndex, destination: ReplayEffectDestination, rebuild: boolean): void {
     if (rebuild) this.clear();
-    this.replay = { index, throughFrameIndex: destination.throughFrameIndex };
+    this.replay = { index, destination };
     for (const entry of index.cues.projectiles(destination))
       if (!this.flights.has(entry.id)) this.flights.add(entry.id, entry.cue, entry.tick * 30);
     for (const entry of index.cues.activeGraphics(destination, (id) => getOneShotDurationCycles(this.renderer, id, 0)))
       if (!this.graphics.has(entry.id))
-        this.graphics.set(entry.id, this.createGraphic(entry.id, entry.cue, entry.tick * 30 + entry.cue.delayCycles));
+        this.graphics.set(
+          entry.id,
+          this.createGraphic(entry.id, entry.cue, entry.tick * 30 + entry.cue.delayCycles, entry.life),
+        );
     // Replay poses actors from their timelines; only live play after a restored handoff takes these.
     this.animations = index.cues.pendingAnimations(destination).sort((left, right) => left.cycle - right.cycle);
-  }
-
-  /**
-   * An actor the simulation removed outright (`actor_despawned`): its clips still to start and the
-   * graphics riding it go with it. Flights and graphics merely aimed at it play on.
-   */
-  removeActor(actorId: string): void {
-    this.animations = this.animations.filter(({ cue }) => cue.actorId !== actorId);
-    this.graphics.forEach(({ cue }, id) => {
-      if (cue.target.kind !== 'attached' || cue.target.actorId !== actorId) return;
-      this.renderer.despawn(id);
-      this.graphics.delete(id);
-    });
+    this.dropEndedLives(destination);
   }
 
   /** The clips due by `cycle`, in start order (emission order within a cycle), removed from the queue. */
@@ -120,7 +141,7 @@ export class EncounterCuePlayer {
     this.frame = frame;
     const replay = this.replay;
     const sampler = replay?.index.actors.sampler(
-      { cycle: frame.cycle, throughFrameIndex: replay.throughFrameIndex },
+      { cycle: frame.cycle, throughFrameIndex: replay.destination.throughFrameIndex },
       'snapshot',
     );
     this.flights.update(frame, sampler, replayWork);
@@ -156,12 +177,48 @@ export class EncounterCuePlayer {
     for (const id of this.graphics.keys()) this.renderer.despawn(id);
     this.graphics.clear();
     this.animations = [];
+    this.lives.clear();
     this.seenEvents.clear();
     this.replay = undefined;
   }
 
+  /**
+   * Drops the clips still to start and the graphics riding an actor whose life ended by `destination`
+   * (live: by now). Flights and graphics merely aimed at the actor play on.
+   */
+  private dropEndedLives(destination: ReplayEffectDestination | undefined): void {
+    this.animations = this.animations.filter(({ life }) => !life.isEndedBy(destination));
+    this.graphics.forEach(({ life }, id) => {
+      if (!life?.isEndedBy(destination)) return;
+      this.renderer.despawn(id);
+      this.graphics.delete(id);
+    });
+  }
+
+  /**
+   * Live play takes over from a replayed destination (a restored presentation's handoff): the clips
+   * and graphics it holds carry on with live copies of their actor lives as they stood there.
+   */
+  private adoptReplayLives(destination: ReplayEffectDestination): void {
+    this.lives.clear();
+    const adopted = new Map<ActorCueLife, ActorCueLife>();
+    this.animations = this.animations.flatMap((clip) => {
+      const life = this.lives.adopt(clip.cue.actorId, clip.life, destination, adopted);
+      return life ? [{ ...clip, life }] : [];
+    });
+    this.graphics.forEach((graphic, id) => {
+      if (!graphic.life || graphic.cue.target.kind !== 'attached') return;
+      const life = this.lives.adopt(graphic.cue.target.actorId, graphic.life, destination, adopted);
+      if (life) this.graphics.set(id, { ...graphic, life });
+      else {
+        this.renderer.despawn(id);
+        this.graphics.delete(id);
+      }
+    });
+  }
+
   /** The graphic's playback, its transform resolved into one record of its own whenever it is drawn. */
-  private createGraphic(id: string, cue: EncounterGraphicCue, start: number): Graphic {
+  private createGraphic(id: string, cue: EncounterGraphicCue, start: number, life?: ActorCueLife): Graphic {
     const transform: SpotAnimTransform = { position: [0, 0, 0] };
     const resolve = (): SpotAnimTransform | null => {
       const frame = this.frame;
@@ -199,6 +256,6 @@ export class EncounterCuePlayer {
       heightOffsetMode: 'actor',
       fallbackDurationCycles: 0,
     });
-    return { cue, start, playback };
+    return { cue, start, playback, life };
   }
 }
