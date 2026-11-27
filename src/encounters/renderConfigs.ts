@@ -1,6 +1,7 @@
 /**
- * Node-safe view of the encounter render configs, for build scripts (cache trimming, frame-sound
- * extraction) that must not import the presentation manifest's scene builders.
+ * The encounter render configs and the cache assets they declare. Node-safe, for build scripts
+ * (cache trimming, frame-sound extraction) that must not import the presentation manifest's scene
+ * builders.
  */
 import type { AuthoredEncounterRenderConfig } from '../render/scene/encounterRenderConfig';
 import { INFERNO_RENDER_CONFIG } from './inferno/renderConfig';

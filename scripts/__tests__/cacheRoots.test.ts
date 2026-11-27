@@ -6,7 +6,7 @@ import {
   collectDeclaredNpcSeqIds,
   collectDeclaredSpotAnimIds,
   ENCOUNTER_RENDER_CONFIGS,
-} from '../../src/encounters/declaredNpcSeqIds';
+} from '../../src/encounters/renderConfigs';
 import { COLOSSEUM_SPOTANIMS } from '../../src/npcs/colosseum/constants';
 import { type CacheRoots, collectCacheRoots } from '../cacheRoots';
 import { discoverCacheUsage } from '../discoverCacheUsage';

@@ -23,7 +23,7 @@ import {
   WEAPON_ANIMATION_SETS,
   WEAPON_COMBAT_VISUALS,
 } from '../src/data/weaponCombatVisuals.generated';
-import { collectDeclaredNpcSeqIds, collectDeclaredSpotAnimIds } from '../src/encounters/declaredNpcSeqIds';
+import { collectDeclaredNpcSeqIds, collectDeclaredSpotAnimIds } from '../src/encounters/renderConfigs';
 import type { CacheInfo } from '../src/rs/cache/CacheInfo';
 import { CacheSystem } from '../src/rs/cache/CacheSystem';
 import { Bzip2 } from '../src/rs/compression/Bzip2';

@@ -1,7 +1,7 @@
 /**
  * Yama's encounter effects by family, declared once: his render config's `spotAnimIds` lists them
  * all for loading and readiness, and his scene and controllers draw from them. Plain ids, so the
- * render config stays importable in Node (`declaredNpcSeqIds.ts`).
+ * render config stays importable in Node (`renderConfigs.ts`).
  */
 import { SpotAnimID } from '../../rs/config/spotanimtype/SpotAnimID';
 

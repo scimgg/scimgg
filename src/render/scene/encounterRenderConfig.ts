@@ -1,5 +1,5 @@
-import { ENCOUNTER_RENDER_CONFIGS } from '../../encounters/declaredNpcSeqIds';
 import { encounterPresentationModuleForKind } from '../../encounters/presentationModules';
+import { ENCOUNTER_RENDER_CONFIGS } from '../../encounters/renderConfigs';
 import type { MapSquareOffsets } from '../../rs/map/mapSquareBlock';
 import type { Coordinate, SimulationState } from '../../types/simulation';
 import type { LocRenderOptions } from '../environment/locRenderOptions';

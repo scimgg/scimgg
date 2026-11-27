@@ -2,7 +2,7 @@ import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { SPECIAL_ATTACK_REGISTRY } from '../../core/combat/player/specialAttacks/registry';
 import { PLAYER_ANIMATION_SEQ_IDS } from '../../data/weaponAnimations';
 import { HANDWRITTEN_WEAPON_COMBAT_VISUALS } from '../../data/weaponCombatVisuals';
-import { collectDeclaredNpcSeqIds, collectDeclaredSpotAnimIds } from '../../encounters/declaredNpcSeqIds';
+import { collectDeclaredNpcSeqIds, collectDeclaredSpotAnimIds } from '../../encounters/renderConfigs';
 import type { ReplayEffectSourceFrame } from '../../render/core/replayEffectContext';
 import { PlayerGraphicController } from '../../render/effects/controllers/PlayerGraphicController';
 import { describePlayerEffects } from '../../render/effects/playerEffectDescriptors';

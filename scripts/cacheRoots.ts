@@ -23,13 +23,13 @@ import { SPELL_VISUALS } from '../src/data/spellVisuals';
 import { PLAYER_ANIMATION_SEQ_IDS } from '../src/data/weaponAnimations';
 import { getMeleeSweep, HANDWRITTEN_WEAPON_COMBAT_VISUALS } from '../src/data/weaponCombatVisuals';
 import { WEAPON_ANIMATION_SETS, WEAPON_COMBAT_VISUALS } from '../src/data/weaponCombatVisuals.generated';
+import { LOBBY_BOSS_NPCS, LOBBY_PORTALS } from '../src/encounters/lobby/metadata';
+import { ENCOUNTER_CORE_MODULES } from '../src/encounters/modules';
 import {
   collectDeclaredNpcSeqIds,
   collectDeclaredSpotAnimIds,
   ENCOUNTER_RENDER_CONFIGS,
-} from '../src/encounters/declaredNpcSeqIds';
-import { LOBBY_BOSS_NPCS, LOBBY_PORTALS } from '../src/encounters/lobby/metadata';
-import { ENCOUNTER_CORE_MODULES } from '../src/encounters/modules';
+} from '../src/encounters/renderConfigs';
 import { LOBBY_MAP_X, LOBBY_MAP_Y } from '../src/render/scene/lobby/lobbyConstants';
 import { SpotAnimID } from '../src/rs/config/spotanimtype/SpotAnimID';
 import { getTerrainContextLoadOffsets, type MapSquareOffsets } from '../src/rs/map/mapSquareBlock';

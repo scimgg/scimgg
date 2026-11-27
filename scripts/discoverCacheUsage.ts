@@ -294,7 +294,7 @@ const EXTRA_TRACE_INPUT_FILES = [
   'src/data/infoboxItemIds.ts',
   'src/core/combat/player/specialAttacks/registry.ts',
   'src/rs/config/spotanimtype/SpotAnimID.ts',
-  'src/encounters/declaredNpcSeqIds.ts',
+  'src/encounters/renderConfigs.ts',
   'src/encounters/yamaP3/renderConfig.ts',
   'src/encounters/zuk/renderConfig.ts',
 ] as const;

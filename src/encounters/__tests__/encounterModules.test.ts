@@ -16,7 +16,6 @@ import {
   REGISTERED_CATALOG_KINDS,
   RETIRED_ENCOUNTER_KINDS,
 } from '../catalog';
-import { collectDeclaredNpcSeqIds, ENCOUNTER_RENDER_CONFIGS } from '../declaredNpcSeqIds';
 import { LOBBY_BOSS_NPCS, LOBBY_NPC_ENCOUNTERS, LOBBY_PORTALS } from '../lobby/metadata';
 import {
   ENCOUNTER_CORE_MODULES,
@@ -35,6 +34,7 @@ import {
   orbitYawToward,
 } from '../presentationModules';
 import { encounterRegistry } from '../registry';
+import { collectDeclaredNpcSeqIds, ENCOUNTER_RENDER_CONFIGS } from '../renderConfigs';
 import { RETIRED_SLUG_TO_KIND, SLUG_TO_KIND } from '../slugs';
 import { YAMA_CONTRACTS } from '../yamaP3/contracts';
 

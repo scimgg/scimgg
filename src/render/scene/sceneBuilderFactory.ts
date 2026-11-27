@@ -1,8 +1,8 @@
 import type { EventAudioPlayer, FrameSoundTracker } from '../../audio';
 import type { CacheManager } from '../../cache/CacheManager';
-import { ENCOUNTER_RENDER_CONFIGS } from '../../encounters/declaredNpcSeqIds';
 import { ENCOUNTER_CORE_MODULES, encounterKindsOf } from '../../encounters/modules';
 import { ENCOUNTER_PRESENTATION_MODULES, type EncounterPresentationModule } from '../../encounters/presentationModules';
+import { ENCOUNTER_RENDER_CONFIGS } from '../../encounters/renderConfigs';
 import type { EncounterRenderConfig } from './encounterRenderConfig';
 import { createEncounterSceneBuilder } from './encounterSceneBuilder';
 import type { SceneBuilderLike } from './types';

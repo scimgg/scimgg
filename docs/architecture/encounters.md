@@ -98,7 +98,7 @@ Every other declaration is a checked projection of the catalog:
   layer, picker art, and a scene builder only when the encounter needs its own; without one it gets
   the common `SceneCompositor`, which loads every NPC type and effect the render config declares and
   holds a 3D replay frame until they settle.
-- `ENCOUNTER_RENDER_CONFIGS` ([`declaredNpcSeqIds.ts`](../../src/encounters/declaredNpcSeqIds.ts)):
+- `ENCOUNTER_RENDER_CONFIGS` ([`renderConfigs.ts`](../../src/encounters/renderConfigs.ts)):
   the one registration of each encounter's render config, keyed by its presentation entry's kind.
   It is node-safe, so cache trimming and frame-sound extraction read the same map.
   `getEncounterRenderConfig` resolves a variant kind through its presentation entry and adds the
