@@ -457,6 +457,30 @@ describe('createSimulationEngineFromRunConfig', () => {
     expect(work.getStats()).toEqual({ actions: 1, ticks: 1, npcTicks: 2, spawns: 2 });
   });
 
+  it('keeps a version-14 recording (before next-tick recoil and the one poison counter) playable but refuses its takeover', () => {
+    const original = newRun({ equipment: { ring: 20657 } }); // Ring of suffering (ri).
+    const config = original.getRunConfig();
+    expect(config.bootstrap?.version).toBe(15);
+    const recorder = new ReplayRecorder();
+    const position = original.getState().playerPosition;
+    recorder.startRun(config);
+    recorder.recordFrame(0, position, original.getState(), []);
+    for (let tick = 1; tick <= 6; tick++) {
+      original.advanceTick(position);
+      recorder.recordFrame(tick, position, original.getState(), original.getLastTickEvents());
+    }
+    const { frames } = recorder.exportData();
+    expect(reconstructReplayPrefix(config, frames, 6, null)).not.toBeNull();
+    if (!config.bootstrap) throw new Error('Missing bootstrap');
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const recorded14: EngineRunConfig = { ...config, bootstrap: { ...config.bootstrap, version: 14 } };
+
+    // Playback needs only the frames, which are untouched; takeover is refused.
+    expect(frames).toHaveLength(7);
+    expect(createSimulationEngineFromRunConfig(recorded14, null)).toBeNull();
+    expect(reconstructReplayPrefix(recorded14, frames, 6, null)).toBeNull();
+  });
+
   it('lands a live encounter command on the same tick when the replay rebuilds it', () => {
     const original = newRun();
     const config = original.getRunConfig();

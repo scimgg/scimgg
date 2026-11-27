@@ -31,7 +31,7 @@ import { canReceiveNewAttack } from '../../../core/npcDeath';
 import { VENOM_THRESHOLD } from '../../../core/poison';
 import { mulberry32 } from '../../../core/rng';
 import { SimulationEngine } from '../../../core/SimulationEngine';
-import type { WorldState } from '../../../core/WorldState';
+import type { PendingHit, WorldState } from '../../../core/WorldState';
 import { isInfernoVisualEvent } from '../../../npcs/inferno/visualEvents';
 import type { NpcProjectileCue } from '../../../npcs/projectileCue';
 import {
@@ -66,7 +66,7 @@ import { createCollisionMap, getBoundsFromRegion } from '../../../rs/collision/W
 import { enqueueEnginePendingHit } from '../../../test/helpers/pendingHits';
 import { createEmptyStats } from '../../../types/equipmentStats';
 import { parseInventoryFromSetup } from '../../../types/inventory';
-import { createDefaultTimers } from '../../../types/playerState';
+import { createDefaultPoisonState, createDefaultTimers, POISON_TICK_INTERVAL } from '../../../types/playerState';
 import { type Coordinate, type MechanicsConfig, PrayerType } from '../../../types/simulation';
 import {
   cloudCenter,
@@ -1470,21 +1470,52 @@ describe('Zulrah venom', () => {
     expect(runUntilEnvenomed(run)).toBe(true);
   });
 
-  it('envenoms on every Zulrah attack that does not miss, and never on a miss', () => {
+  it('envenoms at impact on an accurate hit that a protection prayer blocks to 0, starting a fresh clock', () => {
     // Wiki, Zulrah/Strategies: "will envenom the player unless they miss, even if blocked by a
-    // protection prayer". Read off the queued hits, before any lands.
+    // protection prayer". Protect from Magic from the start (prayer is checked at launch), and follow
+    // the first accurate hit, which on this seed is a damaging magic one, to its landing.
     const run = startRun(9, { zulrahClouds: false, zulrahSnakelings: false });
-    const seen = { accurate: 0, missed: 0 };
-    for (let i = 0; i < 400 && (seen.accurate === 0 || seen.missed === 0); i++) {
+    run.engine.queueProtectionPrayer(PrayerType.ProtectMagic);
+    let target: PendingHit | undefined;
+    for (let i = 0; i < 400 && !target; i++) {
       run.tick();
-      for (const hit of run.world.pendingHits) {
-        if (hit.sourceId !== ZULRAH_ACTOR_ID) continue;
-        expect(hit.applyPoison === VENOM_THRESHOLD, `hit at ${hit.impactTick}`).toBe(hit.accuracySucceeded);
-        seen[hit.accuracySucceeded ? 'accurate' : 'missed'] += 1;
-      }
+      target = run.world.pendingHits.find((hit) => hit.sourceId === ZULRAH_ACTOR_ID && hit.accuracySucceeded);
     }
-    expect(seen.accurate).toBeGreaterThan(0);
-    expect(seen.missed).toBeGreaterThan(0);
+    if (!target) throw new Error('No accurate Zulrah hit');
+    expect(target).toMatchObject({ style: 'magic', applyPoison: VENOM_THRESHOLD });
+    expect(target.rolledDamage).toBeGreaterThan(0);
+    while (run.world.tick < target.impactTick - 1) run.tick();
+    expect(poisonVarp(run)).toBe(0);
+    run.tick();
+
+    const landed = run.engine
+      .getDamageHistory()
+      .filter((entry) => entry.tick === target.impactTick && entry.targetId === run.world.getPlayer()?.id);
+    expect(landed).toEqual([expect.objectContaining({ prayedCorrectly: true, effectiveDamage: 0 })]);
+    expect(run.world.getPlayer()?.poisonState).toEqual({
+      poisonVarp: VENOM_THRESHOLD,
+      poisonTickCounter: POISON_TICK_INTERVAL,
+      startedTick: target.impactTick,
+    });
+  });
+
+  it('does not envenom on a miss', () => {
+    const run = startRun(9, { zulrahClouds: false, zulrahSnakelings: false });
+    let miss: PendingHit | undefined;
+    for (let i = 0; i < 400 && !miss; i++) {
+      run.tick();
+      miss = run.world.pendingHits.find((hit) => hit.sourceId === ZULRAH_ACTOR_ID && !hit.accuracySucceeded);
+    }
+    if (!miss) throw new Error('No missed Zulrah hit');
+    while (run.world.tick < miss.impactTick - 1) run.tick();
+    // Clear any venom from earlier hits, so the miss lands on a clean counter.
+    const player = run.world.getPlayer();
+    if (!player) throw new Error('No player');
+    player.poisonState = createDefaultPoisonState();
+    run.tick();
+    const landed = run.engine.getDamageHistory().filter((entry) => entry.tick === miss.impactTick);
+    expect(landed).toEqual([expect.objectContaining({ targetId: player.id, effectiveDamage: 0 })]);
+    expect(poisonVarp(run)).toBe(0);
   });
 
   it('never envenoms with venom off', () => {
@@ -1498,6 +1529,13 @@ describe('Zulrah venom', () => {
       run.engine.setEquipment({ head });
       expect(runUntilEnvenomed(run), `head ${head}`).toBe(false);
     }
+  });
+
+  it('envenoms a player in an uncharged serpentine helm, which protects from nothing', () => {
+    const run = startRun(9, { zulrahClouds: false });
+    run.engine.setEquipment({ head: 12929 });
+    expect(run.world.getPlayer()?.equipment.head).toBe(12929);
+    expect(runUntilEnvenomed(run)).toBe(true);
   });
 
   it('is cured by an anti-venom+ dose, which then holds venom off', () => {
@@ -2019,6 +2057,71 @@ describe('Zulrah takes no player hits from its sink until it can be attacked aga
   });
 });
 
+describe('Zulrah rotation 1, against the Wiki table', () => {
+  /**
+   * Written out by hand from https://oldschool.runescape.wiki/w/Zulrah/Strategies, "Rotation 1
+   * ("Crimson A")", read 2026-11-27; not derived from `rotation.ts`. Turns in order: R a ranged attack,
+   * M a magic or ranged one, J the jad phase's alternating attacks, starting with ranged, T a tail
+   * ("attacking twice with Melee"), C a venom cloud barrage, S a snakeling orb. Phase 8's "alternating
+   * series of 5 snakeling orbs and venom cloud barrages" is read as starting with an orb, as worded.
+   */
+  const WIKI_ROTATION_1 = [
+    { form: 'green', spot: 'middle', turns: 'CCCC' },
+    { form: 'red', spot: 'middle', turns: 'TT' },
+    { form: 'blue', spot: 'middle', turns: 'MMMM' },
+    { form: 'green', spot: 'south', turns: 'RRRRRSSCCSS' },
+    { form: 'red', spot: 'middle', turns: 'TT' },
+    { form: 'blue', spot: 'west', turns: 'MMMMM' },
+    { form: 'green', spot: 'south', turns: 'CCCSSSS' },
+    { form: 'blue', spot: 'south', turns: 'MMMMMSCSCS' },
+    { form: 'green', spot: 'west', turns: 'JJJJJJJJJJCCCC' },
+    { form: 'red', spot: 'middle', turns: 'TT' },
+    { form: 'green', spot: 'middle', turns: 'RRRRRCCCC' },
+  ] as const;
+  const FORM_BY_NPC: Record<number, string> = {
+    [ZULRAH_NPC_ID_BY_FORM.serpentine]: 'green',
+    [ZULRAH_NPC_ID_BY_FORM.magma]: 'red',
+    [ZULRAH_NPC_ID_BY_FORM.tanzanite]: 'blue',
+  };
+
+  it('runs the table phase by phase: form, spot and every turn in order', () => {
+    const run = startRun(4, { zulrahRotation: '1' });
+    const zulrah = run.zulrah();
+    if (!zulrah) throw new Error('No Zulrah');
+    const phases: { form: string; spot: string; turns: string }[] = [];
+    let jadStyles = '';
+    for (let i = 0; i < 1200; i++) {
+      run.tick();
+      const phase = stateOf(run).phaseInRotation;
+      // The last phase counts as the next rotation's first: stop once that rotation reaches phase 2.
+      if (phases.length === WIKI_ROTATION_1.length && phase === 2) break;
+      if (phases.length < phase) {
+        const spot = Object.entries(ZULRAH_SPOTS).find(
+          ([, tile]) => tile[0] === zulrah.position[0] && tile[1] === zulrah.position[1],
+        )?.[0];
+        phases.push({ form: FORM_BY_NPC[zulrah.npcTypeId] ?? '?', spot: spot ?? '?', turns: '' });
+      }
+      const current = phases.at(-1);
+      if (!current) continue;
+      for (const visual of run.engine.getLastTickEvents().filter(isInfernoVisualEvent)) {
+        const clips = visual.animations.filter((a) => a.actorId === zulrah.id).map((a) => a.clipId);
+        if (clips.includes('tailLeft') || clips.includes('tailRight')) current.turns += 'T';
+        const ids = visual.projectiles.map((p) => p.spotAnimId);
+        if (ids.includes(ZULRAH_CLOUD_ORB_SPOTANIM_ID)) current.turns += 'C';
+        else if (ids.includes(ZULRAH_SNAKELING_ORB_SPOTANIM_ID)) current.turns += 'S';
+        else if (ids.includes(ZULRAH_RANGED_SPOTANIM_ID) || ids.includes(ZULRAH_MAGIC_SPOTANIM_ID)) {
+          const jad = phases.length === 9;
+          current.turns += jad ? 'J' : current.form === 'blue' ? 'M' : 'R';
+          if (jad) jadStyles += ids.includes(ZULRAH_RANGED_SPOTANIM_ID) ? 'r' : 'm';
+          else if (current.form !== 'blue') expect(ids, `phase ${phases.length}`).toContain(ZULRAH_RANGED_SPOTANIM_ID);
+        }
+      }
+    }
+    expect(phases).toEqual(WIKI_ROTATION_1);
+    expect(jadStyles).toBe('rmrmrmrmrm');
+  });
+});
+
 describe('Zulrah opening and first attackable tick, against private gameplay capture zulrah-packet-data-2.txt', () => {
   const { spawn, spawnFacing, firstCast, hit, firstAction } = ZULRAH_CAPTURE_OPENING;
 
@@ -2255,6 +2358,7 @@ describe('Zulrah line of sight, against private gameplay captures', () => {
   });
 
   it('draws the same rolls with attacks off, so turning them back on continues an all-on run', () => {
+    // Each attack as launched: its tick, projectile, accuracy roll and rolled damage.
     const styles = (offUntil: number) => {
       const run = startRun(7, { zulrahRotation: '2', zulrahAttacks: offUntil === 0 });
       const zulrah = run.zulrah();
@@ -2269,13 +2373,22 @@ describe('Zulrah line of sight, against private gameplay captures', () => {
           .filter(isInfernoVisualEvent)
           .flatMap((v) => v.projectiles)
           .find((p) => p.spotAnimId === ZULRAH_RANGED_SPOTANIM_ID || p.spotAnimId === ZULRAH_MAGIC_SPOTANIM_ID);
-        if (projectile && run.world.tick > offUntil) made.push(`${run.world.tick}:${projectile.spotAnimId}`);
+        if (!projectile || run.world.tick <= offUntil) continue;
+        const hits = run.world.pendingHits.filter(
+          (hit) => hit.sourceId === zulrah.id && hit.launchTick === run.world.tick,
+        );
+        expect(hits).toHaveLength(1);
+        const [hit] = hits;
+        made.push(`${run.world.tick}:${projectile.spotAnimId}:${hit?.accuracySucceeded}:${hit?.rolledDamage}`);
       }
       return made;
     };
     // Off through rotation 2's first blue phases (indexes 2 and 4), on from its second blue south.
     const resumed = styles(300);
     expect(resumed.length).toBeGreaterThan(10);
+    // Both accuracy outcomes and damaging rolls are compared, not only the turns.
+    expect(resumed.some((made) => made.endsWith(':false:0'))).toBe(true);
+    expect(resumed.some((made) => /:true:[1-9]/.test(made))).toBe(true);
     expect(styles(0).filter((made) => Number(made.split(':')[0]) > 300)).toEqual(resumed);
   });
 

@@ -1,5 +1,6 @@
 import { beforeAll, describe, expect, it } from 'vitest';
-import { hasAttackReach } from '../../core/combat/distance';
+import { isInAttackRange } from '../../core/combat/distance';
+import { zulrahIslandTiles } from '../../encounters/zulrah/constants';
 import { ZULRAH_SPOTS } from '../../encounters/zulrah/rotation';
 import { getDefaultLoadout } from '../../hooks/encounterLoadoutStorage';
 import { ZULRAH_SIZE } from '../../npcs/zulrah/constants';
@@ -14,16 +15,15 @@ import { EQUIPMENT_PRESETS } from '../playerPresets';
 const NOXIOUS_HALBERD = 29796;
 const RING_OF_SUFFERING_RI = 20657;
 
-/** Island tiles from the cache geometry (`rotation.ts`): base y 60-63, arms x 22-24 and 32-34 up to y 70. */
-function islandTiles(): Coordinate[] {
-  const tiles: Coordinate[] = [];
-  for (let x = 22; x <= 34; x++) for (let y = 60; y <= 63; y++) tiles.push([x, y]);
-  for (const [minX, maxX] of [
-    [22, 24],
-    [32, 34],
-  ])
-    for (let x = minX; x <= maxX; x++) for (let y = 64; y <= 70; y++) tiles.push([x, y]);
-  return tiles;
+/** The island's walkable tiles, checked against the pinned cache's bake (`zulrahArenaSight.test.ts`). */
+const ISLAND: readonly Coordinate[] = [...zulrahIslandTiles()].map((key) => {
+  const [x, y] = key.split(',').map(Number);
+  return [x ?? 0, y ?? 0];
+});
+
+/** Whether a player on some island tile reaches Zulrah at `position`, by the check combat uses. */
+function reachesFromIsland(position: Coordinate, range: number, meleeReach: 'cardinal' | 'diagonal'): boolean {
+  return ISLAND.some((tile) => isInAttackRange(tile, position, ZULRAH_SIZE, range, true, meleeReach));
 }
 
 describe('Zulrah loadouts', () => {
@@ -66,21 +66,25 @@ describe('Zulrah loadouts', () => {
     expect(presets.max_noxious.inventory.some((slot) => slot?.id === 28316)).toBe(true);
   });
 
+  // The project owner: "only range 2 reaches zulrah not range 1". Without the cache's collision the
+  // reach check is distance only; the water between the island and Zulrah blocks no projectile.
+  it.each(
+    Object.entries(ZULRAH_SPOTS),
+  )('is reached at the %s spot from the island at range 2, never at range 1', (_spot, position) => {
+    expect(ISLAND).toHaveLength(69);
+    expect(reachesFromIsland([...position], 2, 'cardinal')).toBe(true);
+    expect(reachesFromIsland([...position], 1, 'cardinal')).toBe(false);
+    expect(reachesFromIsland([...position], 1, 'diagonal')).toBe(false);
+  });
+
   describe.skipIf(skipWithoutRealCache('pinned'))('against the pinned cache', () => {
     let range = 0;
     beforeAll(async () => {
       range = loadItemStats(NOXIOUS_HALBERD, (await loadCacheLoaders('pinned')).objTypeLoader).attackRange;
     }, 120_000);
 
-    it('reaches Zulrah at every spot from the island with the halberd', () => {
+    it('gives the halberd the range that reaches Zulrah', () => {
       expect(range).toBe(2);
-      // Line of sight ignores floor-blocked water, so reach over it is pure distance.
-      for (const [spot, position] of Object.entries(ZULRAH_SPOTS)) {
-        const reachable = islandTiles().some(([x, y]) =>
-          hasAttackReach(x, y, position[0], position[1], ZULRAH_SIZE, range),
-        );
-        expect(reachable, spot).toBe(true);
-      }
     });
   });
 });

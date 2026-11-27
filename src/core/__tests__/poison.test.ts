@@ -303,6 +303,11 @@ describe('Poison/Venom System', () => {
         expect(applyPlayerPoison(state, 30, head, TICK)).toBe(state);
       }
     });
+
+    it('lets poison and venom through an uncharged serpentine helm (12929)', () => {
+      expect(applyPlayerPoison(at(0), VENOM_THRESHOLD, 12929, TICK).poisonVarp).toBe(VENOM_THRESHOLD);
+      expect(applyPlayerPoison(at(0), 30, 12929, TICK).poisonVarp).toBe(30);
+    });
   });
 
   describe('reduce_poison effect', () => {
