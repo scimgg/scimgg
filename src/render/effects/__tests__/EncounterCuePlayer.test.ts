@@ -607,7 +607,8 @@ describe('EncounterCuePlayer', () => {
       const pathY = fraction < 0.5 ? 5 + fraction * 4 : 9 - fraction * 4;
       const targetX = actorId === 'moving-npc' && fraction === 0 ? 12 + tick : 10 + tick + fraction * 2;
       prefix.move([targetX, actorId === 'player' ? pathY : 5]);
-      prefix.controller.consumeEvents(history[tick]?.events ?? [], NO_CUE_ACTORS);
+      // Each tick's events once, on its first cycle, as the scene's event cursor hands them over.
+      prefix.controller.consumeEvents(cycle === tick * 30 ? (history[tick]?.events ?? []) : [], NO_CUE_ACTORS);
       prefix.update(cycle);
     }
     const expected = prefix.update(destination);
@@ -981,7 +982,7 @@ describe('EncounterCuePlayer', () => {
     expect(update(325)).toEqual([]);
   });
 
-  it('deduplicates events, isolates instances, and clears owned effects for rewind', () => {
+  it('isolates instances and clears owned effects for rewind', () => {
     const { renderer, controller, update } = fixture();
     renderer.spawn({
       instanceId: 'other-controller',
@@ -989,7 +990,7 @@ describe('EncounterCuePlayer', () => {
       transform: { kind: 'static', value: { position: [0, 0, 0] } },
       lifecycle: { kind: 'manual' },
     });
-    controller.consumeEvents([event(), event(), event({ eventId: 2 })], NO_CUE_ACTORS);
+    controller.consumeEvents([event(), event({ eventId: 2 })], NO_CUE_ACTORS);
     expect(update(0)).toHaveLength(3);
 
     controller.clear();

@@ -132,6 +132,7 @@ describe('a new encounter on the default scene builder', () => {
     const build = (ctx: Parameters<SceneCompositor['build']>[0]) =>
       observeScene(scene, scene.build(ctx, IDENTITY_PROJECTION, VIEWPORT));
     return {
+      scene,
       live: (cycle: number) => {
         const frame = frames[Math.min(LAST_TICK, Math.floor(cycle / 30))];
         if (!frame) throw new RangeError(`No frame for cycle ${cycle}`);
@@ -170,6 +171,23 @@ describe('a new encounter on the default scene builder', () => {
       expect(await sought(last), `${key} at ${last}`).toContain(key);
       expect(await sought(last + 1), `${key} after ${last}`).not.toContain(key);
     }
+  });
+
+  it('starts a batch shown on repeated live builds once, and again on a new timeline reusing its id', async () => {
+    const frames = recordBruteRun();
+    const { live, scene } = await bruteScene(frames);
+    const updates = vi.spyOn(scene['npcInstanceManager'], 'updateAnimations');
+    const slams = () =>
+      updates.mock.calls.flatMap(([, , triggers]) => triggers).filter((trigger) => trigger.clipId === 'slam').length;
+    // Every build of tick 1 hands the scene the tick's events again, the batch's among them.
+    for (let cycle = 30; cycle <= 50; cycle++) live(cycle);
+    expect(slams()).toBe(1);
+
+    // A new timeline (a restart, a scene change) numbers its events afresh.
+    scene.resetIntroState();
+    const replayed = activeWindows(live, 30, 50, idle);
+    expect(slams()).toBe(2);
+    expect(replayed.clips).toEqual({ [`${BRUTE.id}:${SLAM_SEQ_ID}`]: [36, 45] });
   });
 
   it('shows after a seek back and a seek forward exactly what a direct seek shows', async () => {

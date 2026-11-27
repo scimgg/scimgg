@@ -51,7 +51,6 @@ type Graphic = {
  * presentation hands over.
  */
 export class EncounterCuePlayer {
-  private readonly seenEvents = new Set<number>();
   private readonly flights: NpcProjectileFlights;
   private readonly graphics = new Map<string, Graphic>();
   private animations: DueEncounterClip[] = [];
@@ -73,8 +72,9 @@ export class EncounterCuePlayer {
   }
 
   /**
-   * Takes each batch in `events` once, and each actor removal (`actor_despawned`) in event order with
-   * them; `actors` is the frame's state. Even an empty live frame retires historical aiming.
+   * Takes the frame's new batches, and each actor removal (`actor_despawned`) in event order with
+   * them; `actors` is the frame's state. The scene's event cursor hands each event over once. Even an
+   * empty live frame retires historical aiming, adopts a handoff's actor lives and observes the actors.
    */
   consumeEvents(events: readonly GameEvent[], actors: EncounterCueActors): void {
     if (this.replay) this.adoptReplayLives(this.replay.destination);
@@ -82,14 +82,11 @@ export class EncounterCuePlayer {
     this.lives.observe(actors.npcs, { frameIndex: 0, tick: actors.currentTick });
     let added = false;
     for (const event of events) {
-      if (this.seenEvents.has(event.eventId)) continue;
       if (isCoreEvent(event, 'actor_despawned')) {
-        this.seenEvents.add(event.eventId);
         this.lives.remove(event.actorId, { frameIndex: 0, tick: event.tick });
         continue;
       }
       if (!isEncounterVisualEvent(event)) continue;
-      this.seenEvents.add(event.eventId);
       const base = event.tick * 30;
       for (const [ordinal, cue] of event.projectiles.entries())
         this.flights.add(encounterCueId(event.eventId, 'projectile', ordinal), cue, base);
@@ -178,7 +175,6 @@ export class EncounterCuePlayer {
     this.graphics.clear();
     this.animations = [];
     this.lives.clear();
-    this.seenEvents.clear();
     this.replay = undefined;
   }
 

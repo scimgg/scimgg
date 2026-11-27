@@ -115,7 +115,7 @@ import { type PlayerAnimatedMeshPair, PlayerAnimationController } from '../playe
 import type { PlayerAnimationSet, PlayerAnimModelAdapter } from '../player/playerAnimationTypes';
 import { composeTerrainHeights, getTerrainHeight, getTerrainHeightInterpolated } from '../shared/renderUtils';
 import { resolveEncounterLocRenderOptions } from './encounterLocRenderOptions';
-import type { EncounterRenderConfig } from './encounterRenderConfig';
+import type { EncounterRenderConfig, NpcRenderConfig } from './encounterRenderConfig';
 import { GroundItemRenderer } from './GroundItemRenderer';
 import {
   hasNpcHidingPlugin,
@@ -403,7 +403,7 @@ export class SceneCompositor {
   private playerModelBottomY = 0;
 
   protected speedMultiplier = 1;
-  protected npcInterpFraction = 0;
+  private npcInterpFraction = 0;
   private lastPlayerVisualCenter: [number, number] | null = null;
   private lastProcessedEventId = -1;
   private lastPlayedAudioEventId = -1;
@@ -416,7 +416,7 @@ export class SceneCompositor {
    * Set once per build, read by encounter subclasses (e.g. frame-audio
    * silent-sync, facing snap).
    */
-  protected lastDiscontinuityReason: DiscontinuityReason | null = null;
+  private lastDiscontinuityReason: DiscontinuityReason | null = null;
   private readonly transientResets: Array<{
     name: string;
     reset: (reason: DiscontinuityReason) => void;
@@ -447,25 +447,25 @@ export class SceneCompositor {
   private readonly pendingNpcTypeLoadAttempts = new Map<number, number>();
   private readonly failedNpcTypeLoadAttempts = new Set<number>();
   protected effectTick = 0;
-  protected primaryCycle = 0;
-  protected replayProjectileWork: ReplayProjectileWork | undefined;
+  private primaryCycle = 0;
+  private replayProjectileWork: ReplayProjectileWork | undefined;
   /**
    * The history cutoff of the context this build actually renders. A restored presentation gains its
-   * history inside `build()`, so encounter overrides must read this rather than their `build()` argument.
+   * history inside `build()`, so this, not the `build()` argument, is the frame's cutoff.
    */
-  protected replayThroughFrameIndex: number | undefined;
+  private replayThroughFrameIndex: number | undefined;
   /**
-   * The absolute client cycle that cycle-driven encounter NPC animations have reached, or null until
-   * the clock starts. Only encounters that animate by absolute cycle use it; see `advanceNpcAnimationClock`.
+   * The NPC clock: the absolute client cycle every scene's NPC animations have reached, or null until
+   * it starts or after a reset; see `advanceNpcAnimationClock`.
    */
-  protected npcAnimationCycle: number | null = null;
+  private npcAnimationCycle: number | null = null;
   /**
    * Whether this frame rebuilt presentation rather than advancing it. Frame audio then syncs silently,
    * so a seek, restore or late asset load never plays a rebuilt clip's sounds as new.
    */
-  protected reconstructedVisuals = false;
+  private reconstructedVisuals = false;
   /** The scene's `encounter_visual` clips, flights and graphics. */
-  protected readonly cues = new EncounterCuePlayer(this.spotAnimRenderer, (cue) => this.encounterGraphicStyle(cue));
+  private readonly cues = new EncounterCuePlayer(this.spotAnimRenderer, (cue) => this.encounterGraphicStyle(cue));
   /** The history the cue player last synced from; undefined live and while a replay waits for assets. */
   private cueHistory: readonly ReplayDisplayFrame[] | undefined;
   /**
@@ -594,7 +594,7 @@ export class SceneCompositor {
    * starts on a tick boundary; a restore lands mid-cycle, and starting there would leave every actor
    * it does not re-pose a fraction of a cycle out of step with live play for every later clip.
    */
-  protected startNpcAnimationClock(cycle: number): number {
+  private startNpcAnimationClock(cycle: number): number {
     this.npcAnimationCycle ??= Math.floor(cycle);
     return this.npcAnimationCycle;
   }
@@ -608,7 +608,7 @@ export class SceneCompositor {
    * one-shot clip and death fade is far shorter than the cap, so the skipped time only shifts looping
    * idle phase; replay restores timeline actors and corpses from the absolute cycle anyway.
    */
-  protected advanceNpcAnimationClock(cycle: number): void {
+  private advanceNpcAnimationClock(cycle: number): void {
     const start = this.startNpcAnimationClock(cycle);
     let remaining = Math.min(Math.max(0, cycle - start), MAX_NPC_ANIMATION_CATCH_UP_CYCLES);
     while (remaining > 0) {
@@ -775,12 +775,15 @@ export class SceneCompositor {
   }
 
   /**
-   * False until `loadNpc` has run, even for an encounter with no primary NPC to wait for: the
-   * viewport only calls `loadNpc` while this is false, and that call is what hands the scene its
-   * animation system, without which the player and spot anims would never animate.
+   * Whether `loadNpc` has run and the primary NPC, if any, is drawable. False until `loadNpc` has run
+   * even with no primary NPC to wait for: the viewport only calls `loadNpc` while this is false, and
+   * that call is what hands the scene its animation system, without which the player and spot anims
+   * would never animate. The other declared types load in the same call; a replay waits for them
+   * through `encounterAssetState`.
    */
   isNpcLoaded(): boolean {
-    return this.npcLoadStarted && this.isEncounterNpcLoaded();
+    const primaryNpc = this.encounterRenderConfig?.primaryNpc;
+    return this.npcLoadStarted && (primaryNpc === undefined || this.isNpcTypeLoaded(primaryNpc.npcTypeId));
   }
 
   /** Clickboxes for picking: an NPC whose model a hiding plugin left undrawn is not clickable either. */
@@ -1407,7 +1410,7 @@ export class SceneCompositor {
         })
       : npcs;
     this.npcInstanceManager.syncInstances(
-      this.getExtraNpcSnapshots(remappedNpcs, simulationState),
+      remappedNpcs,
       this.npcInterpFraction,
       this.primaryCycle,
       simulationState?.currentTick,
@@ -1454,10 +1457,6 @@ export class SceneCompositor {
       if (actorId === PLAYER_ACTOR_ID) return playerVisualPos;
       return this.npcInstanceManager.getVisualPosition(this.actorRenderIdOf(actorId));
     };
-  }
-
-  protected getExtraNpcSnapshots(npcs: NpcSnapshot[], _simulationState?: SimulationState): NpcSnapshot[] {
-    return npcs;
   }
 
   /** Render encounter 3D effects early (after terrain, before NPC rendering). */
@@ -1578,7 +1577,7 @@ export class SceneCompositor {
    * that fails to load is settled but unusable and does not stop the others; only the primary's
    * failure rejects, since the scene cannot be ready without it.
    */
-  protected async loadEncounterNpc(npcModelLoader: NpcModelLoader, animSystem?: AnimationSystem): Promise<void> {
+  private async loadEncounterNpc(npcModelLoader: NpcModelLoader, animSystem?: AnimationSystem): Promise<void> {
     const primaryNpcTypeId = this.encounterRenderConfig?.primaryNpc?.npcTypeId;
     const pending = [...this.declaredNpcTypes]
       .filter(([npcTypeId]) => !this.isNpcTypeLoaded(npcTypeId))
@@ -1612,7 +1611,7 @@ export class SceneCompositor {
    * still loading or not yet requested, `unavailable` once all have settled but some could not be
    * loaded (a failed NPC model, an effect the cache could not supply), else `ready`.
    */
-  protected encounterAssetState(): EncounterAssetState {
+  private encounterAssetState(): EncounterAssetState {
     // Checked every replay frame: indexed loops over lists derived once, when the config was set.
     let unavailable = false;
     const npcTypeIds = this.declaredNpcTypeIds;
@@ -1629,8 +1628,7 @@ export class SceneCompositor {
     return unavailable ? 'unavailable' : 'ready';
   }
 
-  protected getPrimaryNpcDeathLoadConfig(primaryNpc = this.encounterRenderConfig?.primaryNpc): NpcTypeLoadConfig {
-    if (!primaryNpc) return {};
+  private getPrimaryNpcDeathLoadConfig(primaryNpc: NpcRenderConfig): NpcTypeLoadConfig {
     return {
       deathSeqId: primaryNpc.deathSeqId,
       bossDeathAnimationEnabled: true,
@@ -1638,23 +1636,6 @@ export class SceneCompositor {
         ? {}
         : { deathDurationMs: primaryNpc.deathRetentionTicks * OSRS_TICK_MS }),
     };
-  }
-
-  /**
-   * Whether the scene's NPC load is done: the primary NPC, if any, is drawable. The other declared
-   * types load in the same `loadNpc` call; a replay waits for them through `encounterAssetState`.
-   */
-  protected isEncounterNpcLoaded(): boolean {
-    const primaryNpc = this.encounterRenderConfig?.primaryNpc;
-    return primaryNpc === undefined || this.isNpcTypeLoaded(primaryNpc.npcTypeId);
-  }
-
-  protected getEncounterNpcFacingAngle(): number | undefined {
-    // Read the smoothed angle from the shared primary-NPC seam so
-    // downstream projectile targeting sees the same value the model
-    // matrix was rendered with. Encounter overrides may return their own
-    // cached angle instead.
-    return this.npcInstanceManager.getPrimaryNpcSmoothedFacingAngle();
   }
 
   protected getTerrainMapSquare(): { x: number; y: number } {
@@ -2074,7 +2055,7 @@ export class SceneCompositor {
    * view draws no models or effects, so it never waits; a 3D one waits until every declared asset has
    * settled, usable or not.
    */
-  protected isEncounterReplayPresentationReady(context: RenderContext): boolean {
+  private isEncounterReplayPresentationReady(context: RenderContext): boolean {
     return context.options.renderMode !== '3d' || this.encounterAssetState() !== 'pending';
   }
 
@@ -2656,7 +2637,8 @@ export class SceneCompositor {
       });
       this.projectileController.setTerrainHeights(this.terrainHeights);
       this.projectileController.setSurfaceHeightResolver(this.resolveSurfaceHeight);
-      const encounterFacing = this.getEncounterNpcFacingAngle();
+      // The primary NPC's smoothed angle, as its model matrix was drawn, for projectile targeting.
+      const encounterFacing = this.npcInstanceManager.getPrimaryNpcSmoothedFacingAngle();
       let projNpcFacingAngle: number | undefined;
       if (encounterFacing !== undefined) {
         projNpcFacingAngle = encounterFacing;

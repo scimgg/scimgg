@@ -93,8 +93,21 @@ const ZUK_PRIMARY_RENDER_CONFIG: EncounterRenderConfig = {
 class SceneProbe extends InfernoSceneCompositor {
   readonly manager = this.npcInstanceManager;
   readonly effects = this.spotAnimRenderer;
-  events(events: EncounterVisualEvent[], actors: Pick<SimulationState, 'npcs' | 'currentTick'>): void {
-    this.cues.consumeEvents(events, actors);
+  /** Shows `events` on one live build of `state`'s tick, as a viewport frame would. */
+  events(events: EncounterVisualEvent[], state: Pick<SimulationState, 'npcs' | 'currentTick'>): void {
+    const base = new SimulationEngine({ encounter: createZukWaveEncounter(1), combatSeed: 1 }).getState();
+    this.build(
+      {
+        simulationState: { ...base, ...state },
+        events,
+        options: SCENE_OPTIONS,
+        interaction: { hoveredTile: null, targetTile: null },
+        interpolatedTick: state.currentTick,
+        speedMultiplier: 1,
+      },
+      IDENTITY_PROJECTION,
+      VIEWPORT,
+    );
   }
   sync(npcs: NpcSnapshot[]): void {
     this.syncNpcInstances(npcs, false);
