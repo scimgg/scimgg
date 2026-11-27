@@ -2684,10 +2684,9 @@ describe('ReplayRecorder finalizeUnadvancedStart', () => {
 });
 
 /**
- * The intake of recordings in the 49ef532 encounter visual-event shapes. These hold whether `load`
- * passes the old events through or converts them: every batch keeps its identity, tick and frame,
- * Yama's semantic events are untouched, and the caller's data is never rewritten. Meant to pass
- * unchanged through the encounter-cue migration.
+ * The intake of recordings in the old encounter visual-event shapes (`inferno_visual`,
+ * `colosseum_visual`): every batch keeps its identity, tick and frame, Yama's semantic events are
+ * untouched, and the caller's data is never rewritten.
  */
 describe('ReplayRecorder legacy encounter recordings', () => {
   const identities = (frames: readonly { readonly events: readonly GameEvent[] }[]) =>

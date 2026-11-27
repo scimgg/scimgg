@@ -15,10 +15,10 @@ import type { Coordinate } from '../../types/simulation';
 import { AudioEngine } from '../AudioEngine';
 
 /**
- * What the app's event-audio dispatcher plays for recordings in the 49ef532 encounter event shapes
+ * What the app's event-audio dispatcher plays for recordings in the old encounter event shapes
  * (`legacyEncounterRecordings`), event by event, as a live frame delivers them.
  *
- * Every expectation in the first block is meant to survive the encounter-cue migration unchanged.
+ * The first block pins the sounds a player hears, whatever shape the recording uses.
  * `dispatcherFor` builds the player as `useAudioManager` does and scopes it as `useEventAudioScope`
  * does for the displayed `kind`. Triggers are not compared: they name the event type, which a converted
  * recording may rename.
@@ -90,7 +90,7 @@ describe('event audio routing to the displayed encounter', () => {
 
   it("plays an Inferno spark landing only while the Inferno's scene is displayed", () => {
     expect(idsPlayed('inferno', [LEGACY_INFERNO_EVENTS.barrage], [25, 25])).toEqual([156]);
-    // On 49ef532 every encounter's layer answered whatever was displayed, so the lobby played 156 too.
+    // Only the displayed encounter's rules answer: an Inferno event shown in another scene is silent.
     expect(idsPlayed('lobby', [LEGACY_INFERNO_EVENTS.barrage], [25, 25])).toEqual([]);
     expect(idsPlayed('sol_heredit', [LEGACY_INFERNO_EVENTS.barrage], [25, 25])).toEqual([]);
   });

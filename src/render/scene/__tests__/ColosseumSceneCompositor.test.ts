@@ -1342,8 +1342,8 @@ describe('Sol melee view rejection', () => {
 
 /**
  * Characterization of a recording in the old `colosseum_visual` wire shape (`legacySolRecording`),
- * drawn by the Sol scene builder. Observed only through the render queue and NPC poses, so this
- * block is meant to pass unchanged through every commit of the encounter-cue migration.
+ * drawn by the Sol scene builder. Observed only through the render queue and NPC poses, so it pins
+ * what a player sees, not how the scene produces it.
  */
 describe('legacy colosseum_visual recording: continuous playback versus direct seek', () => {
   let recorded: readonly ReplayDisplayFrame[] | undefined;
@@ -1459,9 +1459,8 @@ describe('legacy colosseum_visual recording: continuous playback versus direct s
     }
   });
 
-  // A baseline failure on 49ef532: the first frame after a seek resolved graphics attached to the
-  // player before the player's rendered tile was known, so it hid the impact on the player (131,
-  // cycles 90-149). The cue player places graphics once the player's position is resolved.
+  // Graphics attached to the player are placed after the player's rendered tile is resolved, so
+  // the first frame of a seek shows the impact on the player (131, cycles 90-149).
   it('draws a graphic attached to the player on the first frame of a direct seek', async () => {
     expect((await seek(95)).effects.map(({ spotAnimId }) => spotAnimId)).toContain(131);
   });

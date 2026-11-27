@@ -189,8 +189,8 @@ describe('SceneCompositor terrain loading', () => {
 
 /**
  * Characterization of a recording of Yama's semantic events and snapshot (`legacyYamaRecording`).
- * Observed only through the render queue and NPC poses, so this block is meant to pass unchanged
- * through every commit of the encounter-cue migration.
+ * Observed only through the render queue and NPC poses, so it pins what a player sees, not how the
+ * scene produces it.
  */
 describe('legacy Yama recording: continuous playback versus direct seek', () => {
   let recorded: readonly ReplayDisplayFrame[] | undefined;
