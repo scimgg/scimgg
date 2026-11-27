@@ -4071,7 +4071,7 @@ export class SimulationEngine {
   }
 
   private applyEnvironmentalDamage(damage: EnvironmentalDamage, tick: TickNumber): void {
-    this.applyDamage(
+    const effectiveDamage = this.applyDamage(
       damage.baseDamage,
       damage.attackType,
       damage.source,
@@ -4079,6 +4079,8 @@ export class SimulationEngine {
       damage.prayerReduction,
       damage.playerPosition,
     );
+    const attacker = damage.attackerId === undefined ? undefined : this.worldState.getNpc(damage.attackerId);
+    if (attacker) this.combatSystem.queueRecoil(this.worldState, attacker, this.player(), effectiveDamage);
     const lockoutTicks = damage.disablesProtectionPrayersForTicks;
     if (damage.applyPoison !== undefined && this.player().alive) this.applyPoisonToPlayer(damage.applyPoison);
     if (lockoutTicks === undefined || !this.player().alive) return;
@@ -4094,7 +4096,7 @@ export class SimulationEngine {
     prayerReduction?: PrayerReduction,
     playerPosition?: Coordinate,
     hitsplatTypeOverride?: 'damage' | 'block' | 'poison' | 'venom',
-  ): void {
+  ): number {
     const player = this.player();
     let baseDamage = Math.max(0, Math.floor(resolveDamage(rawBaseDamage, this.rollCombat)));
     const rules = this.getEncounterRules();
@@ -4208,6 +4210,7 @@ export class SimulationEngine {
     });
 
     this.syncVitalsToStats();
+    return effectiveDamage;
   }
 
   private notifyEncounterPlayerDamageTaken(info: EncounterPlayerDamageInfo): void {

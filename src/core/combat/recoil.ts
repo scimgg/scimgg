@@ -13,6 +13,12 @@ const RECOIL_RING_IDS: ReadonlySet<number> = new Set([
   26762, // Ring of suffering (ri)
 ]);
 
+/**
+ * Ticks from a hit to its recoil: the next tick (private gameplay captures zulrah-packet-data-1.txt and
+ * zulrah-packet-data-2.txt, every recoil, e.g. a hit of 24 on t242 and its 3 on t243).
+ */
+export const RECOIL_DELAY_TICKS = 1;
+
 export function wearsRecoilRing(player: PlayerActor): boolean {
   const ring = player.equipment.ring;
   return ring !== undefined && RECOIL_RING_IDS.has(ring);

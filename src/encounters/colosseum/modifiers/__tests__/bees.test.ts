@@ -198,6 +198,17 @@ describe('generic Bees!', () => {
     expect(step(3110, [19, 42])).toEqual([]);
   });
 
+  it('names no attacker on a sting, so a recoil ring reflects nothing (bees are immune to recoil)', () => {
+    const {
+      bees: [bee],
+      step,
+    } = fixture();
+    bee!.position = [21, 42];
+    const [sting] = step(1, [21, 42]);
+    expect(sting).toBeDefined();
+    expect(sting).not.toHaveProperty('attackerId');
+  });
+
   it('matches B:3125–3133: moved coverage waits a tick, then only the 2x2 footprint stings', () => {
     const {
       bees: [bee],

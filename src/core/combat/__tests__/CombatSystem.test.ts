@@ -3276,3 +3276,111 @@ describe('CombatSystem — scheduled attack cycle + perfect-dodge speedup', () =
     });
   });
 });
+
+describe('recoil', () => {
+  const RING_OF_RECOIL = 2550;
+
+  function fixture(ring: number | null = RING_OF_RECOIL) {
+    const world = new WorldState();
+    world.tick = 10;
+    const player = makePlayer();
+    if (ring !== null) player.equipment = { ring };
+    const npc = makeNpc();
+    npc.vitals = { hp: 50, maxHp: 50 };
+    // An ordinary NPC, whose death is processed the tick after the kill unless the hit queue says otherwise.
+    npc.deathPolicy = 'queued';
+    world.actors.set(player.id, player);
+    world.actors.set(npc.id, npc);
+    const system = new CombatSystem({ enablePendingHits: true });
+    const events = new TickEvents();
+    const bridge: CombatBridge = { events, infiniteHealth: true };
+    const npcHit = (damage: number) =>
+      system.processAttackRequest(
+        world,
+        {
+          attacker: npc,
+          target: player,
+          attack: {
+            style: 'magic',
+            attackKind: 'magic_fire',
+            rolledDamage: damage,
+            accuracySucceeded: true,
+            impactDelayTicks: 0,
+          },
+        },
+        bridge,
+      );
+    /** The next tick's NPC band for `npc`: the splats it takes. */
+    const nextTick = () => {
+      world.tick += 1;
+      system.processPendingHitsForTarget(world, bridge, npc);
+      return events.flush().filter((e) => e.type === 'hitsplat_spawned' && e.targetId === npc.id);
+    };
+    return { world, player, npc, system, events, bridge, npcHit, nextTick };
+  }
+
+  it('reflects floor(d/10)+1 onto the attacker on the next tick, not the hit tick', () => {
+    const { world, npc, events, npcHit, nextTick } = fixture();
+    npcHit(24);
+    expect(events.flush().filter((e) => e.type === 'hitsplat_spawned' && e.targetId === npc.id)).toEqual([]);
+    expect(world.pendingHits).toEqual([
+      expect.objectContaining({ sourceId: 'player', targetId: npc.id, rolledDamage: 3, impactTick: 11, recoil: true }),
+    ]);
+    expect(nextTick()).toEqual([expect.objectContaining({ amount: 3 })]);
+    expect(npc.vitals.hp).toBe(47);
+  });
+
+  it('reflects nothing off a 0, or without a recoil ring', () => {
+    const blocked = fixture();
+    blocked.npcHit(0);
+    expect(blocked.world.pendingHits).toEqual([]);
+    const bare = fixture(null);
+    bare.npcHit(30);
+    expect(bare.world.pendingHits).toEqual([]);
+  });
+
+  it("deals at most the attacker's remaining HP when it lands", () => {
+    const { npc, npcHit, nextTick } = fixture();
+    npcHit(38);
+    npc.vitals.hp = 2;
+    expect(nextTick()).toEqual([expect.objectContaining({ amount: 2 })]);
+    expect(npc.alive).toBe(false);
+  });
+
+  it('lands nothing, not even a 0, on an attacker dead by then, and never reaches one removed', () => {
+    const dead = fixture();
+    dead.npcHit(24);
+    recordNpcLethalTransition(dead.npc, dead.world.tick, 'hit-queue');
+    dead.npc.vitals.hp = 0;
+    expect(dead.nextTick()).toEqual([]);
+    expect(dead.world.pendingHits).toEqual([]);
+
+    const gone = fixture();
+    gone.npcHit(24);
+    gone.world.actors.delete(gone.npc.id);
+    gone.world.tick += 1;
+    gone.system.processPendingHits(gone.world, gone.bridge);
+    expect(gone.world.pendingHits).toEqual([]);
+    expect(gone.events.flush().filter((e) => e.type === 'hitsplat_spawned' && e.targetId === gone.npc.id)).toEqual([]);
+  });
+
+  it('does not bring forward the death of an attacker killed while its recoil is queued', () => {
+    const { world, player, npc, system, bridge } = fixture();
+    npc.vitals.hp = 5;
+    system.queueRecoil(world, npc, player, 20);
+    enqueueTestPendingHit(world, system, {
+      sourceId: player.id,
+      targetId: npc.id,
+      style: 'melee',
+      attackKind: 'melee_slash',
+      launchTick: world.tick - 1,
+      impactTick: world.tick,
+      rolledDamage: 9,
+      accuracySucceeded: true,
+    });
+    system.processPendingHitsForTarget(world, bridge, npc);
+    expect(npc.alive).toBe(false);
+    // Death processing stays at K+1, as for a kill with nothing else queued.
+    expect(npc.death?.processTick).toBe(world.tick + 1);
+  });
+});

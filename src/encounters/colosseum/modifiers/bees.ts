@@ -123,6 +123,7 @@ export const beesDefinition = createNpcDefinition<BeeState, undefined>({
       attackType: 'typeless',
       source: BEES_DAMAGE_SOURCE,
       playerPosition: [...player.position],
+      // No `attackerId`: bees are immune to recoil (/w/Category:Monsters_immune_to_recoil, read 2026-11-27).
       // Existing ordinary-poison scale: ceil(severity/5); severity 5 starts at one damage.
       ...(!protectedByAntipoison ? { applyPoison: 5 } : {}),
     };

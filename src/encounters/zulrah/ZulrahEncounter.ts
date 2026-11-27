@@ -439,11 +439,20 @@ export class ZulrahEncounter implements Encounter {
    * attack on S-1 is still made but wasted; Zulrah stays targetable, with its health bar, until S. Nothing
    * can start in the window, so dropping the queued hits once is enough. Called again on S itself, for a
    * dive with no tick before it.
+   *
+   * Recoil is kept and held, like an orb landing on the dive, to the next form's first turn (E+3), with
+   * its damage: private gameplay captures zulrah-packet-data-1.txt (a hit on the sink, t273, its recoil of
+   * 2 on t279) and zulrah-packet-data-2.txt (t3036, 3 on t3042), 2 of 2. A recoil due in the window is
+   * queued by then: Zulrah's last hit lands on S at the latest, in the player band, before this runs.
    */
   private closeForDive(actor: NpcActor, ctx: EncounterContext, sinkTick: number): void {
     actor.attackBlockedUntilTick = sinkTick + ZULRAH_FORM_CHANGE_TICKS + ZULRAH_EMERGE_TICKS;
+    const held = heldUntil(sinkTick);
+    for (const hit of ctx.world.pendingHits) {
+      if (hit.recoil === true && hit.targetId === actor.id) hit.impactTick = Math.max(hit.impactTick, held);
+    }
     const player = ctx.world.getPlayer();
-    if (player) ctx.world.removePendingHitsBySourceOnTarget(player.id, actor.id);
+    if (player) ctx.world.removePendingHitsBySourceOnTarget(player.id, actor.id, (hit) => hit.recoil === true);
   }
 
   private startDive(actor: NpcActor | null, ctx: EncounterContext): void {

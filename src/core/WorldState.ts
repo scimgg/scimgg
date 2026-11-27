@@ -91,6 +91,11 @@ export interface PendingHit {
   /** See {@link PendingHitDamageMultipliers}. Absent means identity. */
   launchDamageMultipliers?: PendingHitDamageMultipliers;
   /**
+   * A recoil ring's reflection of a hit the player took, queued by `CombatSystem.queueRecoil`, not
+   * an attack: it lands on a living attacker only, never as a 0 on a dead one.
+   */
+  readonly recoil?: true;
+  /**
    * The overhead this hit is judged against, sampled on the tick named by
    * {@link prayerCheckAt}. For the default `'launch'` timing that is the launch tick,
    * which is what lets prayer flicking work: the prayer only has to be up when the

@@ -309,6 +309,9 @@ function landTail(
       attackType: 'typeless',
       source: 'Zulrah tail',
       playerPosition: [...player.position],
+      // A slam is recoiled like an attack, the tick after it (private gameplay capture
+      // zulrah-packet-data-1.txt, slams t242, t249 and t549, recoil each next tick).
+      attackerId: actor.id,
     },
   ];
 }

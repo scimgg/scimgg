@@ -360,6 +360,11 @@ export interface EnvironmentalDamage {
    * prayer dropping on the hit tick, with the lockout length set per attack.
    */
   disablesProtectionPrayersForTicks?: number;
+  /**
+   * The NPC that dealt it, where it has one (a tail slam, a sting): a recoil ring reflects onto it as
+   * onto any NPC hit (`CombatSystem.queueRecoil`). Absent, the damage has no attacker to recoil.
+   */
+  attackerId?: ActorId;
 }
 
 export interface EncounterTickResult {

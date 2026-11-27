@@ -6,6 +6,7 @@ import {
   type NpcActor,
 } from '../../../core/actors/NpcActor';
 import { npcHitDelayFromEndTime } from '../../../core/combat/hitDelay';
+import { RECOIL_DELAY_TICKS, recoilDamage } from '../../../core/combat/recoil';
 import {
   clearResolvedArenaConfigs,
   getArenaAllowUnboundedFallback,
@@ -17,6 +18,7 @@ import {
   setDefaultArenaConfig,
   setResolvedArenaConfig,
 } from '../../../core/constants';
+import { isCoreEvent } from '../../../core/events/types';
 import { canReceiveNewAttack } from '../../../core/npcDeath';
 import { VENOM_THRESHOLD } from '../../../core/poison';
 import { mulberry32 } from '../../../core/rng';
@@ -602,6 +604,27 @@ describe('Zulrah magma tail', () => {
     expect(run.engine.wasLastTickStunned()).toBe(false);
   });
 
+  it('lands the recoil of a tail slam the tick after it', () => {
+    const run = startRun(5, { zulrahClouds: false, zulrahSnakelings: false });
+    run.engine.setEquipment({ ring: 2550 }); // Ring of recoil.
+    const pending = runToStare(run);
+    const zulrah = run.zulrah();
+    if (!zulrah) throw new Error('No Zulrah');
+    while (run.world.tick < pending.landTick - 1) run.engine.advanceTick([...pending.target] as Coordinate);
+    const ticks: [number, string, number][] = [];
+    for (let i = 0; i < 2; i++) {
+      run.engine.advanceTick([...pending.target] as Coordinate);
+      for (const e of run.engine.getLastTickEvents())
+        if (isCoreEvent(e, 'hit_applied') && e.damage > 0)
+          ticks.push([run.world.tick - pending.landTick, e.targetId, e.damage]);
+    }
+    const slam = ticks.find(([, target]) => target === 'player');
+    expect(slam?.[0]).toBe(0);
+    expect(ticks.filter(([, target]) => target === zulrah.id)).toEqual([
+      [RECOIL_DELAY_TICKS, zulrah.id, recoilDamage(slam?.[2] ?? 0)],
+    ]);
+  });
+
   it('only treats the pillar tiles as safe while Zulrah is at the middle spot', () => {
     expect(isTailSafeTile(ZULRAH_SPOTS.middle, [24, 62])).toBe(true);
     expect(isTailSafeTile(ZULRAH_SPOTS.middle, [32, 62])).toBe(true);
@@ -1170,20 +1193,25 @@ describe('Zulrah snakelings', () => {
 
   describe('recoil', () => {
     const recoils = (run: Run) =>
-      (run.engine['damageHistory'] as { source: string; targetId: string; effectiveDamage: number }[]).filter(
-        (entry) => entry.source === 'PlayerAttack' && entry.targetId.startsWith('zulrah-snakeling-'),
-      );
+      (
+        run.engine['damageHistory'] as { tick: number; source: string; targetId: string; effectiveDamage: number }[]
+      ).filter((entry) => entry.source === 'PlayerAttack' && entry.targetId.startsWith('zulrah-snakeling-'));
 
     it.each([
       ['Ring of recoil', 2550],
       ['Ring of suffering (ri)', 20657],
-    ])('kills a snakeling that hits a player wearing a %s', (_name, ring) => {
+    ])('kills a snakeling that hits a player wearing a %s, the tick after its hit lands', (_name, ring) => {
       const run = runToFirstSnakelings(8);
       run.world.getPlayer()!.equipment.ring = ring;
       for (let i = 0; i < 20 && recoils(run).length === 0; i++) run.tick();
       const [recoil] = recoils(run);
       expect(recoil).toMatchObject({ effectiveDamage: 1 });
-      expect(run.world.getNpc(recoil!.targetId)?.alive ?? false).toBe(false);
+      const snakeling = run.world.getNpc(recoil!.targetId);
+      if (!snakeling || !snakelingDefinition.isActor(snakeling)) throw new Error('No snakeling');
+      expect(snakeling.alive).toBe(false);
+      // Melee lands on its attack tick, the magic bolt a tick later; the recoil a tick after either.
+      const landed = (snakeling.combat.lastAttackTick ?? -1) + (snakeling.state.style === 'magic' ? 1 : 0);
+      expect(recoil!.tick).toBe(landed + RECOIL_DELAY_TICKS);
     });
 
     it('reflects nothing off an uncharged ring of suffering', () => {
@@ -1772,6 +1800,29 @@ describe('Zulrah takes no player hits from its sink until it can be attacked aga
     expect(canInitiateAttackOnNpc(zulrah, run.world.tick + 1)).toBe(false);
     run.tick();
     expect(isNpcTargetable(zulrah, run.world.tick)).toBe(false);
+  });
+
+  it("lands its own last attack on the player on S, and holds the player's recoil to E+3, with its damage", () => {
+    const recoilHeld = deferredSplats.filter((d) => d.pending.startsWith('recoil'));
+    expect(recoilHeld).toHaveLength(2);
+    for (const { sink, splat } of recoilHeld) expect(splat - sink).toBe(ZULRAH_FORM_CHANGE_TICKS + 3);
+    const run = startRun(5, { zulrahClouds: false, zulrahSnakelings: false });
+    runToPhase(run, 2);
+    run.engine.setEquipment({ ring: 2550 }); // Ring of recoil.
+    const zulrah = run.zulrah();
+    if (!zulrah) throw new Error('No Zulrah');
+    for (let i = 0; i < 60 && stateOf(run).stage !== 'diving'; i++) run.tick();
+    expect(stateOf(run).stage).toBe('diving');
+    const sink = run.world.tick;
+    const hit = run.engine.getLastTickEvents().find((e) => isCoreEvent(e, 'hit_applied') && e.targetId === 'player');
+    if (!hit || !isCoreEvent(hit, 'hit_applied')) throw new Error('No hit on S');
+    const splats: [number, number][] = [];
+    while (run.world.tick < sink + ZULRAH_FORM_CHANGE_TICKS + 5) {
+      run.tick();
+      for (const e of run.engine.getLastTickEvents())
+        if (isCoreEvent(e, 'hitsplat_spawned') && e.targetId === zulrah.id) splats.push([run.world.tick, e.amount]);
+    }
+    expect(splats).toEqual([[sink + ZULRAH_FORM_CHANGE_TICKS + 3, recoilDamage(hit.damage)]]);
   });
 
   it.each([
