@@ -3,7 +3,7 @@ import { setArenaConfig, setDefaultArenaConfig } from '../../core/constants';
 import type { GameEvent } from '../../core/events/types';
 import { decodeLegacyReplayFrames } from '../../core/legacyReplayEvents';
 import type { ReplayDisplayFrame } from '../../core/ReplayRecorder';
-import { createEventAudioPlayer, eventAudioLayersFor } from '../../hooks/useAudioManager';
+import { createEventAudioPlayer, eventAudioRulesFor } from '../../hooks/useAudioManager';
 import {
   LEGACY_INFERNO_EVENTS,
   LEGACY_SOL_EVENTS,
@@ -27,7 +27,7 @@ function dispatcherFor(kind: string) {
   const engine = new AudioEngine();
   const played = vi.spyOn(engine, 'play').mockImplementation(() => undefined);
   const player = createEventAudioPlayer(engine);
-  player.setDispatchLayers(eventAudioLayersFor(kind));
+  player.setDispatchRules(eventAudioRulesFor(kind));
   return { player, played };
 }
 

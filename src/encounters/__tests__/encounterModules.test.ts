@@ -29,7 +29,6 @@ import {
 import {
   DEFAULT_ORBIT_PITCH,
   ENCOUNTER_PRESENTATION_MODULES,
-  encounterAudioLayers,
   encounterDefaultCamera,
   encounterPresentationModuleForKind,
   FALLBACK_ENCOUNTER_CAMERA,
@@ -283,12 +282,6 @@ describe('encounter registration invariants', () => {
       if (kind === 'lobby') continue;
       expect(getEncounterRenderConfig(kind), `no render config for '${kind}'`).toBeDefined();
     }
-  });
-
-  it('keeps only registered encounter audio layers (core is appended by the player)', () => {
-    // Only the displayed encounter's layer dispatches (`eventAudioLayersFor`), so this order is install
-    // and preload order, not precedence between encounters.
-    expect(encounterAudioLayers().map((layer) => layer.name)).toEqual(['yama', 'solHeredit', 'inferno']);
   });
 
   it("gives Yama variants the base encounter's camera, intro and scene builder", () => {

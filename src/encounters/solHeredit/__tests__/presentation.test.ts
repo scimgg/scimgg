@@ -233,7 +233,7 @@ describe('Sol Heredit visual cues', () => {
   it('sounds each sand burst once and each terminal beam impact once, without delay', () => {
     const audio = new AudioEngine();
     const played = vi.spyOn(audio, 'play').mockImplementation(() => undefined);
-    const player = new EventAudioPlayer(audio, { name: 'solHeredit', rules: solHereditAudioRules });
+    const player = new EventAudioPlayer(audio, solHereditAudioRules);
     const isSand = (cue: EncounterGraphicCue) => cue.spotAnimId === COLOSSEUM_SPOTANIMS.sunfireLightning;
     const isImpact = (cue: EncounterGraphicCue) => cue.spotAnimId === COLOSSEUM_SPOTANIMS.crystalImpact;
     let bursts = 0;

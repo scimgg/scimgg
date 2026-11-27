@@ -654,10 +654,7 @@ describe('SceneCompositor replay delayed cues', () => {
     vi.spyOn(engine, 'play').mockImplementation(() => {});
     scene = new SceneCompositor();
     scene.setEventAudioPlayer(
-      new EventAudioPlayer(engine, {
-        name: 'delayed',
-        rules: { actor_died: { resolve: { id: 10313, delayCycles: 21 } } },
-      }),
+      new EventAudioPlayer(engine, { actor_died: { resolve: { id: 10313, delayCycles: 21 } } }),
     );
     const state = new SimulationEngine({ encounter: new LobbyEncounter(), combatSeed: 1 }).getState();
     context = {
@@ -1729,10 +1726,7 @@ describe('SceneCompositor replay delayed cues', () => {
 
   it('uses unclamped replay time for an audio cue beyond the final clamped pose', () => {
     scene.setEventAudioPlayer(
-      new EventAudioPlayer(engine, {
-        name: 'tail',
-        rules: { actor_died: { resolve: { id: 10313, delayCycles: 60 } } },
-      }),
+      new EventAudioPlayer(engine, { actor_died: { resolve: { id: 10313, delayCycles: 60 } } }),
     );
     draw(6000);
 

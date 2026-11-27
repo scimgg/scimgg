@@ -1,31 +1,29 @@
 import { type MutableRefObject, useEffect, useLayoutEffect, useRef } from 'react';
 import { AudioEngine, coreAudioRules, EventAudioPlayer, FrameSoundTracker } from '../audio';
 import { cacheSoundBufferLoader, type SoundEffectCache } from '../audio/cacheSoundBuffers';
-import type { SoundRuleLayer } from '../audio/EventAudioPlayer';
-import { encounterAudioLayers, encounterPresentationModuleForKind } from '../encounters/presentationModules';
+import type { SoundRules } from '../audio/EventAudioPlayer';
+import { encounterAudioRules, encounterPresentationModuleForKind } from '../encounters/presentationModules';
 import { tickBus } from '../tutorial/runtime/tickBus';
 import { getPageActivity, subscribePageActivity } from './pageActivity';
 
-/** The engine's own rules, which answer in every encounter. */
-const CORE_AUDIO_LAYER: SoundRuleLayer = { name: 'core', rules: coreAudioRules };
-
 /**
- * The app's event-audio player: every encounter's layer in manifest order, then core last, so an
- * encounter's rule overrides a core one. All are installed so preloading covers every sound; which of
- * them dispatch is the displayed encounter's choice ({@link eventAudioLayersFor}).
+ * The app's event-audio player: every encounter's rules in manifest order, then the engine's own core
+ * rules, so preloading covers every sound. Which of them dispatch is the displayed encounter's choice
+ * ({@link eventAudioRulesFor}).
  */
 export function createEventAudioPlayer(engine: AudioEngine): EventAudioPlayer {
-  return new EventAudioPlayer(engine, ...encounterAudioLayers(), CORE_AUDIO_LAYER);
+  return new EventAudioPlayer(engine, ...encounterAudioRules(), coreAudioRules);
 }
 
 /**
- * The layers that dispatch while `encounterKind` is displayed: its presentation module's (a variant
- * kind resolves to its parent's), then core. Another encounter's rules never answer its events: a
- * rule that answers `silent` for an event it does not recognize would otherwise swallow the sound.
+ * The rules that dispatch while `encounterKind` is displayed: its presentation module's (a variant
+ * kind resolves to its parent's), then core, so an encounter's rule overrides a core one. Another
+ * encounter's rules never answer its events: a rule that answers `silent` for an event it does not
+ * recognize would otherwise swallow the sound.
  */
-export function eventAudioLayersFor(encounterKind: string): string[] {
-  const layer = encounterPresentationModuleForKind(encounterKind)?.audio?.layerName;
-  return layer === undefined ? [CORE_AUDIO_LAYER.name] : [layer, CORE_AUDIO_LAYER.name];
+export function eventAudioRulesFor(encounterKind: string): readonly SoundRules[] {
+  const rules = encounterPresentationModuleForKind(encounterKind)?.audioRules;
+  return rules === undefined ? [coreAudioRules] : [rules, coreAudioRules];
 }
 
 /**
@@ -48,7 +46,7 @@ export function useEventAudioScope(
   // biome-ignore lint/correctness/useExhaustiveDependencies: sceneLoadId is half of the scene's identity; a new load replaces the scene.
   useLayoutEffect(() => {
     const player = eventAudioPlayerRef.current;
-    player.setDispatchLayers(eventAudioLayersFor(displayedEncounterKind));
+    player.setDispatchRules(eventAudioRulesFor(displayedEncounterKind));
     return () => {
       player.reset();
       audioEngine.discardSounds();

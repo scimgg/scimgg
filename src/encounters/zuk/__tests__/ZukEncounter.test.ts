@@ -1370,7 +1370,7 @@ describe('Zuk automatic spark integration', () => {
       if (npc.id !== tagged.id) engine['despawnEncounterNpc'](npc.id);
     const audio = new AudioEngine();
     const played = vi.spyOn(audio, 'play').mockImplementation(() => undefined);
-    const audioPlayer = new EventAudioPlayer(audio, { name: 'zuk', rules: zukAudioRules });
+    const audioPlayer = new EventAudioPlayer(audio, zukAudioRules);
     const events = collectTickEvents(engine, 6);
     engine['despawnEncounterNpc'](tagged.id);
     events.push(...collectTickEvents(engine, 9));
@@ -1815,7 +1815,7 @@ describe('Zuk seeded healer amounts', () => {
     zukDirector(encounter)['random'] = () => 0.9;
     const audio = new AudioEngine();
     const played = vi.spyOn(audio, 'play').mockImplementation(() => undefined);
-    const audioPlayer = new EventAudioPlayer(audio, { name: 'zuk', rules: zukAudioRules });
+    const audioPlayer = new EventAudioPlayer(audio, zukAudioRules);
 
     const events = collectTickEvents(engine, 8);
     audioPlayer.onEvents(events, player.position);
@@ -1893,7 +1893,7 @@ describe('Zuk seeded healer amounts', () => {
     });
     const audio = new AudioEngine();
     const played = vi.spyOn(audio, 'play').mockImplementation(() => undefined);
-    const audioPlayer = new EventAudioPlayer(audio, { name: 'zuk', rules: zukAudioRules });
+    const audioPlayer = new EventAudioPlayer(audio, zukAudioRules);
 
     const events = collectTickEvents(engine, 9);
     audioPlayer.onEvents(events, [31, 51]);

@@ -95,7 +95,7 @@ Every other declaration is a checked projection of the catalog:
   `variantFactories`, controls, intro). It must stay free of render/UI imports: its node consumers
   would otherwise pull picogl, which needs a browser global.
 - [`presentationModules.ts`](../../src/encounters/presentationModules.ts): an optional row per base
-  kind, for picker art, an opening camera, an audio layer, or a scene builder of its own.
+  kind, for picker art, an opening camera, audio rules, or a scene builder of its own.
 - `ENCOUNTER_RENDER_CONFIGS` ([`renderConfigs.ts`](../../src/encounters/renderConfigs.ts)):
   the one registration of each encounter's render config, keyed by its base kind. It is node-safe,
   so cache trimming and frame-sound extraction read the same map. `getEncounterRenderConfig`
@@ -111,7 +111,7 @@ Every other declaration is a checked projection of the catalog:
   from routing.
 
 [`encounterModules.test.ts`](../../src/encounters/__tests__/encounterModules.test.ts) pins catalog,
-registry, presentation, slug and lobby agreement, audio layer order, opening cameras, and an
+registry, presentation, slug and lobby agreement, opening cameras, and an
 import boundary: no `src/core` runtime import from `src/encounters` (the pure catalog excepted),
 `src/render` or `src/components`.
 
@@ -295,11 +295,11 @@ that helps. The protocol is in [Visual batches](events.md#visual-batches).
    live and after any seek.
 4. **Override only real presentation differences** in a scene subclass, which the row's
    `sceneBuilder` constructs and configures (`configureEncounterScene`) from the options it is
-   given, render config already resolved: an opening camera or
-   cutscene, overlays, a graphic's draw style (`encounterGraphicStyle`). Persistent LOC hazards are a
-   snapshot plus a scene-object controller ([scene objects](scene-objects.md)); explicit event sounds
-   are local `audioRules.ts` registered in `presentationModules.ts`. No history reader, seek hook,
-   boss-name branch or import from another encounter. A scene presenting from its snapshot rather
+   given, render config already resolved: an opening camera or cutscene, overlays, a graphic's draw
+   style (`encounterGraphicStyle`). Persistent LOC hazards are a snapshot plus a scene-object
+   controller ([scene objects](scene-objects.md)); explicit event sounds are a local
+   `audioRules.ts`, the row's `audioRules`. No history reader, seek hook, boss-name branch or import
+   from another encounter. A scene presenting from its snapshot rather
    than from batches (Yama) adds only its own `createEncounterReplayReader`, `encounterNpcTriggers`
    and `restoreEncounterTimelines`.
 

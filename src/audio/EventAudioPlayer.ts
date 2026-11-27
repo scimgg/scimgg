@@ -69,10 +69,8 @@ export interface SoundRule {
   preloadIds?: number[];
 }
 
-export interface SoundRuleLayer {
-  readonly name: string;
-  readonly rules: Record<string, SoundRule>;
-}
+/** One source's sound rules (an encounter's, or the engine's own core rules), by event type. */
+export type SoundRules = Readonly<Record<string, SoundRule>>;
 
 type PendingReplaySound = {
   readonly dueTimeMs: number;
@@ -82,31 +80,26 @@ type PendingReplaySound = {
 };
 
 export class EventAudioPlayer {
-  private readonly layers: readonly SoundRuleLayer[];
+  private readonly ruleSets: readonly SoundRules[];
   private ruleChains: Record<string, SoundRule[]>;
   private replayTimeMs: number | null = null;
   private readonly pendingReplaySounds: PendingReplaySound[] = [];
 
+  /** `ruleSets` are every sound this player preloads, and dispatch in order until {@link setDispatchRules}. */
   constructor(
     private readonly engine: AudioEngine,
-    ...layers: SoundRuleLayer[]
+    ...ruleSets: SoundRules[]
   ) {
-    this.layers = layers;
-    this.ruleChains = ruleChainsOf(layers);
+    this.ruleSets = ruleSets;
+    this.ruleChains = ruleChainsOf(ruleSets);
   }
 
   /**
-   * Dispatches events through only the named layers, still in constructor order; `null` restores every
-   * layer. Preloading still covers every layer, so a sound can be ready before its layer dispatches.
+   * Dispatches events through `ruleSets` alone, in the given order. Preloading still covers every
+   * constructor rule set, so a sound can be ready before its rules dispatch.
    */
-  setDispatchLayers(names: readonly string[] | null): void {
-    if (names === null) {
-      this.ruleChains = ruleChainsOf(this.layers);
-      return;
-    }
-    const unknown = names.filter((name) => !this.layers.some((layer) => layer.name === name));
-    if (unknown.length > 0) throw new Error(`[EventAudioPlayer] Unknown sound rule layers: ${unknown.join(', ')}`);
-    this.ruleChains = ruleChainsOf(this.layers.filter((layer) => names.includes(layer.name)));
+  setDispatchRules(ruleSets: readonly SoundRules[]): void {
+    this.ruleChains = ruleChainsOf(ruleSets);
   }
 
   updateReplayClock(timeMs: number | null, paused = false): void {
@@ -202,8 +195,8 @@ export class EventAudioPlayer {
   getAllSoundIds(): number[] {
     const ids = new Set<number>();
 
-    for (const layer of this.layers) {
-      for (const handler of Object.values(layer.rules)) {
+    for (const rules of this.ruleSets) {
+      for (const handler of Object.values(rules)) {
         if (typeof handler.resolve === 'number') {
           ids.add(handler.resolve);
         } else if (Array.isArray(handler.resolve)) {
@@ -233,11 +226,11 @@ export class EventAudioPlayer {
 
 const CLIENT_CYCLE_MS = 20;
 
-/** Each event type's rules across `layers`, in layer order: the first non-`pass` rule wins. */
-function ruleChainsOf(layers: readonly SoundRuleLayer[]): Record<string, SoundRule[]> {
+/** Each event type's rules across `ruleSets`, in order: the first non-`pass` rule wins. */
+function ruleChainsOf(ruleSets: readonly SoundRules[]): Record<string, SoundRule[]> {
   const chains: Record<string, SoundRule[]> = {};
-  for (const layer of layers) {
-    for (const [eventType, rule] of Object.entries(layer.rules)) {
+  for (const rules of ruleSets) {
+    for (const [eventType, rule] of Object.entries(rules)) {
       const chain = chains[eventType];
       if (chain) chain.push(rule);
       else chains[eventType] = [rule];

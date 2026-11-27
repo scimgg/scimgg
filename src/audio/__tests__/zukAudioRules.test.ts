@@ -25,7 +25,7 @@ afterEach(() => {
 function fixture() {
   const engine = new AudioEngine();
   const played = vi.spyOn(engine, 'play').mockImplementation(() => undefined);
-  const player = new EventAudioPlayer(engine, { name: 'zuk', rules: zukAudioRules });
+  const player = new EventAudioPlayer(engine, zukAudioRules);
   return { player, played };
 }
 
@@ -241,11 +241,7 @@ describe('live Inferno damage callbacks to audio and defend cues', () => {
     actor.vitals.hp = 20;
     const audio = new AudioEngine();
     const played = vi.spyOn(audio, 'play').mockImplementation(() => undefined);
-    const player = new EventAudioPlayer(
-      audio,
-      { name: 'zuk', rules: zukAudioRules },
-      { name: 'core', rules: coreAudioRules },
-    );
+    const player = new EventAudioPlayer(audio, zukAudioRules, coreAudioRules);
     for (const rolledDamage of [0, 3])
       enqueueEnginePendingHit(simulation, {
         sourceId: 'player',

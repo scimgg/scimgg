@@ -215,10 +215,7 @@ describe('useAudioManager replay cue cancellation', () => {
     });
     activeAudio = hook.result.current;
     const engine = activeAudio.audioEngine;
-    const player = new EventAudioPlayer(engine, {
-      name: 'delayed',
-      rules: { actor_died: { resolve: { id: 10313, delayCycles: 21 } } },
-    });
+    const player = new EventAudioPlayer(engine, { actor_died: { resolve: { id: 10313, delayCycles: 21 } } });
     activeAudio.eventAudioPlayerRef.current = player;
     vi.spyOn(engine, 'play').mockImplementation(() => {});
     return { ...hook, engine, player };

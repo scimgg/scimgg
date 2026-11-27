@@ -18,7 +18,7 @@ describe('Sol sand audio capture conformance', () => {
     expect(batches.length).toBeGreaterThanOrEqual(5);
     const audio = new AudioEngine();
     const played = vi.spyOn(audio, 'play').mockImplementation(() => undefined);
-    const player = new EventAudioPlayer(audio, { name: 'solHeredit', rules: solHereditAudioRules });
+    const player = new EventAudioPlayer(audio, solHereditAudioRules);
 
     for (const [eventId, { tick, sounds }] of batches.entries()) {
       played.mockClear();
@@ -62,7 +62,7 @@ describe('Sol beam warning audio capture conformance', () => {
     const preparations = SOL_BEAM_WARNING_SOUND_TICKS[filename] ?? [];
     const audio = new AudioEngine();
     const played = vi.spyOn(audio, 'play').mockImplementation(() => undefined);
-    const player = new EventAudioPlayer(audio, { name: 'solHeredit', rules: solHereditAudioRules });
+    const player = new EventAudioPlayer(audio, solHereditAudioRules);
 
     let fired = 0;
     for (const [eventId, { tick, fireTick, sounds }] of preparations.entries()) {
@@ -82,7 +82,7 @@ describe('Sol beam warning audio capture conformance', () => {
 it('preserves separate beam impact sounds even when their endpoints share a row', () => {
   const audio = new AudioEngine();
   const played = vi.spyOn(audio, 'play').mockImplementation(() => undefined);
-  const player = new EventAudioPlayer(audio, { name: 'solHeredit', rules: solHereditAudioRules });
+  const player = new EventAudioPlayer(audio, solHereditAudioRules);
   const event: EncounterVisualEvent = {
     type: 'encounter_visual',
     eventId: 1,

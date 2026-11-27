@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { encounterAudioLayers } from '../../encounters/presentationModules';
+import { encounterAudioRules } from '../../encounters/presentationModules';
 import { coreAudioRules } from '../coreAudioRules';
 import { EventAudioPlayer } from '../EventAudioPlayer';
 import { FRAME_SOUND_IDS } from '../frameSoundManifest';
@@ -9,11 +9,8 @@ describe('ALL_SOUND_IDS', () => {
   // The rules and the animation frame sounds are the only callers of AudioEngine.play; a rule that
   // resolves an id at event time must name it in `preloadIds`, or it is missing here and in the trim.
   it('lists exactly the ids the audio rules and animation frame sounds can play', () => {
-    // Every manifest layer, whichever encounter is displayed: the inventory is what can ever play.
-    const player = new EventAudioPlayer(null as never, ...encounterAudioLayers(), {
-      name: 'core',
-      rules: coreAudioRules,
-    });
+    // Every encounter's rules, whichever encounter is displayed: the inventory is what can ever play.
+    const player = new EventAudioPlayer(null as never, ...encounterAudioRules(), coreAudioRules);
     const used = [...new Set([...player.getAllSoundIds(), ...FRAME_SOUND_IDS])].sort((a, b) => a - b);
 
     expect(used.filter((id) => !ALL_SOUND_IDS.includes(id))).toEqual([]);

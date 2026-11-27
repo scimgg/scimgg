@@ -13,7 +13,7 @@
  * registered in `ENCOUNTER_RENDER_CONFIGS`, not here.
  *
  */
-import type { SoundRule } from '../audio/EventAudioPlayer';
+import type { SoundRules } from '../audio/EventAudioPlayer';
 import { solHereditAudioRules } from '../audio/solHereditAudioRules';
 import { yamaAudioRules } from '../audio/yamaAudioRules';
 import { zukAudioRules } from '../audio/zukAudioRules';
@@ -71,12 +71,6 @@ export interface EncounterPresentation {
   readonly portrait?: BossPortraitConfig;
 }
 
-export interface EncounterAudioConfig {
-  /** Layer name in the `EventAudioPlayer` chain. */
-  readonly layerName: string;
-  readonly rules: Record<string, SoundRule>;
-}
-
 /** An opening view for runs whose setup has every one of `mechanics`' values. */
 export interface EncounterSetupCamera {
   readonly mechanics: Readonly<Partial<MechanicsConfig>>;
@@ -96,7 +90,8 @@ export interface EncounterPresentationModule {
    * keeps the player's camera.
    */
   readonly setupCameras?: readonly EncounterSetupCamera[];
-  readonly audio?: EncounterAudioConfig;
+  /** Sounds for the encounter's own events, dispatched only while it is displayed (before core's). */
+  readonly audioRules?: SoundRules;
   readonly presentation?: EncounterPresentation;
 }
 
@@ -134,15 +129,14 @@ export const INFERNO_WAVES_PITCH = -50;
 export const FALLBACK_ENCOUNTER_CAMERA: EncounterCameraConfig = { yaw: 180, pitch: DEFAULT_ORBIT_PITCH };
 
 /**
- * Event audio dispatches through the displayed encounter's layer, then the engine's own `core`
- * layer (`eventAudioLayersFor`), so one encounter's rules never answer another's events. The array
- * order below is the order layers are installed and preloaded in. Locked by `encounterModules.test.ts`.
+ * Event audio dispatches through the displayed encounter's rules, then the engine's own core rules
+ * (`eventAudioRulesFor`), so one encounter's rules never answer another's events.
  */
 export const ENCOUNTER_PRESENTATION_MODULES: readonly EncounterPresentationModule[] = [
   {
     kind: 'yama_p3',
     sceneBuilder: (opts) => createYamaSceneBuilder(opts),
-    audio: { layerName: 'yama', rules: yamaAudioRules },
+    audioRules: yamaAudioRules,
     defaultCamera: { yaw: 180, pitch: -62, zoom: 220 },
     presentation: {
       title: 'Yama',
@@ -166,7 +160,7 @@ export const ENCOUNTER_PRESENTATION_MODULES: readonly EncounterPresentationModul
   {
     kind: 'sol_heredit',
     sceneBuilder: (opts) => createSolHereditSceneBuilder(opts),
-    audio: { layerName: 'solHeredit', rules: solHereditAudioRules },
+    audioRules: solHereditAudioRules,
     // The server runs `cam_forceangle(181, 0)` (pitch, yaw in JAU) as the player lands in the
     // arena (capture colosseum-sol-heredit-packet-data-2.txt, tick 7301). It sets no zoom,
     // so the player's own zoom carries over; we open at the game's default.
@@ -186,7 +180,7 @@ export const ENCOUNTER_PRESENTATION_MODULES: readonly EncounterPresentationModul
     // One scene for waves 1-69: the stage-dependent scenery is the render config's scene controller.
     sceneBuilder: (opts) => createZukSceneBuilder(opts),
     // Every Inferno NPC's sounds, the ordinary waves' and wave 69's.
-    audio: { layerName: 'inferno', rules: zukAudioRules },
+    audioRules: zukAudioRules,
     // Waves 2-66 open facing south over the arena from the practice start tile, somewhat zoomed out
     // (docs/encounters/inferno-policy.md).
     defaultCamera: { yaw: 180, pitch: INFERNO_WAVES_PITCH, zoom: INFERNO_WAVES_ZOOM },
@@ -243,14 +237,9 @@ export function encounterPresentationModuleForKind(kind: string): EncounterPrese
   return MODULE_BY_KIND.get(kind);
 }
 
-/** Every encounter's audio layer, in manifest order. The caller appends the engine's own `core` layer last. */
-export function encounterAudioLayers(): readonly {
-  readonly name: string;
-  readonly rules: Record<string, SoundRule>;
-}[] {
-  return ENCOUNTER_PRESENTATION_MODULES.flatMap((module) =>
-    module.audio ? [{ name: module.audio.layerName, rules: module.audio.rules }] : [],
-  );
+/** Every encounter's audio rules, in manifest order: the sounds the app's event-audio player preloads. */
+export function encounterAudioRules(): readonly SoundRules[] {
+  return ENCOUNTER_PRESENTATION_MODULES.flatMap((module) => (module.audioRules ? [module.audioRules] : []));
 }
 
 /**

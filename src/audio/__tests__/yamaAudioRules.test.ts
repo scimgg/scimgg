@@ -18,11 +18,7 @@ describe('yamaAudioRules', () => {
   });
 
   function createPlayer(): EventAudioPlayer {
-    return new EventAudioPlayer(
-      mockAudioEngine,
-      { name: 'yama', rules: yamaAudioRules },
-      { name: 'core', rules: coreAudioRules },
-    );
+    return new EventAudioPlayer(mockAudioEngine, yamaAudioRules, coreAudioRules);
   }
 
   it('plays fireball barrage layered sounds for fireball_spawned', () => {

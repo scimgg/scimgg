@@ -29,12 +29,12 @@ confirm or deny one.
 
 The base `SceneCompositor.build()` forwards each frame's unprocessed events to
 [`EventAudioPlayer`](../../src/audio/EventAudioPlayer.ts) (not while replay is paused).
-[`useAudioManager`](../../src/hooks/useAudioManager.ts) installs every encounter layer from
-`encounterAudioLayers()`, in manifest order (each declared as `audio: { layerName, rules }` in [`presentationModules.ts`](../../src/encounters/presentationModules.ts)),
-and the `core` layer last, so preloading covers every sound. Only the displayed encounter's layer and
-`core` dispatch: `useEventAudioScope` scopes the player from the same kind that chooses the displayed
-scene builder (a variant resolves to its parent's layer), and a change of displayed encounter drops
-the old scene's queued replay sounds. Lookup stops at the first rule that returns something other than
+[`useAudioManager`](../../src/hooks/useAudioManager.ts) builds the player with every encounter's rules
+(`encounterAudioRules()`, each a row's optional `audioRules` in [`presentationModules.ts`](../../src/encounters/presentationModules.ts))
+and the core rules last, so preloading covers every sound. Only the displayed encounter's rules and
+core's dispatch: `useEventAudioScope` resolves the displayed kind's presentation module (a variant
+resolves to its parent's) and hands the player those rules, then core's (`setDispatchRules`), and a
+change of displayed encounter drops the old scene's queued replay sounds. Lookup stops at the first rule that returns something other than
 `pass`, so an encounter can override a core sound, but never another encounter's. Zuk's rules and gating decisions are in
 [Zuk policy: presentation](../encounters/zuk-policy.md#presentation).
 
