@@ -1249,7 +1249,7 @@ export class SceneCompositor {
    * the snapshot's corpses and the encounter's own timelines need nothing of it. Live triggers never
    * run in replay.
    */
-  protected restoreEncounterPrimaries(ctx: RenderContext): boolean {
+  private restoreEncounterPrimaries(ctx: RenderContext): boolean {
     const history = ctx.replayHistory;
     const index = this.replayEffectIndex;
     if (!history || !index) return false;
@@ -1484,11 +1484,8 @@ export class SceneCompositor {
     _simulationState: SimulationState,
   ): void {}
 
-  /**
-   * Turns NPCs toward their targets on the NPC clock: by the displayed cycles since the clock last
-   * advanced. `_frameDeltaMs` is the frame's NPC delta, for a scene that presents NPCs by frame time.
-   */
-  protected updateEncounterNpcFacing(playerVisualPosition: [number, number], _frameDeltaMs: number): number {
+  /** Turns NPCs toward their targets on the NPC clock: by the displayed cycles since it last advanced. */
+  private updateEncounterNpcFacing(playerVisualPosition: [number, number]): number {
     const elapsed = this.npcAnimationCycle === null ? 0 : Math.max(0, this.primaryCycle - this.npcAnimationCycle);
     return this.npcInstanceManager.updateNpcVisualFacing(playerVisualPosition, elapsed * CLIENT_TICK_MS) ?? 0;
   }
@@ -1498,13 +1495,9 @@ export class SceneCompositor {
    * snapshot (`encounterNpcTriggers`), each at its own start cycle, in start order (emission order,
    * then the encounter's, within a cycle), stepping the clock to each start and then to now. A cue clip
    * on an actor no longer standing, or under a clip key its type does not declare, is skipped; one of an
-   * actor life that has ended never reaches here (see `ActorCueLife`). Returns
-   * no triggers for the frame-time update: everything has been applied.
+   * actor life that has ended never reaches here (see `ActorCueLife`).
    */
-  protected getEncounterAttackTriggers(
-    state: SimulationState,
-    interpolatedTick = state.currentTick,
-  ): NpcAnimationTrigger[] {
+  private playEncounterNpcClock(state: SimulationState, interpolatedTick = state.currentTick): void {
     const cycle = interpolatedTick * 30;
     this.startNpcAnimationClock(state.currentTick * 30);
     const due: { readonly cycle: number; readonly trigger: NpcAnimationTrigger }[] = [];
@@ -1533,7 +1526,6 @@ export class SceneCompositor {
       this.npcInstanceManager.updateAnimations(0, 1, [trigger]);
     }
     this.advanceNpcAnimationClock(cycle);
-    return [];
   }
 
   /**
@@ -1873,14 +1865,6 @@ export class SceneCompositor {
     this.uiOverlayRenderer.dispose();
     this.playerGraphicController.dispose();
     this.projectileController.dispose();
-  }
-
-  /**
-   * How far this frame advances NPC animation besides the NPC clock: nothing, since encounter NPCs
-   * animate only on the clock. A scene that presents its NPCs by frame time overrides it.
-   */
-  protected getNpcVisualDeltaMs(): number {
-    return 0;
   }
 
   private getUnprocessedEvents(events: GameEvent[]): GameEvent[] {
@@ -2317,12 +2301,6 @@ export class SceneCompositor {
     queue.contrast = options.contrast;
     queue.saturation = options.saturation;
 
-    // Zero unless the scene presents NPCs by frame time. Read every frame, so a held or paused frame
-    // still consumes its delta (and resuming does not jump), but such a frame advances nothing.
-    const rawNpcDeltaMs = this.getNpcVisualDeltaMs();
-    const npcDeltaMs = paused ? 0 : rawNpcDeltaMs;
-    const scaledNpcDeltaMs = npcDeltaMs * this.speedMultiplier;
-
     frameProfiler.beginPhase('syncNpcs');
     this.npcInterpFraction = Math.max(0, Math.min(1, (interpolatedTick ?? currentTick) - currentTick));
     this.syncNpcInstances(simulationState.npcs, is2D, simulationState, paused);
@@ -2378,13 +2356,14 @@ export class SceneCompositor {
     // Every NPC pose and corpse is final before any model is queued: facing on the clock as it stood,
     // then the clock to the destination, then corpses at their absolute age, so a frame never draws
     // a model its own clock step has since posed differently or expired.
-    const encounterNpcFacingAngle = this.updateEncounterNpcFacing(visualPosition, scaledNpcDeltaMs);
+    const encounterNpcFacingAngle = this.updateEncounterNpcFacing(visualPosition);
 
     if (!is2D) {
       frameProfiler.beginPhase('npcAnims');
-      const restoredPrimary = history && this.restoreEncounterPrimaries(ctx);
-      const attackTriggers = restoredPrimary ? [] : this.getEncounterAttackTriggers(simulationState, interpolatedTick);
-      this.npcInstanceManager.updateAnimations(npcDeltaMs, this.speedMultiplier, attackTriggers);
+      if (!history || !this.restoreEncounterPrimaries(ctx))
+        this.playEncounterNpcClock(simulationState, interpolatedTick);
+      // Advances nothing: applies triggers held for a model that has loaded since, and settles poses.
+      this.npcInstanceManager.updateAnimations(0, this.speedMultiplier, []);
       this.reconstructPrunedCorpses(simulationState.npcs);
       frameProfiler.endPhase('npcAnims');
     }

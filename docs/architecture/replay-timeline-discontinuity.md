@@ -138,8 +138,7 @@ committing it, so coarse and fine presentation share one trajectory. Historical 
 `NpcInstanceManager` (exact tick boundary uses current position; positive fractions interpolate
 previous to current); player positions follow the snapshot's previous position and path.
 
-Every encounter scene presents its NPCs on one clock, the displayed client cycle (the lobby's display
-bosses idle by frame time instead); each actor's
+Every scene presents its NPCs on one clock, the displayed client cycle; each actor's
 `ReplayDeferredPrimaryIndex` checkpoints accepted state plus a bounded pending tail at
 source-frame boundaries. Delayed cues may start out of emission order, so sorting all cues and
 taking the newest eligible would let future source frames reject earlier delayed cues; checkpoints
