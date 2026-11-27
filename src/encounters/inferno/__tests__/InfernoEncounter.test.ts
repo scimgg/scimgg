@@ -2224,6 +2224,15 @@ describe('Inferno wave 68 into wave 69', () => {
   it('drops a busy player’s inputs and walk, and takes them again from C+1', () => {
     const run = setup({ infernoStartWave: '68' });
     const { control } = clearWave68(run);
+    // The busy window's first tick, C-12, already drops the inputs queued for it.
+    advanceTo(run, control - 13);
+    const before = run.world.getPlayer()?.position;
+    run.engine.applyAction({ type: 'protectionPrayer', prayer: PrayerType.ProtectMagic });
+    run.engine.advanceTick([31, 40]);
+    expect(run.engine.currentTick).toBe(control - 12);
+    expect(run.engine.didLastTickDiscardWalkTarget()).toBe(true);
+    expect(run.world.getPlayer()?.activePrayer).toBeNull();
+    expect(run.world.getPlayer()?.position).toEqual(before);
     advanceTo(run, control - 9);
     run.engine.applyAction({ type: 'protectionPrayer', prayer: PrayerType.ProtectMagic });
     run.engine.advanceTick([31, 40]);

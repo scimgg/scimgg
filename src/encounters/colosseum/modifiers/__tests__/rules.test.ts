@@ -7,6 +7,7 @@ import type {
   EncounterPlayerDamageInfo,
 } from '../../../../core/encounters/types';
 import { SimulationEngine } from '../../../../core/SimulationEngine';
+import { createUnusedPlayerControlOps } from '../../../../test/helpers/playerControlStubs';
 import { createDefaultStats } from '../../../../types/playerState';
 import { type Coordinate, type MechanicsConfig, PrayerType } from '../../../../types/simulation';
 import { LobbyEncounter } from '../../../lobby/LobbyEncounter';
@@ -266,7 +267,8 @@ it('has no rules or per-hit state when no simulated modifiers are selected', () 
 });
 
 it('counts combat and environment events alike without coupling rules to an encounter', () => {
-  const { ctx } = setup();
+  const { lockPlayerActionsUntil } = createUnusedPlayerControlOps();
+  const ctx = { ...setup().ctx, lockPlayerActionsUntil };
   const modifiers = new ColosseumModifierState({ doom: 1, blasphemy: 3 });
   const hook = modifiers.getEngineRules().onPlayerDamageTaken!;
   expect(hook(damage(15), ctx)).toMatchObject({ prayerPointsDelta: -9, playerHitsplats: [{ amount: 1 }] });

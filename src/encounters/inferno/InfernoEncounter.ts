@@ -490,11 +490,15 @@ export class InfernoEncounter implements Encounter {
         if (targetId === ZUK_ACTOR_ID && MELEE_KINDS.has(kind)) return false;
         return null;
       },
-      // Wave 69's intro: busy from C-12 through control (ZUK_INTRO).
-      playerInputLocked: (ctx) =>
-        this.zukControlTick !== null &&
-        ctx.tick >= this.zukControlTick + ZUK_INTRO.busyFrom &&
-        ctx.tick <= this.zukControlTick,
+      // Wave 69's intro: busy from C-12 through control (ZUK_INTRO). Locked here, before this tick's
+      // input band, rather than from advanceZukIntro, which runs in the NPC band after it.
+      onTickStart: (ctx) => {
+        const controlTick = this.zukControlTick;
+        if (controlTick !== null && ctx.tick === controlTick + ZUK_INTRO.busyFrom) {
+          ctx.lockPlayerActionsUntil(controlTick + 1);
+        }
+        return null;
+      },
     };
   }
   /** Inferno's restarts are the caller's to perform; Zuk's practice actions act on wave 69 only. */
@@ -663,8 +667,9 @@ export class InfernoEncounter implements Encounter {
   /**
    * Wave 68 -> 69 (`ZUK_INTRO`, relative to control C): the shaking-cavern message at C-12; teleport at
    * C-10; glyph and Zuk (rising) at C-8, which starts wave 69's director, with TzHaar-Ket-Keh's line;
-   * `Wave: 69` and control at C. The busy window is an engine rule; the fade and cutscene camera are
-   * the renderer's (`zukIntroCutsceneFrame`).
+   * `Wave: 69` and control at C. The busy window is locked by `getEngineRules().onTickStart`
+   * (`lockPlayerActionsUntil`), since this runs after the tick's input band; the fade and cutscene
+   * camera are the renderer's (`zukIntroCutsceneFrame`).
    */
   private advanceZukIntro(ctx: EncounterContext): void {
     const controlTick = this.zukControlTick;
@@ -674,7 +679,6 @@ export class InfernoEncounter implements Encounter {
       ctx.tickEvents.emit({ type: 'game_message', kind: 'game', segments: [{ text: ZUK_INTRO_MESSAGES.busy }] });
     }
     if (offset === ZUK_INTRO.teleport) {
-      if (!ctx.teleportPlayer) throw new TypeError("Wave 69's intro needs the engine's player teleport");
       ctx.teleportPlayer([...ZUK_PLAYER_START], FACING_NORTH);
     }
     if (offset === ZUK_INTRO.add) {

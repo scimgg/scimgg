@@ -145,6 +145,7 @@ import type {
   EncounterIntroConfig,
   EncounterNpcDefeat,
   EncounterPlayerDamageInfo,
+  EncounterPlayerLockContext,
   EncounterPracticeRestart,
   EncounterPrayerDrainParams,
   EncounterRestartContext,
@@ -437,8 +438,16 @@ export class SimulationEngine {
   private openingIntro: EncounterIntroConfig | null = null;
   private _tutorialPaused = false;
   private pendingEquipmentSlotClicks: EquipmentClickSlot[] = [];
-  /** Whether the last advanced tick had the player busy (`EncounterEngineRules.playerInputLocked`). */
-  private lastTickInputLocked = false;
+  /**
+   * The first tick that accepts player input again ({@link EncounterContext.lockPlayerActionsUntil}):
+   * every tick before it drops the player's inputs and walk.
+   */
+  private playerActionsUnlockTick = Number.NEGATIVE_INFINITY;
+  /**
+   * Whether this tick discarded the walk target it was given (an action lock or a teleport). Cleared
+   * at the start of every advanced tick; see {@link didLastTickDiscardWalkTarget}.
+   */
+  private walkTargetDiscarded = false;
   /** Run at the start of the next tick; see {@link queueEncounterCommand}. */
   private pendingEncounterCommands: EncounterCommand[] = [];
   private completionOwnership: EncounterCompletionOwnership = 'encounter-owned';
@@ -540,6 +549,13 @@ export class SimulationEngine {
     };
   }
 
+  private buildPlayerLockContext(): EncounterPlayerLockContext {
+    return {
+      ...this.buildEngineContext(),
+      lockPlayerActionsUntil: (unlockTick: number): void => this.lockPlayerActionsUntil(unlockTick),
+    };
+  }
+
   private buildEncounterCtx(
     tick: number,
     playerPos: Coordinate,
@@ -563,14 +579,14 @@ export class SimulationEngine {
       setProtectionPrayer,
       disableProtectionPrayersUntil: (untilTick: number): void => this.disableProtectionPrayersUntil(untilTick),
       teleportPlayer: (position: Coordinate, facing: number): void => this.teleportPlayer(position, facing),
+      lockPlayerActionsUntil: (unlockTick: number): void => this.lockPlayerActionsUntil(unlockTick),
     };
   }
 
   /** See {@link EncounterContext.teleportPlayer}. */
   private teleportPlayer(position: Coordinate, facing: number): void {
     const player = this.player();
-    clearPlayerAttackIntent(player);
-    player.pendingItemPickup = null;
+    this.endPlayerInteraction();
     player.position = [...position] as Coordinate;
     player.previousPosition = player.position;
     player.movementPath = [];
@@ -581,16 +597,39 @@ export class SimulationEngine {
     this.worldState.occupancy.reconcile(this.worldState.actors.values());
   }
 
+  /** See {@link EncounterContext.lockPlayerActionsUntil}. */
+  private lockPlayerActionsUntil(unlockTick: number): void {
+    if (!Number.isSafeInteger(unlockTick)) {
+      throw new RangeError(`lockPlayerActionsUntil needs a safe integer tick, got ${unlockTick}`);
+    }
+    if (unlockTick <= this.worldState.tick) return;
+    this.playerActionsUnlockTick = Math.max(this.playerActionsUnlockTick, unlockTick);
+    this.endPlayerInteraction();
+  }
+
   /**
-   * Whether the tick just advanced discarded the walk target it was given, as the game drops clicks
-   * made while the player is busy (`EncounterEngineRules.playerInputLocked`). Every caller that
-   * carries a walk target into the next tick (the live loop, a manual step, a replay takeover's
-   * resume target) clears it when this is true, so any further busy state that drops the walk
-   * belongs here. A reconstructed engine answers for its last re-simulated tick, so takeover reads
-   * it straight off the rebuilt engine.
+   * Ends the player's interaction and queued walk, shared by a teleport and an action lock. The walk
+   * target is owned by the caller, so the walk ends by discarding it: no step toward it this tick
+   * (unless the player already took it), and the caller drops it before the next.
+   */
+  private endPlayerInteraction(): void {
+    const player = this.player();
+    clearPlayerAttackIntent(player);
+    player.pendingItemPickup = null;
+    this.walkTargetDiscarded = true;
+  }
+
+  /**
+   * Whether the tick just advanced discarded the walk target it was given: the player's actions were
+   * locked ({@link EncounterContext.lockPlayerActionsUntil}), as the game drops clicks made while the
+   * player is delayed, or the player was teleported ({@link EncounterContext.teleportPlayer}), which
+   * ends the queued walk. Every caller that carries a walk target into the next tick (the live loop,
+   * a manual step, the tutorial fast-forward, a replay takeover's resume target) clears it when this
+   * is true, so any further state that drops the walk belongs here. A reconstructed engine answers for its last
+   * re-simulated tick, so takeover reads it straight off the rebuilt engine.
    */
   public didLastTickDiscardWalkTarget(): boolean {
-    return this.lastTickInputLocked;
+    return this.walkTargetDiscarded;
   }
 
   private buildNpcDefinitionContext(): NpcDefinitionContext {
@@ -1287,6 +1326,8 @@ export class SimulationEngine {
     // Captured before anything can spend it — `tickSpecialAttack` needs the bar as it stood at the
     // START of the tick to decide whether a regen cycle was running at all.
     const specEnergyAtTickStart = player.specialAttack.energy;
+    // Before anything that can return early or set it, so it only ever answers for this tick.
+    this.walkTargetDiscarded = false;
 
     this.worldState.tick = nextTick;
     this.tickEvents.setTick(nextTick);
@@ -1307,7 +1348,7 @@ export class SimulationEngine {
 
     const rules = this.getEncounterRules();
     if (rules?.onTickStart) {
-      const result = rules.onTickStart(this.buildEngineContext());
+      const result = rules.onTickStart(this.buildPlayerLockContext());
       const fail = this.processHookResult(result);
       if (fail) {
         this.applyFailCondition(fail, nextTick);
@@ -1316,14 +1357,11 @@ export class SimulationEngine {
       }
     }
 
-    // A busy player (a cutscene) loses this tick's inputs and walk; everything else runs on.
-    const inputLocked = resolveDynamic(rules?.playerInputLocked, this.buildEngineContext()) === true;
-    this.lastTickInputLocked = inputLocked;
-    if (inputLocked) {
+    // A locked player loses this tick's inputs and walk; everything else runs on.
+    if (nextTick < this.playerActionsUnlockTick) {
       player.pendingInputOps = [];
       this.pendingEquipmentSlotClicks = [];
-      player.pendingItemPickup = null;
-      clearPlayerAttackIntent(player);
+      this.endPlayerInteraction();
     }
 
     // BAND 2 — INPUT. Every client op for this tick, in click order.
@@ -1375,7 +1413,8 @@ export class SimulationEngine {
 
     let movementResult: MovementResult;
     const attackNpc = player.attackTarget ? this.worldState.actors.get(player.attackTarget) : undefined;
-    if (inputLocked) {
+    // Locked or teleported earlier this tick: the walk target is no longer the player's to follow.
+    if (this.walkTargetDiscarded) {
       movementResult = { position: [...player.position] as Coordinate, stepTiles: [] };
     } else if (attackNpc !== undefined && canPlayerStartAttackOn(player, attackNpc) && attackNpc.kind === 'npc') {
       const npc = attackNpc as NpcActor;
@@ -3771,7 +3810,8 @@ export class SimulationEngine {
 
     this.failedCondition = null;
     this.prepotApplied = false;
-    this.lastTickInputLocked = false;
+    this.playerActionsUnlockTick = Number.NEGATIVE_INFINITY;
+    this.walkTargetDiscarded = false;
     this.pendingNpcDefeats = [];
     // A command queued against the old run must not land in the new one.
     this.pendingEncounterCommands = [];
@@ -4188,7 +4228,7 @@ export class SimulationEngine {
   private notifyEncounterPlayerDamageTaken(info: EncounterPlayerDamageInfo): void {
     const rules = this.getEncounterRules();
     if (rules?.onPlayerDamageTaken) {
-      const result = rules.onPlayerDamageTaken(info, this.buildEngineContext());
+      const result = rules.onPlayerDamageTaken(info, this.buildPlayerLockContext());
       const fail = this.processHookResult(result);
       if (fail) {
         this.applyFailCondition(fail, info.tick);

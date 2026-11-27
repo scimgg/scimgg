@@ -239,11 +239,30 @@ practice changes use `engine.setMechanicsConfig` without resetting ticks or acto
 
 ## Scripted player control
 
-Two engine rules let an encounter run a cutscene without a hand-made player path:
-`EncounterEngineRules.playerInputLocked` (a busy tick drops that tick's inputs, clears the attack
-target and does not walk; the live loop drops the walk target clicked meanwhile) and
-`EncounterContext.teleportPlayer` (a scripted placement and facing, from an NPC-band hook). Timers,
-prayers and pending hits run on. The Inferno's wave-69 intro uses both.
+Two engine primitives on `EncounterContext` let an encounter run a cutscene without a hand-made
+player path:
+
+- `lockPlayerActionsUntil(unlockTick)` locks the player's actions until `unlockTick`, the first
+  tick that accepts input again. It is also offered on the `onTickStart` and
+  `onPlayerDamageTaken` contexts, and nowhere else. The engine owns one deadline: a later call
+  can extend it but never shortens it, an unlock tick that has already come does nothing, and
+  `reset()` clears it. The call ends the interaction at once (attack intent, pending pickup) and
+  discards the tick's walk target. What else it costs the current tick depends on when it is
+  made: from `onTickStart` that tick's inputs are dropped and the player does not step; from the
+  NPC band, a combat hit or a `resolveHazards` hazard, inputs already applied stay but the step
+  does not; after movement (`processPostTick` or the environmental damage it returns) the step
+  stands. Every later locked tick drops its inputs and does not
+  walk. This is an action lock, stricter than the game's `p_delay`: the game only rejects new
+  move clicks while delayed and lets an existing route continue, whereas this also ends a walk
+  in progress.
+- `teleportPlayer(position, facing)` is a scripted placement and facing, called from an NPC-band
+  hook. Like the game's forced move, it ends the queued walk and the interaction, but it neither
+  locks the player's actions nor undoes inputs already processed that tick.
+
+Either one makes `didLastTickDiscardWalkTarget()` true for the tick, and every caller that
+carries a walk target into the next tick drops it: the live loop, a manual step, the tutorial
+fast-forward and a replay takeover's resume target. A fresh click on the next tick walks again.
+Timers, prayers and pending hits run on. The Inferno's wave-69 intro uses both.
 
 ## Practice controls
 

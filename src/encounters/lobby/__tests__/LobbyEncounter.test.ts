@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Encounter } from '../../../core/encounters/types';
 import { SimulationEngine } from '../../../core/SimulationEngine';
+import { createUnusedPlayerControlOps } from '../../../test/helpers/playerControlStubs';
 import { LobbyEncounter } from '../LobbyEncounter';
 
 describe('LobbyEncounter', () => {
@@ -42,6 +43,7 @@ describe('LobbyEncounter', () => {
         grantNextAttackSpeedup: () => {},
         spawnNpc: () => {},
         despawnNpc: () => {},
+        ...createUnusedPlayerControlOps(),
       },
       {},
     );
@@ -80,6 +82,7 @@ describe('LobbyEncounter', () => {
         grantNextAttackSpeedup: () => {},
         spawnNpc: () => {},
         despawnNpc: () => {},
+        ...createUnusedPlayerControlOps(),
       },
       {},
     );

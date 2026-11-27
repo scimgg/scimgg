@@ -71,8 +71,8 @@ export function useViewportInteraction({
     )
       return;
     engineRef.current.advanceTick(moveTarget);
-    // As in the live loop: a click dropped while busy must not stay queued (and marked) for the next
-    // step or for auto-advance to walk to.
+    // As in the live loop: a click dropped by an action lock (or ended by a teleport) must not stay
+    // queued (and marked) for the next step or for auto-advance to walk to.
     if (engineRef.current.didLastTickDiscardWalkTarget()) {
       setTargetTile(null);
       targetTileRef.current = null;

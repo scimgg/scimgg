@@ -10,6 +10,7 @@ import { isInsideArena } from '../../../npcs/colosseum/solAttacks';
 import { CollisionFlag } from '../../../rs/collision/CollisionFlag';
 import { createEncounterActorOps } from '../../../test/helpers/encounterActorOps';
 import { runEncounterNpcActions } from '../../../test/helpers/encounterNpcBand';
+import { createUnusedPlayerControlOps } from '../../../test/helpers/playerControlStubs';
 import type { Coordinate } from '../../../types/simulation';
 import { SOL_ARENA, SOL_OPENING_HOLD_UNTIL_TICK, SOL_PLAYER_START, SOL_START_POSITION } from '../constants';
 import { SolHereditEncounter } from '../SolHereditEncounter';
@@ -36,6 +37,7 @@ function setup(position: Coordinate = [31, 33], target: Coordinate = [32, 30]) {
     logEvent: () => {},
     grantNextAttackSpeedup: () => {},
     ...createEncounterActorOps(world),
+    ...createUnusedPlayerControlOps(),
   };
   const random = vi.fn(() => 0.5);
   // Sol's turn: the engine reconciles placements (the positions set above) before he moves.

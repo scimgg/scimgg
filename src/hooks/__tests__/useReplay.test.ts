@@ -2185,10 +2185,18 @@ describe('useReplay core playback', () => {
     });
 
     it('resumes on no move target from a tick that discarded it, as live play would', async () => {
-      // The anchor's frame still records the target that tick was given.
+      // The anchor's frame still records the target that tick was given. Busy on ticks 5 and 6,
+      // started at 5, so the rebuilt engine must also carry the deadline past the anchor.
       const rules = YamaEncounter.prototype.getEngineRules;
       vi.spyOn(YamaEncounter.prototype, 'getEngineRules').mockImplementation(function (this: YamaEncounter) {
-        return { ...rules.call(this), playerInputLocked: (ctx) => ctx.tick === 5 };
+        const original = rules.call(this);
+        return {
+          ...original,
+          onTickStart: (ctx) => {
+            if (ctx.tick === 5) ctx.lockPlayerActionsUntil(7);
+            return original?.onTickStart?.(ctx) ?? null;
+          },
+        };
       });
       const { result, onTakeOver } = recordRealRun({ ticks: 10 });
       expect(result.current.exportReplayData().frames[5]?.input).toBeDefined();
@@ -2199,6 +2207,17 @@ describe('useReplay core playback', () => {
       const rebuilt: SimulationEngine = onTakeOver.mock.calls[0]?.[0];
       expect(rebuilt.didLastTickDiscardWalkTarget()).toBe(true);
       expect(onTakeOver.mock.calls[0]?.[3]).toBeNull();
+
+      // Tick 6 is still busy on the rebuilt engine; tick 7 walks.
+      const anchor = rebuilt.getState().playerPosition;
+      const north: [number, number] = [anchor[0], anchor[1] + 3];
+      rebuilt.advanceTick(north);
+      expect(rebuilt.currentTick).toBe(6);
+      expect(rebuilt.didLastTickDiscardWalkTarget()).toBe(true);
+      expect(rebuilt.getState().playerPosition).toEqual(anchor);
+      rebuilt.advanceTick(north);
+      expect(rebuilt.didLastTickDiscardWalkTarget()).toBe(false);
+      expect(rebuilt.getState().playerPosition).not.toEqual(anchor);
     });
 
     it('takes over the tick the viewer scrubbed to, even before React commits the seek', async () => {

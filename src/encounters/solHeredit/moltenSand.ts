@@ -121,7 +121,7 @@ export class MoltenSand {
    * the tick on, before movement. Damage is the Wiki's approximate 6-8 range; the single observed
    * player hit attributable to sand is 8 (K:4067).
    */
-  resolve(ctx: EncounterContext): EnvironmentalDamage[] {
+  resolve(ctx: Pick<EncounterContext, 'playerPos'>): EnvironmentalDamage[] {
     if (!this.burning.has(tileKey(ctx.playerPos))) return [];
     return [
       {

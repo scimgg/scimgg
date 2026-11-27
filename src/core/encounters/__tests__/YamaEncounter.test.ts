@@ -29,6 +29,7 @@ import type { ArenaBounds } from '../../../rs/collision/WalkabilityAnalyzer';
 import { createEncounterActorOps } from '../../../test/helpers/encounterActorOps';
 import { runEncounterNpcActions } from '../../../test/helpers/encounterNpcBand';
 import { enqueueEnginePendingHit } from '../../../test/helpers/pendingHits';
+import { createUnusedPlayerControlOps } from '../../../test/helpers/playerControlStubs';
 import { createEmptyStats } from '../../../types/equipmentStats';
 import { createDefaultStats } from '../../../types/playerState';
 import { type Coordinate, EventType, type MechanicsConfig, type TickNumber } from '../../../types/simulation';
@@ -648,6 +649,7 @@ function makeEncounterContext(world: WorldState, tick: number, playerPos: Coordi
     logEvent: () => {},
     grantNextAttackSpeedup: () => {},
     ...createEncounterActorOps(world),
+    ...createUnusedPlayerControlOps(),
   };
 }
 

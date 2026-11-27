@@ -45,6 +45,7 @@ import { solDefinition } from '../../../npcs/colosseum/sol';
 import { INITIAL_SOL_VARIANT_MEMORY, selectSolVariant } from '../../../npcs/colosseum/solAttacks';
 import { createEncounterActorOps } from '../../../test/helpers/encounterActorOps';
 import { runEncounterNpcActions } from '../../../test/helpers/encounterNpcBand';
+import { createUnusedPlayerControlOps } from '../../../test/helpers/playerControlStubs';
 import type { Coordinate } from '../../../types/simulation';
 import { SolBeamRounds } from '../beams';
 import {
@@ -416,7 +417,7 @@ describe('grapple', () => {
 });
 
 describe('molten sand', () => {
-  const sandContext = (playerPos: Coordinate): EncounterContext => ({ playerPos }) as unknown as EncounterContext;
+  const sandContext = (playerPos: Coordinate) => ({ playerPos });
 
   it('always strikes the tile underfoot and keeps every strike within the 9x9', () => {
     const sand = new MoltenSand();
@@ -741,6 +742,7 @@ describe('beam crystals', () => {
         logEvent: () => {},
         grantNextAttackSpeedup: () => {},
         ...createEncounterActorOps(world),
+        ...createUnusedPlayerControlOps(),
       };
       const mechanics = { solHereditSand: false };
       runEncounterNpcActions(encounter, context, mechanics);
