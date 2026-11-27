@@ -20,6 +20,7 @@ import { resolveEncounterEntry } from '../../encounters/modules';
 import { encounterRegistry } from '../../encounters/registry';
 import * as engineFactory from '../../encounters/simulationEngineFactory';
 import { createSimulationEngineForNewRun, type EncounterSetupConfig } from '../../encounters/simulationEngineFactory';
+import { YamaEncounter } from '../../encounters/yamaP3/YamaEncounter';
 import { runSyntheticInput } from '../../input/inputProvenance';
 import { __resetKeyStateForTest, MODIFIER_BIT } from '../../input/keyState';
 import {
@@ -2181,6 +2182,23 @@ describe('useReplay core playback', () => {
 
       expect(anchorInput).toBeDefined();
       expect(onTakeOver.mock.calls[0]?.[3]).toEqual(anchorInput);
+    });
+
+    it('resumes on no move target from a tick that discarded it, as live play would', async () => {
+      // The anchor's frame still records the target that tick was given.
+      const rules = YamaEncounter.prototype.getEngineRules;
+      vi.spyOn(YamaEncounter.prototype, 'getEngineRules').mockImplementation(function (this: YamaEncounter) {
+        return { ...rules.call(this), playerInputLocked: (ctx) => ctx.tick === 5 };
+      });
+      const { result, onTakeOver } = recordRealRun({ ticks: 10 });
+      expect(result.current.exportReplayData().frames[5]?.input).toBeDefined();
+
+      act(() => result.current.controlProps.onSeek(6));
+      await act(async () => await result.current.controlProps.onTakeOver());
+
+      const rebuilt: SimulationEngine = onTakeOver.mock.calls[0]?.[0];
+      expect(rebuilt.didLastTickDiscardWalkTarget()).toBe(true);
+      expect(onTakeOver.mock.calls[0]?.[3]).toBeNull();
     });
 
     it('takes over the tick the viewer scrubbed to, even before React commits the seek', async () => {

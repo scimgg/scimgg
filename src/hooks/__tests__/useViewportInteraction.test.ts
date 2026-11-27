@@ -46,6 +46,7 @@ function makeEngine(paused: boolean, events: GameEvent[] = []): SimulationEngine
     applyAction: vi.fn(),
     advanceTick: vi.fn(),
     canAdvance: vi.fn(() => true),
+    didLastTickDiscardWalkTarget: vi.fn(() => false),
     getLastTickEvents: vi.fn(() => events),
     getState: vi.fn(() => state),
     isTutorialPaused: vi.fn(() => paused),

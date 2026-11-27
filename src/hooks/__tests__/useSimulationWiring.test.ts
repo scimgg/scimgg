@@ -2196,6 +2196,99 @@ describe('useSimulationWiring late ticks', () => {
     advanceFrame(5600);
     expect(replacement.getState().currentTick).toBe(1);
   });
+
+  describe('a walk clicked while the player is busy', () => {
+    const START: Coordinate = [31, 37];
+    const NORTH: Coordinate = [31, 41];
+
+    /** Yama with the player busy on `ticks`, as Inferno's Zuk intro makes them; a rebuilt engine is too. */
+    function busyOn(ticks: readonly number[]) {
+      const rules = YamaEncounter.prototype.getEngineRules;
+      vi.spyOn(YamaEncounter.prototype, 'getEngineRules').mockImplementation(function (this: YamaEncounter) {
+        return { ...rules.call(this), playerInputLocked: (ctx) => ticks.includes(ctx.tick) };
+      });
+    }
+    const position = (result: { current: ReturnType<typeof useSimulationWiring> }) =>
+      result.current.engine.getState().playerPosition;
+    const marker = (result: { current: ReturnType<typeof useSimulationWiring> }) =>
+      result.current.inputPresentation.getTargetTile();
+
+    it('is dropped by the live loop, so the player does not walk once free', () => {
+      busyOn([1]);
+      const { result } = renderWithViewport();
+      nowMs = 100;
+      act(() => result.current.handleTileClick(NORTH));
+      advanceFrame(600);
+      expect(result.current.engine.currentTick).toBe(1);
+      expect(marker(result)).toBeNull();
+      advanceFrame(1200);
+      advanceFrame(1800);
+      expect(position(result)).toEqual(START);
+    });
+
+    it('is dropped by a manual step, so switching to auto-advance does not walk to it', () => {
+      busyOn([1]);
+      const { result, rerender } = renderWithViewport({ autoAdvance: false });
+      nowMs = 100;
+      act(() => result.current.handleTileClick(NORTH));
+      expect(result.current.engine.currentTick).toBe(1);
+      expect(position(result)).toEqual(START);
+      expect(marker(result)).toBeNull();
+      expect(result.current.targetTile).toBeNull();
+
+      nowMs = 10_000;
+      rerender({ ...params, autoAdvance: true });
+      advanceFrame(10_600);
+      advanceFrame(11_200);
+      expect(result.current.engine.currentTick).toBe(3);
+      expect(position(result)).toEqual(START);
+    });
+
+    /** Clicks NORTH just before tick 2, plays to tick 3, then takes over tick 3 (restoring tick 2). */
+    function takeOverTick3(busyTicks: readonly number[]) {
+      busyOn(busyTicks);
+      const view = renderWithViewport();
+      advanceFrame(600);
+      nowMs = 700;
+      act(() => view.result.current.handleTileClick(NORTH));
+      advanceFrame(1200);
+      advanceFrame(1800);
+      const recorded = recording(view.result).frames[2];
+      expect(recorded?.input).toEqual(NORTH);
+      const live = view.result.current.engine;
+      act(() => view.result.current.replay.controlProps.onEnterReplay());
+      act(() => view.result.current.replay.controlProps.onSeek(3));
+      act(() => {
+        void view.result.current.replay.controlProps.onTakeOver();
+      });
+      advanceFrame(1900);
+      advanceFrame(1916);
+      expect(view.result.current.engine).not.toBe(live);
+      expect(view.result.current.simulationState.currentTick).toBe(2);
+      return { ...view, anchorPosition: recorded?.state.playerPosition };
+    }
+
+    it('is not restored by a takeover from the tick that dropped it', () => {
+      const { result, anchorPosition } = takeOverTick3([2]);
+      expect(anchorPosition).toEqual(START);
+      expect(marker(result)).toBeNull();
+      expect(result.current.targetTile).toBeNull();
+      advanceFrame(2600);
+      advanceFrame(3200);
+      expect(result.current.engine.currentTick).toBeGreaterThan(2);
+      expect(position(result)).toEqual(START);
+    });
+
+    it('is restored by a takeover from a tick that walked it', () => {
+      const { result, anchorPosition } = takeOverTick3([]);
+      expect(anchorPosition).not.toEqual(START);
+      expect(marker(result)).toEqual(NORTH);
+      expect(result.current.targetTile).toEqual(NORTH);
+      advanceFrame(2600);
+      advanceFrame(3200);
+      expect(position(result)).toEqual(NORTH);
+    });
+  });
 });
 
 describe('useSimulationWiring start-of-fight countdown', () => {

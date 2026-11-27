@@ -151,15 +151,17 @@ export interface UseReplayParams {
   objTypeLoader: ObjTypeLoader | null;
   /**
    * `state` is the restored anchor (the tick before the one the viewer chose), and
-   * `resumeTarget` is the move target that anchor tick was advanced with. The live tick loop
-   * reads its own target ref on the very next tick, so without it a takeover inherits whatever
-   * tile the viewer had queued before entering replay and walks the player off on resume.
+   * `resumeTarget` is the move target that anchor tick was advanced with, or null when that tick
+   * discarded it (`SimulationEngine.didLastTickDiscardWalkTarget`), as live play would have. The
+   * live tick loop reads its own target ref on the very next tick, so without it a takeover
+   * inherits whatever tile the viewer had queued before entering replay and walks the player off
+   * on resume.
    */
   onTakeOver: (
     engine: SimulationEngine,
     state: SimulationState,
     uiState: ReplayUiState,
-    resumeTarget: Coordinate,
+    resumeTarget: Coordinate | null,
   ) => void;
   onEnterReplay?: () => void;
   onExitReplay?: () => void;
@@ -1105,7 +1107,9 @@ export function useReplay({
       replayModeRef.current = false;
       replayFrameStoreRef.current.setHistory(undefined);
       setReplayPlaying(false);
-      onTakeOver(newEngine, reconstructed, targetFrame.uiState, targetFrame.input);
+      // The frame records the target its tick was given, even one that tick discarded.
+      const resumeTarget = newEngine.didLastTickDiscardWalkTarget() ? null : targetFrame.input;
+      onTakeOver(newEngine, reconstructed, targetFrame.uiState, resumeTarget);
       recordLivePresentationBaseline(forkTimeMs);
       return true;
     },

@@ -2133,7 +2133,7 @@ describe('Inferno wave 68 into wave 69', () => {
       const tick = run.engine.currentTick + 1;
       if (tick < control - 8) expect(zukActors(run)).toEqual([]);
       for (const [at, tickEvents] of advanceTo(run, tick)) events.set(at, tickEvents);
-      locked.set(tick, run.engine.wasLastTickInputLocked());
+      locked.set(tick, run.engine.didLastTickDiscardWalkTarget());
       const glyph = run.world.getNpc('zuk_shield');
       if (glyph) glyphY.set(tick, glyph.position[1]);
       if (tick === control - 10) {
@@ -2232,7 +2232,7 @@ describe('Inferno wave 68 into wave 69', () => {
     advanceTo(run, control);
     run.engine.applyAction({ type: 'protectionPrayer', prayer: PrayerType.ProtectMagic });
     run.engine.advanceTick([31, 40]);
-    expect(run.engine.wasLastTickInputLocked()).toBe(false);
+    expect(run.engine.didLastTickDiscardWalkTarget()).toBe(false);
     expect(run.world.getPlayer()?.activePrayer).toBe(PrayerType.ProtectMagic);
     expect(run.world.getPlayer()?.position).not.toEqual([31, 44]);
   });
@@ -2249,6 +2249,7 @@ describe('Inferno wave 68 into wave 69', () => {
     advanceTo(live, SPAWN);
     advanceTo(twin, SPAWN);
     let control: number | null = null;
+    let discardingTicks = 0;
     for (let guard = 0; guard < 400 && (control === null || live.engine.currentTick < control + 30); guard++) {
       // The same (unrecorded) kills on both, so the two runs see identical inputs.
       for (const run of [live, twin]) for (const npc of waveNpcs(run)) if (npc.alive) kill(run, npc);
@@ -2256,8 +2257,13 @@ describe('Inferno wave 68 into wave 69', () => {
       const snapshot = live.engine.getEncounterSnapshot() as InfernoSnapshot;
       control ??= snapshot.visuals.zukControlTick;
       expect(diffResumableState(live.engine.getState(), rebuilt.getState())).toEqual([]);
+      // A takeover reads this off the rebuilt engine to decide whether the anchor's walk survives.
+      expect(rebuilt.didLastTickDiscardWalkTarget()).toBe(live.engine.didLastTickDiscardWalkTarget());
+      if (live.engine.didLastTickDiscardWalkTarget()) discardingTicks++;
     }
     expect(control).not.toBeNull();
+    // Busy from C-12 through C.
+    expect(discardingTicks).toBe(1 - ZUK_INTRO.busyFrom);
     expect(live.engine.getEncounterSnapshot()).toEqual(rebuilt.getEncounterSnapshot());
   });
 
@@ -2273,7 +2279,7 @@ describe('Inferno wave 68 into wave 69', () => {
       visuals: { zukControlTick: 0, pillarLocs: [] },
     });
     const events = [...advanceTo(run, 3)].flatMap(([, tickEvents]) => tickEvents);
-    expect(run.engine.wasLastTickInputLocked()).toBe(false);
+    expect(run.engine.didLastTickDiscardWalkTarget()).toBe(false);
     // Zuk is already up: no rise, and none of the intro's lines.
     expect(
       events
