@@ -51,9 +51,14 @@ Licensed under [CC BY-NC-SA 3.0](https://creativecommons.org/licenses/by-nc-sa/3
   spell articles by [`scripts/sync-osrs-spells.ts`](./scripts/sync-osrs-spells.ts); see
   [below](#spellsjson). [`docs/legal/data-provenance.md`](./docs/legal/data-provenance.md) records
   each file's fields and the changes made to them.
-- **`src/data/playerPresets.ts`**: the loadouts that follow the Wiki's Inferno, Fortis Colosseum and
-  Yama strategy guides, each citing its page. The file's other Inferno presets copy community
-  players' published setups, each cited by screenshot and date, and are not Wiki-derived.
+- **`src/data/playerPresets.ts`**: the loadouts that follow the Wiki's Inferno, Fortis Colosseum,
+  Yama and Zulrah strategy guides, each citing its page. The Zulrah sets keep the Wiki's Inventory
+  Setups slot for slot, with the substitutions listed beside them. The file's other Inferno presets
+  copy community players' published setups, each cited by screenshot and date, and are not
+  Wiki-derived.
+- **`src/encounters/zulrah/rotation.ts`**: Zulrah's four rotation tables (form, spot, attack count
+  and special order per phase), transcribed from the Wiki's Zulrah/Strategies page. Values that
+  were later corrected from gameplay captures are marked as such beside them.
 - **`src/data/tilePackPresets.ts`**: the Donofly and Yama Mage Contract tile packs, taken from the
   Wiki's Yama strategy page and its tile-marker module.
 - **The values transcribed from Wiki tables** in `src/data/spellRunes.ts` (rune costs) and
