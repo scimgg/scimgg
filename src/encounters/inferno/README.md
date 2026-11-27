@@ -49,8 +49,9 @@ Species definitions live in `src/npcs/inferno/`.
   pillars feed the changed-since-start key (`infernoRunSetupKey`); `pinnedWave` stays out of it and
   out of the setup link. What each restart does is the
   [policy's restart table](../../../docs/encounters/inferno-policy.md#restarts).
-- **68 → 69** (`advanceZukIntro`, `ZUK_INTRO`): busy C-12..C is the `playerInputLocked` engine rule;
-  the teleport at C-10 is `teleportPlayer`; the actors arrive at C-8 and start the director.
+- **68 → 69** (`advanceZukIntro`, `ZUK_INTRO`): busy C-12..C is an engine action lock, taken by
+  `onTickStart` at C-12 with `lockPlayerActionsUntil(C + 1)`; the teleport at C-10 is
+  `teleportPlayer`; the actors arrive at C-8 and start the director.
 - **Stage-owned behavior** dispatches on the director: NPC contexts, movement, removal, hazards,
   outcome (won on Zuk's defeat) and Zuk's `encounter: 'zuk'` commands. One registration per
   definition; a Jad's healers follow their parent's type, and wave 69's magers never resurrect.

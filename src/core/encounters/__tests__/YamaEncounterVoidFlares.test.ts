@@ -11,6 +11,7 @@ import { YamaEncounter } from '../../../encounters/yamaP3/YamaEncounter';
 import { voidFlareDefinition, voidFlareExplosionHeal } from '../../../npcs/yama/voidFlare';
 import { createEncounterActorOps } from '../../../test/helpers/encounterActorOps';
 import { runEncounterNpcActions } from '../../../test/helpers/encounterNpcBand';
+import { createUnusedPlayerControlOps } from '../../../test/helpers/playerControlStubs';
 import { createEmptyStats } from '../../../types/equipmentStats';
 import { createDefaultStats } from '../../../types/playerState';
 import type { Coordinate, TickNumber } from '../../../types/simulation';
@@ -93,6 +94,7 @@ function makeEncounterContext(world: WorldState, tick: number, playerPos: Coordi
     logEvent: () => {},
     grantNextAttackSpeedup: () => {},
     ...createEncounterActorOps(world),
+    ...createUnusedPlayerControlOps(),
   };
 }
 

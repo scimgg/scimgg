@@ -2204,7 +2204,14 @@ describe('useSimulationWiring late ticks', () => {
     function busyOn(ticks: readonly number[]) {
       const rules = YamaEncounter.prototype.getEngineRules;
       vi.spyOn(YamaEncounter.prototype, 'getEngineRules').mockImplementation(function (this: YamaEncounter) {
-        return { ...rules.call(this), playerInputLocked: (ctx) => ticks.includes(ctx.tick) };
+        const original = rules.call(this);
+        return {
+          ...original,
+          onTickStart: (ctx) => {
+            if (ticks.includes(ctx.tick)) ctx.lockPlayerActionsUntil(ctx.tick + 1);
+            return original?.onTickStart?.(ctx) ?? null;
+          },
+        };
       });
     }
     const position = (result: { current: ReturnType<typeof useSimulationWiring> }) =>
@@ -2224,6 +2231,28 @@ describe('useSimulationWiring late ticks', () => {
       advanceFrame(1200);
       advanceFrame(1800);
       expect(position(result)).toEqual(START);
+    });
+
+    it('is dropped by a tutorial fast-forward through a busy tick, so the live loop does not resume it', () => {
+      busyOn([2]);
+      const { result } = renderWithViewport();
+      nowMs = 100;
+      act(() => result.current.handleTileClick(NORTH));
+      advanceFrame(600);
+      const walked = position(result);
+      expect(walked).not.toEqual(START);
+      expect(result.current.targetTile).toEqual(NORTH);
+
+      act(() => result.current.fastForwardTicks(3));
+      expect(result.current.engine.currentTick).toBe(3);
+      expect(marker(result)).toBeNull();
+      expect(result.current.targetTile).toBeNull();
+      nowMs = 5000;
+      advanceFrame(5000);
+      advanceFrame(5600);
+      advanceFrame(6200);
+      expect(result.current.engine.currentTick).toBeGreaterThan(3);
+      expect(position(result)).toEqual(walked);
     });
 
     it('is dropped by a manual step, so switching to auto-advance does not walk to it', () => {

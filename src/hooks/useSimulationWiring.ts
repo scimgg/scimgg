@@ -1699,7 +1699,7 @@ export function useSimulationWiring({
           const currentState = engine.getState();
           const moveTarget = targetTileRef.current ?? currentState.playerPosition;
           engine.advanceTick(moveTarget);
-          // A busy player's clicks are dropped, so its walk does not resume once the player is free.
+          // A locked player's clicks are dropped and a teleport ends the walk, so it does not resume.
           if (engine.didLastTickDiscardWalkTarget()) {
             targetTileRef.current = null;
             setTargetTile(null);
@@ -1978,6 +1978,12 @@ export function useSimulationWiring({
       ) {
         const moveTarget = engine.getState().playerPosition;
         engine.advanceTick(moveTarget);
+        // The seek stands still, but a walk clicked before it must not resume after a tick that
+        // discarded it (an action lock or a teleport), exactly as the live loop drops it.
+        if (engine.didLastTickDiscardWalkTarget()) {
+          targetTileRef.current = null;
+          setTargetTile(null);
+        }
         const newState = engine.getState();
         const tickEvents = engine.getLastTickEvents();
         replay.recordFrame(newState.currentTick, moveTarget, newState, tickEvents, getReplayUiStateRef.current());

@@ -31,6 +31,7 @@ import type { LocMeshData } from '../../../rs/config/loctype/LocModelLoader';
 import { SeqSoundEffect, SeqType } from '../../../rs/config/seqtype/SeqType';
 import { createEncounterActorOps } from '../../../test/helpers/encounterActorOps';
 import { runEncounterNpcActions } from '../../../test/helpers/encounterNpcBand';
+import { createUnusedPlayerControlOps } from '../../../test/helpers/playerControlStubs';
 import type { SimulationState } from '../../../types/simulation';
 import { LobbyEncounter } from '../../lobby/LobbyEncounter';
 import { SOL_BOUNDARY_WARRIORS } from '../arenaBoundary';
@@ -180,6 +181,7 @@ describe('Sol Heredit chat messages', () => {
       logEvent: () => {},
       grantNextAttackSpeedup: () => {},
       ...createEncounterActorOps(world),
+      ...createUnusedPlayerControlOps(),
     };
     sol.vitals.hp = 0;
     sol.alive = false;
@@ -419,6 +421,7 @@ describe('molten sand pools', () => {
       logEvent: () => {},
       grantNextAttackSpeedup: () => {},
       ...createEncounterActorOps(world),
+      ...createUnusedPlayerControlOps(),
     };
     // Recorded frames, as a replay holds them: the last live tick, then D, D+1 and D+2.
     const frames = new Map<number, SimulationState>([[deathTick - 1, engine.getState()]]);

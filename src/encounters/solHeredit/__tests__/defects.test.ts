@@ -24,6 +24,7 @@ import {
 import { launchSolIfReady, solDefinition } from '../../../npcs/colosseum/sol';
 import { createEncounterActorOps } from '../../../test/helpers/encounterActorOps';
 import { runEncounterNpcActions } from '../../../test/helpers/encounterNpcBand';
+import { createUnusedPlayerControlOps } from '../../../test/helpers/playerControlStubs';
 import { type Coordinate, PrayerType } from '../../../types/simulation';
 import {
   ENRAGE_SAND_INTERVAL_TICKS,
@@ -56,6 +57,7 @@ function setup(seed = 7) {
     logEvent: () => {},
     grantNextAttackSpeedup: () => {},
     ...createEncounterActorOps(world),
+    ...createUnusedPlayerControlOps(),
   };
   return { encounter, engine, world, sol, context };
 }

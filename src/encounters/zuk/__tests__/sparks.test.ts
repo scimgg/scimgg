@@ -4,6 +4,7 @@ import { isEncounterVisualEvent } from '../../../core/events/encounterVisual';
 import { TickEvents } from '../../../core/events/TickEvents';
 import { mulberry32 } from '../../../core/rng';
 import { WorldState } from '../../../core/WorldState';
+import { createUnusedPlayerControlOps } from '../../../test/helpers/playerControlStubs';
 import type { Coordinate } from '../../../types/simulation';
 import { ZukSparkVolleyCommandSchema } from '../commands';
 import { generateSparkVolley, ZukSparkLandings } from '../sparks';
@@ -206,6 +207,7 @@ describe('generated spark landings', () => {
       grantNextAttackSpeedup: () => undefined,
       spawnNpc: () => undefined,
       despawnNpc: () => undefined,
+      ...createUnusedPlayerControlOps(),
     };
     const sparks = generateSparkVolley({ source: [10, 20], player: [11, 14], random: () => 0.5 });
     const landings = new ZukSparkLandings();

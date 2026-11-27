@@ -12,14 +12,19 @@ import { createZukWaveEncounter } from '../../test/helpers/zukWave';
 import { createEmptyCombatSupplies } from '../../types/encounterLoadout';
 import { createEmptyInventory } from '../../types/inventory';
 import { createStatsFromBaseLevels, type PlayerStats } from '../../types/playerState';
-import { type Coordinate, PrayerType } from '../../types/simulation';
+import { type Coordinate, type MechanicsConfig, PrayerType } from '../../types/simulation';
 import type { NpcActor } from '../actors/NpcActor';
 import type { PrevalidatedAttackRequest } from '../combat/CombatSystem';
 import { applyNpcPoison, POISON_PERIOD_TICKS } from '../combat/npcPoison';
 import { projectFirstPartyPlayerAttack } from '../combat/player/firstPartyPlayerAttack';
 import { formulaStyleToAttackKind, formulaStyleToDamageType, getFormulaStyle } from '../combat/weaponCombatData';
 import { DEAD_ACTOR_PRUNE_GRACE_TICKS, setArenaConfig } from '../constants';
-import type { EncounterEngineContext, EncounterEngineRules } from '../encounters/types';
+import type {
+  EncounterContext,
+  EncounterEngineContext,
+  EncounterEngineRules,
+  EnvironmentalDamage,
+} from '../encounters/types';
 import { isCoreEvent } from '../events/types';
 import { createNpcDefinition, NpcDefinitionCollection } from '../npcs';
 import { ReplaySafetyError } from '../replaySafety';
@@ -2301,5 +2306,222 @@ describe('SimulationEngine natural Hitpoints', () => {
 
     expect(player.alive).toBe(false);
     expect(player.vitals.hp).toBe(0); // no +1 after the death
+  });
+});
+
+type LockPhase = 'tickStart' | 'npcBand' | 'postTick' | 'damage';
+
+/**
+ * Yama with no attacks, scripted to teleport the player from its NPC band and to lock the player's
+ * actions from each phase that can: tick start, the NPC band, after movement, and a landed hit.
+ */
+class ScriptedPlayerEncounter extends YamaEncounter {
+  readonly teleports = new Map<number, { position: Coordinate; facing: number }>();
+  readonly locks: { tick: number; phase: LockPhase; unlockTick: number }[] = [];
+
+  private lockFrom(phase: LockPhase, tick: number, lock: (unlockTick: number) => void): void {
+    for (const entry of this.locks) if (entry.tick === tick && entry.phase === phase) lock(entry.unlockTick);
+  }
+
+  override getEngineRules(): EncounterEngineRules {
+    const base = super.getEngineRules();
+    return {
+      ...base,
+      onTickStart: (ctx) => {
+        this.lockFrom('tickStart', ctx.tick, ctx.lockPlayerActionsUntil);
+        return base?.onTickStart?.(ctx) ?? null;
+      },
+      onPlayerDamageTaken: (info, ctx) => {
+        this.lockFrom('damage', ctx.tick, ctx.lockPlayerActionsUntil);
+        return base?.onPlayerDamageTaken?.(info, ctx) ?? null;
+      },
+    };
+  }
+
+  prepareNpcBand(ctx: EncounterContext): void {
+    const teleport = this.teleports.get(ctx.tick);
+    if (teleport) ctx.teleportPlayer(teleport.position, teleport.facing);
+    this.lockFrom('npcBand', ctx.tick, ctx.lockPlayerActionsUntil);
+  }
+
+  override processPostTick(ctx: EncounterContext, mechanics: Partial<MechanicsConfig>): EnvironmentalDamage[] {
+    const damage = super.processPostTick(ctx, mechanics);
+    this.lockFrom('postTick', ctx.tick, ctx.lockPlayerActionsUntil);
+    return damage;
+  }
+}
+
+describe('SimulationEngine scripted player control', () => {
+  const START: Coordinate = [31, 37];
+  const TARGET: Coordinate = [31, 45];
+  const LANDING: Coordinate = [33, 37];
+
+  function makeScriptedEngine(): { engine: SimulationEngine; encounter: ScriptedPlayerEncounter } {
+    const encounter = new ScriptedPlayerEncounter();
+    const engine = new SimulationEngine({ encounter, startPos: START });
+    engine.setMechanicsConfig({
+      yamaMageRange: false,
+      yamaMelee: false,
+      waves: false,
+      fireballs: false,
+      voidFlares: false,
+      infiniteHealth: true,
+    });
+    return { engine, encounter };
+  }
+  const player = (engine: SimulationEngine) => {
+    const actor = engine['worldState'].getPlayer();
+    if (!actor) throw new Error('missing player');
+    return actor;
+  };
+  /** Advances to `toTick` walking toward TARGET, returning which ticks discarded it. */
+  function discardingTicks(engine: SimulationEngine, toTick: number): number[] {
+    const ticks: number[] = [];
+    while (engine.currentTick < toTick) {
+      engine.advanceTick(TARGET);
+      if (engine.didLastTickDiscardWalkTarget()) ticks.push(engine.currentTick);
+    }
+    return ticks;
+  }
+
+  it('ends the walk in progress on a teleport, keeping the tick’s other inputs, and walks a fresh click', () => {
+    const { engine, encounter } = makeScriptedEngine();
+    encounter.teleports.set(3, { position: LANDING, facing: 1024 });
+    engine.advanceTick(TARGET);
+    engine.advanceTick(TARGET);
+    const walking = engine.getState().playerPosition;
+    expect(walking).not.toEqual(START);
+    expect(walking).not.toEqual(TARGET);
+    expect(engine.didLastTickDiscardWalkTarget()).toBe(false);
+
+    engine.applyAction({ type: 'protectionPrayer', prayer: PrayerType.ProtectMagic });
+    engine.advanceTick(TARGET);
+    expect(engine.currentTick).toBe(3);
+    // Exactly the landing tile and facing: no step toward the target the tick was given.
+    expect(player(engine).position).toEqual(LANDING);
+    expect(player(engine).facing).toBe(1024);
+    expect(player(engine).movementPath).toEqual([]);
+    expect(engine.didLastTickDiscardWalkTarget()).toBe(true);
+    // A teleport is not an action lock: the prayer clicked for the same tick still applies.
+    expect(player(engine).activePrayer).toBe(PrayerType.ProtectMagic);
+
+    // The same coordinate clicked again walks from the landing tile.
+    engine.advanceTick(TARGET);
+    expect(engine.didLastTickDiscardWalkTarget()).toBe(false);
+    expect(player(engine).position).not.toEqual(LANDING);
+  });
+
+  it('locks only the current tick with an unlock tick one past it, dropping that tick’s inputs', () => {
+    const { engine, encounter } = makeScriptedEngine();
+    encounter.locks.push({ tick: 2, phase: 'tickStart', unlockTick: 3 });
+    engine.advanceTick(START);
+    engine.applyAction({ type: 'protectionPrayer', prayer: PrayerType.ProtectMagic });
+    engine.advanceTick(TARGET);
+    expect(engine.didLastTickDiscardWalkTarget()).toBe(true);
+    expect(player(engine).activePrayer).toBeNull();
+    expect(player(engine).position).toEqual(START);
+    expect(discardingTicks(engine, 5)).toEqual([]);
+    expect(player(engine).position).not.toEqual(START);
+  });
+
+  it('locks every tick before the unlock tick', () => {
+    const { engine, encounter } = makeScriptedEngine();
+    encounter.locks.push({ tick: 2, phase: 'tickStart', unlockTick: 6 });
+    expect(discardingTicks(engine, 8)).toEqual([2, 3, 4, 5]);
+  });
+
+  it('extends a lock but never shortens it', () => {
+    const { engine, encounter } = makeScriptedEngine();
+    encounter.locks.push(
+      { tick: 2, phase: 'tickStart', unlockTick: 7 }, // locked 2..6
+      { tick: 3, phase: 'tickStart', unlockTick: 4 }, // inside it: no shorter
+      { tick: 5, phase: 'tickStart', unlockTick: 9 }, // locked through 8
+    );
+    expect(discardingTicks(engine, 11)).toEqual([2, 3, 4, 5, 6, 7, 8]);
+  });
+
+  it('ignores an unlock tick that has already come, and rejects one that is not a safe integer', () => {
+    const { engine, encounter } = makeScriptedEngine();
+    encounter.locks.push(
+      { tick: 2, phase: 'tickStart', unlockTick: 2 },
+      { tick: 2, phase: 'npcBand', unlockTick: 1 },
+      { tick: 3, phase: 'postTick', unlockTick: -5 },
+    );
+    expect(discardingTicks(engine, 4)).toEqual([]);
+    expect(player(engine).position).not.toEqual(START);
+
+    for (const unlockTick of [2.5, Number.NaN, Number.POSITIVE_INFINITY, Number.MAX_SAFE_INTEGER + 1]) {
+      const run = makeScriptedEngine();
+      run.encounter.locks.push({ tick: 1, phase: 'tickStart', unlockTick });
+      expect(() => run.engine.advanceTick(START)).toThrow(RangeError);
+    }
+  });
+
+  it('clears a live lock on reset', () => {
+    const { engine, encounter } = makeScriptedEngine();
+    encounter.locks.push({ tick: 2, phase: 'tickStart', unlockTick: 13 });
+    expect(discardingTicks(engine, 3)).toEqual([2, 3]);
+    encounter.locks.length = 0;
+    engine.reset(START);
+    expect(engine.didLastTickDiscardWalkTarget()).toBe(false);
+    expect(discardingTicks(engine, 4)).toEqual([]);
+  });
+
+  it('keeps an input already applied by an NPC-band lock, but not the step', () => {
+    const { engine, encounter } = makeScriptedEngine();
+    encounter.locks.push({ tick: 3, phase: 'npcBand', unlockTick: 5 });
+    expect(discardingTicks(engine, 2)).toEqual([]);
+    const walking = engine.getState().playerPosition;
+    expect(walking).not.toEqual(START);
+
+    engine.applyAction({ type: 'protectionPrayer', prayer: PrayerType.ProtectMagic });
+    engine.advanceTick(TARGET);
+    expect(engine.didLastTickDiscardWalkTarget()).toBe(true);
+    expect(player(engine).activePrayer).toBe(PrayerType.ProtectMagic);
+    expect(player(engine).position).toEqual(walking);
+    expect(discardingTicks(engine, 5)).toEqual([4]);
+    expect(player(engine).position).not.toEqual(walking);
+  });
+
+  it('keeps the step a post-movement lock comes after, and locks the ticks that follow', () => {
+    const { engine, encounter } = makeScriptedEngine();
+    encounter.locks.push({ tick: 2, phase: 'postTick', unlockTick: 4 });
+    engine.advanceTick(TARGET);
+    const before = engine.getState().playerPosition;
+
+    engine.advanceTick(TARGET);
+    const stepped = engine.getState().playerPosition;
+    expect(stepped).not.toEqual(before);
+    expect(engine.getLastTickEvents().some((event) => event.type === 'movement')).toBe(true);
+    expect(engine.didLastTickDiscardWalkTarget()).toBe(true);
+
+    expect(discardingTicks(engine, 3)).toEqual([3]);
+    expect(player(engine).position).toEqual(stepped);
+    expect(discardingTicks(engine, 4)).toEqual([]);
+    expect(player(engine).position).not.toEqual(stepped);
+  });
+
+  it('locks from the hit that lands, stopping that tick’s step', () => {
+    const { engine, encounter } = makeScriptedEngine();
+    encounter.locks.push({ tick: 3, phase: 'damage', unlockTick: 5 });
+    expect(discardingTicks(engine, 2)).toEqual([]);
+    const walking = engine.getState().playerPosition;
+    enqueueEnginePendingHit(engine, {
+      sourceId: YAMA_TARGET_ID,
+      targetId: 'player',
+      style: 'typeless',
+      attackKind: 'typeless',
+      launchTick: 2,
+      impactTick: 3,
+      rolledDamage: 1,
+      accuracySucceeded: true,
+    });
+
+    engine.advanceTick(TARGET);
+    expect(engine.getLastTickEvents().some((event) => event.type === 'hitsplat_spawned')).toBe(true);
+    expect(engine.didLastTickDiscardWalkTarget()).toBe(true);
+    expect(player(engine).position).toEqual(walking);
+    expect(discardingTicks(engine, 5)).toEqual([4]);
+    expect(player(engine).position).not.toEqual(walking);
   });
 });

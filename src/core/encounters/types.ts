@@ -30,6 +30,13 @@ export interface EncounterEngineContext {
   world: Readonly<WorldState>;
 }
 
+/**
+ * The context of the per-tick hooks that may lock the player's actions
+ * ({@link EncounterEngineRules.onTickStart}, {@link EncounterEngineRules.onPlayerDamageTaken}).
+ * Rule queries and damage calculations get the plain {@link EncounterEngineContext}.
+ */
+export type EncounterPlayerLockContext = EncounterEngineContext & Pick<EncounterContext, 'lockPlayerActionsUntil'>;
+
 export interface EncounterPrayerDrainParams {
   totalDrainEffect: number;
   drainResistance: number;
@@ -135,22 +142,18 @@ export interface EncounterEngineRules {
   /**
    * Called at the start of each tick, BEFORE player movement and `tickRunEnergy()`.
    * Mutations (e.g. runEnergyDelta) are applied immediately; later hooks see the updated state.
-   * A returned fail condition stops the tick entirely (no further processing).
+   * A returned fail condition stops the tick entirely (no further processing). Runs after
+   * encounter commands and before this tick's input band, so a `ctx.lockPlayerActionsUntil` here
+   * already drops this tick's inputs.
    */
-  onTickStart?(ctx: EncounterEngineContext): HookResult;
+  onTickStart?(ctx: EncounterPlayerLockContext): HookResult;
   /**
    * Called after damage is applied to the player (combat or environmental).
    * Runs AFTER `onTickStart` but BEFORE `tickRunEnergy()` in the same tick.
    * Mutations are applied immediately. A returned fail condition always applies
    * (not gated by infiniteHealth — contract failures are independent of HP immortality).
    */
-  onPlayerDamageTaken?(info: EncounterPlayerDamageInfo, ctx: EncounterEngineContext): HookResult;
-  /**
-   * While true for a tick, the player is busy (a scripted cutscene): that tick's queued inputs are
-   * dropped, the attack target is cleared and the player does not walk. Timers, pending hits and
-   * every NPC keep running. Read once at the start of each tick, after encounter commands.
-   */
-  playerInputLocked?: EncounterDynamic<boolean>;
+  onPlayerDamageTaken?(info: EncounterPlayerDamageInfo, ctx: EncounterPlayerLockContext): HookResult;
 }
 
 /** Clickable equipment-panel slots, including ammunition stored outside PlayerEquipment. */
@@ -239,12 +242,36 @@ export interface EncounterContext {
   /** Refuse protection-prayer activation before `untilTick` (exclusive); never shortens a lockout. */
   disableProtectionPrayersUntil?: (untilTick: number) => void;
   /**
-   * Place the player on `position`, facing `facing` (OSRS angle), as a scripted teleport: the walk
-   * in progress ends and the renderer snaps rather than slides. Timers, prayers, the inventory and
-   * pending hits are untouched. Call it before the player band (an NPC-band hook) so this tick's
-   * player turn starts from the new tile.
+   * Place the player on `position`, facing `facing` (OSRS angle), as a scripted teleport. Like the
+   * game's forced-move primitive (RSMod `PathingEntityCommon.telemove` aborts the route and clears
+   * the interaction), it ends the queued walk and the interaction: the player takes no step toward
+   * this tick's walk target and `didLastTickDiscardWalkTarget` reports it, so the caller drops it;
+   * a fresh click next tick walks again. The renderer snaps rather than slides. Inputs already
+   * processed this tick, timers, prayers, the inventory and pending hits are untouched, and it
+   * does not lock the player's actions. Call it before the player band (an NPC-band hook) so this
+   * tick's player turn starts from the new tile.
    */
-  teleportPlayer?: (position: Coordinate, facing: number) => void;
+  teleportPlayer: (position: Coordinate, facing: number) => void;
+  /**
+   * Lock the player's actions until `unlockTick`, the first tick that accepts input again (absolute,
+   * as {@link disableProtectionPrayersUntil}). Throws a RangeError unless it is a safe integer; one
+   * at or before the current tick has already expired and does nothing. Otherwise the single lock
+   * deadline extends (never shortens) and the interaction ends at once: the attack intent and any
+   * pending pickup are cancelled and this tick's walk target is discarded
+   * (`didLastTickDiscardWalkTarget`). Called at tick T, it means:
+   *
+   * - before input (`onTickStart`): T's queued inputs are dropped and the player takes no step;
+   * - after input, before movement (an NPC-band hook, a hit landing): what the input already did
+   *   (a prayer, a gear swap) stays, and the player takes no step;
+   * - after movement (`processPostTick`): the step, its run energy and an attack already launched
+   *   stand; only the walk target is reported discarded.
+   *
+   * Every later tick before `unlockTick` drops its queued inputs and takes no step. Timers, pending
+   * hits and every NPC keep running. This is an action lock, stricter than the game's `p_delay`,
+   * which only rejects NEW move clicks (RSMod `MoveGameClickHandler`, LostCityRS Engine-TS
+   * `MoveClickHandler`) and lets a route accepted earlier continue; this also ends a walk in progress.
+   */
+  lockPlayerActionsUntil: (unlockTick: number) => void;
 }
 
 /**
