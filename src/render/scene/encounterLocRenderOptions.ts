@@ -4,14 +4,15 @@ import type { EncounterRenderConfig } from './encounterRenderConfig';
 
 /**
  * Expands loc-render bounds across every loaded map square so rendering and
- * viewport interaction agree on which scenery exists.
+ * viewport interaction agree on which scenery exists. A scene of the origin
+ * square alone keeps the encounter's own filter, or the default arena clip.
  */
 export function resolveEncounterLocRenderOptions(
   config: EncounterRenderConfig | undefined,
 ): LocRenderOptions | undefined {
   const options = config?.locRender;
   const offsets = config?.mapSquareOffsets;
-  if (!offsets) return options;
+  if (!offsets || offsets.length <= 1) return options;
   const minX = Math.min(...offsets.map(({ dx }) => dx)) * MAP_SQUARE_SIZE;
   const maxX = (Math.max(...offsets.map(({ dx }) => dx)) + 1) * MAP_SQUARE_SIZE - 1;
   const minY = Math.min(...offsets.map(({ dy }) => dy)) * MAP_SQUARE_SIZE;

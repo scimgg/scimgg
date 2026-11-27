@@ -117,6 +117,31 @@ describe('RuneLite markers across several map squares', () => {
     expect(importRuneLiteMarkers(json, TWO_SQUARE_KIND)).toEqual([{ x: 10, y: 66, color: '#5D98AB', opacity: 1 }]);
   });
 
+  it('skips pasted entries it cannot place, before any reaches the next square, and keeps the rest', () => {
+    useTwoSquareDescriptor();
+    const json = JSON.stringify([
+      { regionId: 9007, regionX: 3, regionY: 4, z: 0, color: '#FF5D98AB', label: 'south' },
+      null,
+      7,
+      'marker',
+      [9007, 3, 4],
+      // Past the origin region's north edge: not the north square's (3, 0).
+      { regionId: 9007, regionX: 3, regionY: 64, z: 0 },
+      { regionId: 9007, regionX: -1, regionY: 4, z: 0 },
+      { regionId: 9007, regionX: 3.5, regionY: 4, z: 0 },
+      { regionId: 9007, regionX: '3', regionY: 4, z: 0 },
+      { regionId: 9007, regionY: 4, z: 0 },
+      { regionId: '9007', regionX: 3, regionY: 4, z: 0 },
+      { regionId: null, regionX: 3, regionY: 4, z: 0 },
+      { regionId: 9008, regionX: 63, regionY: 63, z: 0, color: '#FF5D98AB', label: 'north' },
+    ]);
+
+    expect(importRuneLiteMarkers(json, TWO_SQUARE_KIND)).toEqual([
+      { x: 3, y: 4, color: '#5D98AB', opacity: 1, label: 'south' },
+      { x: 63, y: 127, color: '#5D98AB', opacity: 1, label: 'north' },
+    ]);
+  });
+
   it("keeps the Inferno's interchange to its origin region: its neighbors are scenery only", () => {
     const infernoRegion = (35 << 8) | 83;
     const json = JSON.stringify([

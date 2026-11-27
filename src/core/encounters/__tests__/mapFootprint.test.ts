@@ -19,11 +19,6 @@ describe('resolveEncounterMapFootprint', () => {
         { dx: -1, dy: 0, sceneryOnly: true },
       ],
     });
-    expect(footprint.sceneBlock).toEqual([
-      { dx: 0, dy: 0, tileOffsetX: 0, tileOffsetY: 0 },
-      { dx: 0, dy: 1, tileOffsetX: 0, tileOffsetY: 64 },
-      { dx: -1, dy: 0, tileOffsetX: -64, tileOffsetY: 0 },
-    ]);
     // The scene offsets carry no role, so the terrain, loc and bake callers see plain squares.
     expect(footprint.sceneOffsets).toEqual([
       { dx: 0, dy: 0 },
@@ -33,6 +28,10 @@ describe('resolveEncounterMapFootprint', () => {
     expect(footprint.arenaOffsets).toEqual([
       { dx: 0, dy: 0 },
       { dx: 0, dy: 1 },
+    ]);
+    expect(footprint.arenaBlock).toEqual([
+      { dx: 0, dy: 0, tileOffsetX: 0, tileOffsetY: 0 },
+      { dx: 0, dy: 1, tileOffsetX: 0, tileOffsetY: 64 },
     ]);
     expect(footprint.arenaTileExtent).toEqual({ width: 64, height: 128 });
   });
@@ -89,7 +88,7 @@ describe('resolveEncounterMapFootprint', () => {
       { dx: 1, dy: 1 },
     ]);
     expect(footprint.arenaTileExtent).toEqual({ width: 128, height: 128 });
-    expect(footprint.sceneBlock).toHaveLength(5);
+    expect(footprint.sceneOffsets).toHaveLength(5);
   });
 
   it('resolves once per descriptor, so consumers share the blocks by identity', () => {

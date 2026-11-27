@@ -590,7 +590,7 @@ describe('Minimap terrain across map squares', () => {
     capturePaints();
     const footprint = getEncounterMapFootprint('inferno');
     if (!footprint) throw new Error('no Inferno footprint');
-    expect(footprint.sceneBlock).toHaveLength(5);
+    expect(footprint.sceneOffsets).toHaveLength(5);
     const loadMapSquare = vi.fn(async (mapX: number, mapY: number) => uniformMapSquare(mapX, mapY, 1));
     const { canvas } = renderTerrain(loadMapSquare, footprint.origin, footprint.arenaBlock);
 

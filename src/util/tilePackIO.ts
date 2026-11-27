@@ -1,10 +1,13 @@
 /**
  * RuneLite marker coordinates are region-local: `regionId` is a map square (`x << 8 | y`) and
  * `regionX`/`regionY` the tile within it (0-63). Simulation (0, 0) is the south-west tile of the
- * encounter's origin square, so a marker in an arena square `(dx, dy)` from the origin sits at
- * simulation `(dx * 64 + regionX, dy * 64 + regionY)`. Only the encounter footprint's arena
- * squares are interchanged. RuneLite colors use alpha-first `#AARRGGBB`; local markers use
- * `#RRGGBB` and separate opacity.
+ * encounter's origin square, so a marker in the square `(dx, dy)` from the origin sits at
+ * simulation `(dx * 64 + regionX, dy * 64 + regionY)`.
+ *
+ * Import keeps only points in the encounter footprint's arena squares. Export writes every marker,
+ * in the region that holds its tile, so a marker outside the arena (in a scenery-only square or
+ * beyond the footprint) is exported but not imported back. RuneLite colors use alpha-first
+ * `#AARRGGBB`; local markers use `#RRGGBB` and separate opacity.
  */
 
 import { type EncounterMapFootprint, resolveEncounterMapFootprint } from '../core/encounters/mapFootprint';
@@ -58,6 +61,20 @@ function regionIdOf(mapX: number, mapY: number): number {
   return (mapX << 8) | mapY;
 }
 
+const isRegionTile = (value: unknown): value is number =>
+  Number.isInteger(value) && (value as number) >= 0 && (value as number) < MAP_SQUARE_SIZE;
+
+/**
+ * Whether a pasted entry can be placed: an object with a numeric region and a whole tile (0-63)
+ * inside it. Checked before the region's offset is added, so a tile past the region's edge cannot
+ * land in the neighboring square.
+ */
+function isPlaceablePoint(point: unknown): point is RuneLiteGroundMarkerPoint {
+  if (typeof point !== 'object' || point === null) return false;
+  const { regionId, regionX, regionY } = point as Record<string, unknown>;
+  return typeof regionId === 'number' && Number.isFinite(regionId) && isRegionTile(regionX) && isRegionTile(regionY);
+}
+
 export function importRuneLiteMarkers(jsonString: string, encounterKind: string): TileMarker[] | null {
   const footprint = getEncounterFootprint(encounterKind);
   if (footprint === null) return null;
@@ -70,7 +87,7 @@ export function importRuneLiteMarkers(jsonString: string, encounterKind: string)
     ]),
   );
 
-  let parsed: RuneLiteGroundMarkerPoint[];
+  let parsed: unknown;
   try {
     parsed = JSON.parse(jsonString);
     if (!Array.isArray(parsed)) return null;
@@ -80,6 +97,7 @@ export function importRuneLiteMarkers(jsonString: string, encounterKind: string)
 
   const markers: Partial<TileMarker>[] = [];
   for (const point of parsed) {
+    if (!isPlaceablePoint(point)) continue;
     const region = arenaRegions.get(Math.round(point.regionId));
     if (!region) continue;
 
@@ -91,16 +109,15 @@ export function importRuneLiteMarkers(jsonString: string, encounterKind: string)
         : { color: DEFAULT_MARKER_COLOR, opacity: DEFAULT_MARKER_OPACITY };
 
     markers.push({
-      x: region.tileOffsetX + Math.round(point.regionX),
-      y: region.tileOffsetY + Math.round(point.regionY),
+      x: region.tileOffsetX + point.regionX,
+      y: region.tileOffsetY + point.regionY,
       color,
       opacity,
       ...(typeof point.label === 'string' ? { label: point.label } : {}),
     });
   }
 
-  // Through the same gate as stored markers: a pasted point with a missing or
-  // non-numeric coordinate becomes NaN above, which no renderer and no recording accepts.
+  // Through the same gate as stored markers: the replay format's coordinate range, one marker per tile.
   return normalizeMarkerArray(markers);
 }
 

@@ -1,12 +1,11 @@
-import { resolveEncounterMapFootprint } from '../../core/encounters/mapFootprint';
 import { encounterPresentationModuleForKind } from '../../encounters/presentationModules';
-import { encounterRegistry } from '../../encounters/registry';
 import type { MapSquareOffsets } from '../../rs/map/mapSquareBlock';
 import type { Coordinate, SimulationState } from '../../types/simulation';
 import type { LocRenderOptions } from '../environment/locRenderOptions';
 import type { SceneObjectLocData } from '../graphics/SceneObjectRenderer';
 import type { SceneObjectController } from '../graphics/sceneObjectTypes';
 import type { AnimPlayMode } from '../npc/animationTypes';
+import { withDescriptorMapBlock } from './encounterMapBlock';
 
 export interface NpcRenderConfig {
   actorId: string;
@@ -111,18 +110,6 @@ export type AuthoredEncounterRenderConfig = Omit<
   EncounterRenderConfig,
   'terrainMapSquare' | 'mapSquareOffsets' | 'arenaMapSquareOffsets'
 >;
-
-function withDescriptorMapBlock(config: AuthoredEncounterRenderConfig, encounterKind: string): EncounterRenderConfig {
-  const descriptor = encounterRegistry.getDescriptorForKind(encounterKind);
-  if (!descriptor) return config;
-  const footprint = resolveEncounterMapFootprint(descriptor);
-  return {
-    ...config,
-    terrainMapSquare: footprint.origin,
-    mapSquareOffsets: footprint.sceneOffsets,
-    arenaMapSquareOffsets: footprint.arenaOffsets,
-  };
-}
 
 /**
  * Render config per encounter kind, taken from the presentation manifest and merged with the

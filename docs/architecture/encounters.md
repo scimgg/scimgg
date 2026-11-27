@@ -126,7 +126,9 @@ south-west tile is simulation (0, 0), and a tile with y ≥ 64 is simply in the 
 (coordinates are translated by whole squares, never flipped). `mapSquareOffsets` lists every square
 the encounter loads, relative to the origin; omitted, it is the origin alone. Each offset is an
 arena square unless it is marked `sceneryOnly: true`. A presentation module never declares map
-squares: `getEncounterRenderConfig` copies the origin and blocks from the descriptor.
+squares: `withDescriptorMapBlock` ([`encounterMapBlock.ts`](../../src/render/scene/encounterMapBlock.ts))
+copies the origin and squares from the descriptor, for `getEncounterRenderConfig` and for a scene
+builder made without a render config.
 
 **The origin is the arena's south-west square.** Every arena offset has `dx >= 0` and `dy >= 0`,
 and some arena square sits in the origin's column and some in its row, so the arena's tiles all
@@ -137,12 +139,17 @@ every consumer, so `resolveEncounterMapFootprint` rejects one ("choose the arena
 square as mapSquare") and the registry test checks every descriptor.
 
 [`resolveEncounterMapFootprint`](../../src/core/encounters/mapFootprint.ts) resolves a descriptor once
-(the result keeps its identity) into two blocks of [`mapSquareBlock.ts`](../../src/rs/map/mapSquareBlock.ts)
-entries:
+(the result keeps its identity) into the scene's squares and the arena's block of
+[`mapSquareBlock.ts`](../../src/rs/map/mapSquareBlock.ts) entries:
 
-- **Scene block**, every declared square: the terrain mesh and locs (render config
-  `mapSquareOffsets`), `loadMapLocs`, the cache trim ([`cacheRoots.ts`](../../scripts/cacheRoots.ts))
-  and the collision bake (`CacheManager.buildArenaConfig`).
+- **Scene squares** (`sceneOffsets`), every declared square: the terrain mesh and locs (render
+  config `mapSquareOffsets`), `loadMapLocs`, the cache trim ([`cacheRoots.ts`](../../scripts/cacheRoots.ts))
+  and the collision bake (`CacheManager.buildArenaConfig`). A scene of several squares widens the
+  loc filter's bounds to all of them; the origin alone keeps the encounter's own filter, or the
+  default arena clip. The bake writes every square's static collision, and the descriptor's
+  `dynamicLocs` (origin-local, so they may reach a neighbor), into one block map before it reads
+  any walkable tile, so a loc on a seam blocks on both sides: a large object's far tiles, a wall's
+  reciprocal flag.
 - **Arena block**, the squares not marked scenery only, with their rectangle from tile (0, 0),
   `arenaTileExtent` (width and height in tiles). Grid resolves it for the displayed kind through `getEncounterMapFootprint`
   (variant kinds through their parent descriptor). It covers:
@@ -161,10 +168,12 @@ entries:
     tile (0, 0), each vertex taken from the square it is the south-west corner of. A lone origin
     square keeps its own grid;
   - RuneLite ground-marker interchange ([`tilePackIO.ts`](../../src/util/tilePackIO.ts)). Import
-    accepts regions of arena squares and adds the square's tile offset to the local coordinates;
-    export writes region `floor(sim / 64)` from the origin on each axis, and local
-    `sim - 64 * floor(sim / 64)` (0-63, even for a marker south or west of the arena). For a 1x2 arena at
-    35_47, sim (28, 64) is region 9008, local (28, 0). Native marker packs and replay markers
+    skips an entry that is not an object with a numeric region and a whole local tile (0-63), keeps
+    regions of arena squares, and adds the square's tile offset to the local coordinates. Export
+    writes every marker, in region `floor(sim / 64)` from the origin on each axis, and local
+    `sim - 64 * floor(sim / 64)` (0-63, even for a marker south or west of the arena); a marker
+    outside the arena is exported but does not import back. For a 1x2 arena at 35_47, sim (28, 64)
+    is region 9008, local (28, 0). Native marker packs and replay markers
     already hold simulation coordinates and are not rewritten.
 
 Movement does not read the footprint: the baked walkable region and collision (`ArenaConfig`)
@@ -179,8 +188,6 @@ is all in 35_83, so its four neighbors are scenery only.
 Known limits:
 
 - Yama's `FireballController` clips explosion tiles to the origin square.
-- The collision bake adds the descriptor's packet-spawned `dynamicLocs` (`extraLocs`) in the origin
-  square only.
 - The Debug view accepts a click anywhere in the arena rectangle; a hole in a sparse layout is left
   to walkability.
 - Scenery-only squares are outside the actor height grid, so an encounter scene object placed there

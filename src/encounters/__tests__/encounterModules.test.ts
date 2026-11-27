@@ -217,12 +217,12 @@ describe('encounter registration invariants', () => {
     const footprint = resolveEncounterMapFootprint(descriptor);
     expect(footprint.origin).toEqual({ x: 35, y: 83 });
     // Terrain, locs, the cache trim and the bake still read all five squares.
-    expect(footprint.sceneBlock.map(({ dx, dy }) => [dx, dy])).toEqual([
-      [0, 0],
-      [0, 1],
-      [1, 0],
-      [0, -1],
-      [-1, 0],
+    expect(footprint.sceneOffsets).toEqual([
+      { dx: 0, dy: 0 },
+      { dx: 0, dy: 1 },
+      { dx: 1, dy: 0 },
+      { dx: 0, dy: -1 },
+      { dx: -1, dy: 0 },
     ]);
     expect(footprint.arenaOffsets).toEqual([{ dx: 0, dy: 0 }]);
     expect(footprint.arenaTileExtent).toEqual({ width: 64, height: 64 });

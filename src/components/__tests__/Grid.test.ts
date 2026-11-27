@@ -1,5 +1,7 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { LocWithType } from '../../cache/CacheManager';
+import { setArenaConfig } from '../../core/constants';
+import { SOL_HEREDIT_RENDER_CONFIG } from '../../encounters/solHeredit/renderConfig';
 import { resolveEffectiveLocs } from '../../render/environment/locRenderFilter';
 import { resolveEncounterLocRenderOptions } from '../../render/scene/encounterLocRenderOptions';
 import { getEncounterRenderConfig } from '../../render/scene/encounterRenderConfig';
@@ -131,5 +133,31 @@ describe('interaction scenery — encounter render exclusions', () => {
     const otherWall = makeLoc(20, 54, 30324, makeLocType({ name: 'Prison wall', sizeY: 3 }));
     const resolved = zukInteractionLocs([sourceWall, otherWall]);
     expect(resolved.map((entry) => [entry.location.localX, entry.location.localY])).toEqual([[20, 54]]);
+  });
+});
+
+describe('interaction scenery — single-square encounters keep their own loc filter', () => {
+  afterEach(() => setArenaConfig({ bounds: null, walkableTiles: null, collisionMap: null }, true));
+
+  it("clips Yama's scenery to its arena plus the default margin, not the whole map square", () => {
+    // Yama declares no loc filter, so the default clip follows the installed arena (its baked bounds).
+    setArenaConfig({
+      bounds: { minX: 17, maxX: 44, minY: 1, maxY: 40, width: 28, height: 40 },
+      walkableTiles: null,
+      collisionMap: null,
+    });
+    const options = resolveEncounterLocRenderOptions(getEncounterRenderConfig('yama_p3'));
+    expect(options).toBeUndefined();
+    const nearArena = makeLoc(47, 20, 1, makeLocType({ name: 'Near' }));
+    const beyondMargin = makeLoc(55, 20, 2, makeLocType({ name: 'Beyond' }));
+    const northOfMargin = makeLoc(30, 50, 3, makeLocType({ name: 'North' }));
+    const resolved = resolveEffectiveLocs([nearArena, beyondMargin, northOfMargin], options, makeLocLoader());
+    expect(resolved.map((entry) => entry.location.id)).toEqual([1]);
+  });
+
+  it("keeps Sol Heredit's authored full-square filter as it is", () => {
+    expect(resolveEncounterLocRenderOptions(getEncounterRenderConfig('sol_heredit'))).toBe(
+      SOL_HEREDIT_RENDER_CONFIG.locRender,
+    );
   });
 });

@@ -43,7 +43,6 @@ export interface EncounterMapFootprintSource {
 export interface EncounterMapFootprint {
   readonly origin: { readonly x: number; readonly y: number };
   readonly sceneOffsets: MapSquareOffsets;
-  readonly sceneBlock: readonly MapSquareBlockEntry[];
   readonly arenaOffsets: MapSquareOffsets;
   readonly arenaBlock: readonly MapSquareBlockEntry[];
   /** The arena block's tile rectangle from tile (0, 0), for projection extents. Holes in it are not arena. */
@@ -90,7 +89,6 @@ export function resolveEncounterMapFootprint(descriptor: EncounterMapFootprintSo
   const footprint: EncounterMapFootprint = {
     origin: descriptor.mapSquare,
     sceneOffsets,
-    sceneBlock: getMapSquareBlock(sceneOffsets),
     arenaOffsets,
     arenaBlock,
     arenaTileExtent: getArenaTileExtent(arenaBlock),

@@ -11,6 +11,7 @@ import type { AnimationSystem } from '../core/animation';
 import type { Projection2D, Viewport } from '../core/camera';
 import type { RenderQueue } from '../core/commands';
 import type { ImmutableMeshSource } from '../core/meshSource';
+import { withDescriptorMapBlock } from './encounterMapBlock';
 import type { EncounterRenderConfig } from './encounterRenderConfig';
 import type { RenderContext, SceneBuilder, TextureIndexMapper } from './types';
 import { YamaSceneCompositor } from './YamaSceneCompositor';
@@ -27,7 +28,9 @@ export class YamaSceneBuilder implements SceneBuilder {
     cacheManager?: CacheManager;
   }) {
     this.compositor = new YamaSceneCompositor();
-    this.compositor.setEncounterRenderConfig(options?.encounterRenderConfig ?? YAMA_ENCOUNTER_RENDER_CONFIG);
+    this.compositor.setEncounterRenderConfig(
+      options?.encounterRenderConfig ?? withDescriptorMapBlock(YAMA_ENCOUNTER_RENDER_CONFIG, 'yama_p3'),
+    );
     this.compositor.setEventAudioPlayer(options?.eventAudioPlayer ?? null);
     this.compositor.setFrameSoundTracker(options?.frameSoundTracker ?? null);
     this.compositor.setGroundItemLoaderSource(options?.cacheManager ?? null);
