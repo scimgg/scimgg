@@ -125,6 +125,7 @@ export const VENDORED_NOTICES: readonly VendoredNotice[] = [
       'src/core/npcCombatMovement.ts — default hostile NPC pursuit and footprint contact destination',
       'src/core/npcOccupancy.ts — leading-edge actor collision for default pursuit',
       'src/core/combat/npcAttackRequest.ts — shared NPC approach reach and reverse line of sight',
+      'src/core/SimulationEngine.ts — independently implemented player teleport and action-lock semantics',
     ],
     text: `Copyright (c) 2025 RS Mod
 

@@ -256,9 +256,8 @@ player path:
   move clicks while delayed and lets an existing route continue, whereas this also ends a walk
   in progress.
 - `teleportPlayer(position, facing)` is a scripted placement and facing, called from an NPC-band
-  hook. Like the game's forced move (RSMod `PathingEntityCommon.telemove`), it ends the queued
-  walk and the interaction, but it neither locks the player's actions nor undoes inputs already
-  processed that tick.
+  hook. Like the game's forced move, it ends the queued walk and the interaction, but it neither
+  locks the player's actions nor undoes inputs already processed that tick.
 
 Either one makes `didLastTickDiscardWalkTarget()` true for the tick, and every caller that
 carries a walk target into the next tick drops it: the live loop, a manual step, the tutorial

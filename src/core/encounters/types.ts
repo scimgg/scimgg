@@ -270,8 +270,8 @@ export interface EncounterContext {
    *
    * Every later tick before `unlockTick` drops its queued inputs and takes no step. Timers, pending
    * hits and every NPC keep running. This is an action lock, stricter than the game's `p_delay`,
-   * which only rejects NEW move clicks (RSMod `MoveGameClickHandler`, LostCityRS Engine-TS
-   * `MoveClickHandler`) and lets a route accepted earlier continue; this also ends a walk in progress.
+   * which only rejects NEW move clicks (RSMod `MoveGameClickHandler`) and lets a route accepted
+   * earlier continue; this also ends a walk in progress.
    */
   lockPlayerActionsUntil: (unlockTick: number) => void;
 }
