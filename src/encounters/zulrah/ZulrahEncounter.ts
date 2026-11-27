@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import { type NpcActor, submergeNpc } from '../../core/actors/NpcActor';
 import type { ArenaConfig } from '../../core/arena/ArenaConfig';
 import { ACTIVE_ENCOUNTER_OUTCOME, type EncounterOutcome } from '../../core/encounters/outcome';
@@ -91,6 +92,9 @@ type PhaseRuntime = {
   stageEndTick: number | null;
   hp: number;
 };
+
+/** A replay's seed record: exactly the 32-bit encounter seed, as `getSeeds` writes it. */
+const seedsSchema = z.object({ encounterSeed: z.number().int().min(0).max(0xffffffff) }).strict();
 
 /** Keep the rotation and cloud-site draws on their own streams, apart from the attack rolls. */
 const ROTATION_STREAM_SALT = 0x5a55_4c52;
@@ -221,12 +225,11 @@ export class ZulrahEncounter implements Encounter {
     });
   }
 
+  /** Restores exactly the seeds given (a replay), throwing on a malformed record; none, a fresh fight. */
   reset(seeds?: Record<string, unknown>): void {
-    const seed = seeds?.encounterSeed;
-    this.encounterSeed =
-      typeof seed === 'number' && Number.isInteger(seed) && seed >= 0 && seed <= 0xffffffff
-        ? seed
-        : Math.floor(Math.random() * 0x100000000);
+    this.encounterSeed = seedsSchema.parse(
+      seeds ?? { encounterSeed: Math.floor(Math.random() * 0x100000000) },
+    ).encounterSeed;
     this.random = mulberry32(this.encounterSeed);
     this.rotationRandom = mulberry32(this.encounterSeed ^ ROTATION_STREAM_SALT);
     this.cloudRandom = mulberry32(this.encounterSeed ^ CLOUD_STREAM_SALT);

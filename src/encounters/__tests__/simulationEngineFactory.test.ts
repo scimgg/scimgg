@@ -261,6 +261,24 @@ describe('unified encounter setup', () => {
     expect(isWalkableTile(29, 36)).toBe(false);
   });
 
+  it.each([
+    {},
+    { encounterSeed: 'x' },
+    { encounterSeed: -1 },
+    { encounterSeed: 7, extra: 1 },
+  ])('cannot rebuild a recorded Zulrah run whose seed record is malformed %j', (seeds) => {
+    const recorded = newRun({
+      encounterConfig: { kind: 'zulrah', mechanics: { infiniteHealth: true } },
+    }).getRunConfig();
+    expect(recorded.encounter.seeds).toEqual({ encounterSeed: expect.any(Number) });
+    expect(createSimulationEngineFromRunConfig(recorded, null)?.getRunConfig().encounter.seeds).toEqual(
+      recorded.encounter.seeds,
+    );
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    expect(createSimulationEngineFromRunConfig({ ...recorded, encounter: { kind: 'zulrah', seeds } }, null)).toBeNull();
+  });
+
   it('refuses a recorded Zuk run whose bootstrap carries unsupported constructor options', () => {
     const source = newRun().getRunConfig();
     if (!source.bootstrap) throw new TypeError('Expected a recorded bootstrap');

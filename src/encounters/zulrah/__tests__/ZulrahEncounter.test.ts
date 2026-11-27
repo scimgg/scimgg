@@ -1,4 +1,4 @@
-import { afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import {
   canInitiateAttackOnNpc,
   canShowNpcHealthBar,
@@ -373,11 +373,59 @@ describe('ZulrahEncounter', () => {
     expect(styles(42)).toEqual(a);
   });
 
-  it('reports its seed and rebuilds from it', () => {
-    const encounter = new ZulrahEncounter(7);
-    expect(encounter.getSeeds()).toEqual({ encounterSeed: 7 });
-    encounter.reset({ encounterSeed: 9 });
-    expect(encounter.getSeeds()).toEqual({ encounterSeed: 9 });
+  describe('seeds', () => {
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    it('reports its seed and rebuilds from it', () => {
+      const encounter = new ZulrahEncounter(7);
+      expect(encounter.getSeeds()).toEqual({ encounterSeed: 7 });
+      encounter.reset({ encounterSeed: 9 });
+      expect(encounter.getSeeds()).toEqual({ encounterSeed: 9 });
+    });
+
+    it.each([
+      {},
+      { encounterSeed: 'x' },
+      { encounterSeed: null },
+      { encounterSeed: -1 },
+      { encounterSeed: 0x100000000 },
+      { encounterSeed: 1.5 },
+      { encounterSeed: Number.NaN },
+      { encounterSeed: 7, extra: 1 },
+    ])('refuses the malformed seed record %j rather than drawing a new fight', (seeds) => {
+      const encounter = new ZulrahEncounter(7);
+      expect(() => encounter.reset(seeds)).toThrow();
+    });
+
+    it('accepts seed 0 and rebuilds the same fight from it', () => {
+      const styles = (constructed: number) => {
+        const encounter = new ZulrahEncounter(constructed);
+        encounter.reset({ encounterSeed: 0 });
+        expect(encounter.getSeeds()).toEqual({ encounterSeed: 0 });
+        const engine = new SimulationEngine({ encounter, startPos: [...ZULRAH_PLAYER_START] as Coordinate });
+        engine.setMechanicsConfig({ infiniteHealth: true, zulrahRotation: 'random' });
+        const world = engine['worldState'] as WorldState;
+        const picked: string[] = [];
+        for (let i = 0; i < 300; i++) {
+          engine.advanceTick([...ZULRAH_PLAYER_START] as Coordinate);
+          const zulrah = world.getNpcs().find((npc) => zulrahDefinition.isActor(npc));
+          if (zulrah?.combat.lastAttackTick === world.tick) picked.push(`${world.tick}:${zulrah.combat.attackStyle}`);
+        }
+        return picked;
+      };
+      const first = styles(5);
+      expect(first.length).toBeGreaterThan(5);
+      expect(styles(99)).toEqual(first);
+    });
+
+    it('draws a fresh seed when reset without one', () => {
+      vi.spyOn(Math, 'random').mockReturnValue(0.25);
+      const encounter = new ZulrahEncounter(7);
+      encounter.reset();
+      expect(encounter.getSeeds()).toEqual({ encounterSeed: 0x40000000 });
+    });
   });
 });
 
