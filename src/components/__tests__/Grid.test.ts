@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { LocWithType } from '../../cache/CacheManager';
-import { INFERNO_RENDER_CONFIG } from '../../encounters/inferno/renderConfig';
 import { resolveEffectiveLocs } from '../../render/environment/locRenderFilter';
 import { resolveEncounterLocRenderOptions } from '../../render/scene/encounterLocRenderOptions';
+import { getEncounterRenderConfig } from '../../render/scene/encounterRenderConfig';
 import type { LocModelLoader } from '../../rs/config/loctype/LocModelLoader';
 import { LocModelType } from '../../rs/config/loctype/LocModelType';
 import type { LocType } from '../../rs/config/loctype/LocType';
@@ -14,7 +14,7 @@ import {
   rayFindInteractiveLocWithCoord,
 } from '../ContextMenu';
 import { getSceneBuilderLifecycleKey } from '../Grid';
-import { getMinimapMapSquare } from '../gridEncounterMapSquare';
+import { getEncounterMapFootprint } from '../gridEncounterMapSquare';
 
 describe('getSceneBuilderLifecycleKey', () => {
   it('changes for same-encounter reloads', () => {
@@ -26,17 +26,21 @@ describe('getSceneBuilderLifecycleKey', () => {
   });
 });
 
-describe('getMinimapMapSquare', () => {
+describe('getEncounterMapFootprint', () => {
   it("returns the base encounter's own map square", () => {
-    expect(getMinimapMapSquare('yama_p3')).toEqual({ x: 23, y: 157 });
+    expect(getEncounterMapFootprint('yama_p3')?.origin).toEqual({ x: 23, y: 157 });
   });
 
-  it('resolves variant kinds through their parent descriptor', () => {
-    expect(getMinimapMapSquare('yama_p3_divine')).toEqual({ x: 23, y: 157 });
+  it('resolves variant kinds through their parent descriptor, to the same footprint', () => {
+    expect(getEncounterMapFootprint('yama_p3_divine')).toBe(getEncounterMapFootprint('yama_p3'));
+  });
+
+  it('is undefined for a kind with no descriptor', () => {
+    expect(getEncounterMapFootprint('not_an_encounter')).toBeUndefined();
   });
 });
 
-// Zuk's static Ancestral Glyph: INFERNO_RENDER_CONFIG excludes it from the rendered scene
+// Zuk's static Ancestral Glyph: the Inferno render config excludes it from the rendered scene
 // because the wave respawns it as a moving NPC, so hover, left click and the right-click
 // menu must not offer it either. Fixture geometry mirrors the real Inferno cache locs.
 const ZUK_GLYPH_LOC_ID = 30338;
@@ -67,7 +71,7 @@ function downRay(x: number, y: number): Ray3D {
 
 /** The exact composition Grid's `interactionLocs` memo feeds to hover/click/menu. */
 function zukInteractionLocs(locs: ReadonlyArray<LocWithType>, loader = makeLocLoader()): LocWithType[] {
-  return resolveEffectiveLocs(locs, resolveEncounterLocRenderOptions(INFERNO_RENDER_CONFIG), loader);
+  return resolveEffectiveLocs(locs, resolveEncounterLocRenderOptions(getEncounterRenderConfig('inferno')), loader);
 }
 
 function menuEntries(locs: ReadonlyArray<LocWithType>, ray: Ray3D, tile: Coordinate) {
@@ -86,7 +90,7 @@ describe('interaction scenery — encounter render exclusions', () => {
   const EXIT_RAY = downRay(30.5, 14.5);
 
   it("expands Zuk's map-square offsets into the same bounds the renderer filters by", () => {
-    const options = resolveEncounterLocRenderOptions(INFERNO_RENDER_CONFIG);
+    const options = resolveEncounterLocRenderOptions(getEncounterRenderConfig('inferno'));
     expect(options?.bounds).toEqual({ minX: -64, maxX: 127, minY: -64, maxY: 127 });
     expect(options?.marginTiles).toBe(0);
     expect(options?.excludedLocs).toContainEqual({ localX: 30, localY: 51, locId: ZUK_GLYPH_LOC_ID });

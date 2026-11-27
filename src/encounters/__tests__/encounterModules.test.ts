@@ -2,6 +2,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { selectSetupToggles } from '../../components/EncounterPanel.helpers';
+import { resolveEncounterMapFootprint } from '../../core/encounters/mapFootprint';
 import { SimulationEngine } from '../../core/SimulationEngine';
 import { HEALING_TOTEM_NPC_ID } from '../../npcs/colosseum/constants';
 import { ZUK_HEALER_NPC_ID, ZUK_SEQS } from '../../npcs/inferno/constants';
@@ -189,6 +190,59 @@ describe('encounter registration invariants', () => {
       const descriptor = encounterRegistry.getDescriptor(kind);
       expect(descriptor, `missing descriptor for '${kind}'`).toBeDefined();
       expect(descriptor?.kind).toBe(kind);
+    }
+  });
+
+  it('declares each map footprint with one origin entry, no repeated square, and the arena from the origin', () => {
+    for (const kind of BASE_KINDS) {
+      const descriptor = encounterRegistry.getDescriptor(kind);
+      const offsets = descriptor?.mapSquareOffsets ?? [{ dx: 0, dy: 0 }];
+      const keys = offsets.map(({ dx, dy }) => `${dx},${dy}`);
+      expect(
+        keys.filter((key) => key === '0,0'),
+        `${kind}: origin entries`,
+      ).toHaveLength(1);
+      expect(keys, `${kind}: repeated map squares`).toEqual([...new Set(keys)]);
+      if (!descriptor) continue;
+      // Resolving checks the arena: one square at least, its south-west square the origin.
+      const { arenaOffsets } = resolveEncounterMapFootprint(descriptor);
+      expect(Math.min(...arenaOffsets.map(({ dx }) => dx)), `${kind}: arena west edge`).toBe(0);
+      expect(Math.min(...arenaOffsets.map(({ dy }) => dy)), `${kind}: arena south edge`).toBe(0);
+    }
+  });
+
+  it("keeps the Inferno's playable arena in its origin square, its four neighbors scenery only", () => {
+    const descriptor = encounterRegistry.getDescriptor('inferno');
+    if (!descriptor) throw new Error('no Inferno descriptor');
+    const footprint = resolveEncounterMapFootprint(descriptor);
+    expect(footprint.origin).toEqual({ x: 35, y: 83 });
+    // Terrain, locs, the cache trim and the bake still read all five squares.
+    expect(footprint.sceneBlock.map(({ dx, dy }) => [dx, dy])).toEqual([
+      [0, 0],
+      [0, 1],
+      [1, 0],
+      [0, -1],
+      [-1, 0],
+    ]);
+    expect(footprint.arenaOffsets).toEqual([{ dx: 0, dy: 0 }]);
+    expect(footprint.arenaTileExtent).toEqual({ width: 64, height: 64 });
+    // The render config follows the descriptor: all five drawn, the origin alone composed for actors.
+    expect(getEncounterRenderConfig('inferno')).toMatchObject({
+      terrainMapSquare: { x: 35, y: 83 },
+      mapSquareOffsets: footprint.sceneOffsets,
+      arenaMapSquareOffsets: [{ dx: 0, dy: 0 }],
+    });
+  });
+
+  it("takes every render config's map squares from its descriptor, never the presentation module", () => {
+    for (const kind of encounterRegistry.getRegisteredKinds()) {
+      const descriptor = encounterRegistry.getDescriptorForKind(kind);
+      const config = getEncounterRenderConfig(kind);
+      if (!descriptor || !config) continue;
+      const footprint = resolveEncounterMapFootprint(descriptor);
+      expect(config.terrainMapSquare, kind).toBe(footprint.origin);
+      expect(config.mapSquareOffsets, kind).toBe(footprint.sceneOffsets);
+      expect(config.arenaMapSquareOffsets, kind).toBe(footprint.arenaOffsets);
     }
   });
 

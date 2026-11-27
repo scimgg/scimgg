@@ -18,7 +18,7 @@ import { SOL_NPC_ID } from '../npcs/colosseum/constants';
 import { ZUK_NPC_ID, ZUK_SEQS } from '../npcs/inferno/constants';
 import type { BossPortraitConfig } from '../render/preview/bossPortraitFraming';
 import { OSRS_DEFAULT_PITCH } from '../render/projections/Projection3D';
-import type { EncounterRenderConfig } from '../render/scene/encounterRenderConfig';
+import type { AuthoredEncounterRenderConfig } from '../render/scene/encounterRenderConfig';
 import { createLobbySceneBuilder } from '../render/scene/lobbySceneBuilder';
 import type { SceneBuilderFactory } from '../render/scene/sceneBuilderFactory';
 import { createSolHereditSceneBuilder } from '../render/scene/solHereditSceneBuilder';
@@ -87,7 +87,7 @@ export interface EncounterSetupCamera {
 export interface EncounterPresentationModule {
   readonly kind: string;
   readonly sceneBuilder: SceneBuilderFactory;
-  readonly renderConfig?: EncounterRenderConfig;
+  readonly renderConfig?: AuthoredEncounterRenderConfig;
   readonly defaultCamera?: EncounterCameraConfig;
   /**
    * Opening views for particular run setups, tried in order before {@link defaultCamera}: an

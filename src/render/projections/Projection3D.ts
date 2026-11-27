@@ -1,6 +1,8 @@
+import { getMapSquareBlock, isTileInMapSquareBlock, type MapSquareBlockEntry } from '../../rs/map/mapSquareBlock';
 import type { Camera3D, Projection2D, Viewport } from '../core/camera';
 import { getRasterDimensions } from '../core/raster';
 import type { TileCoord, Vec2, Vec3 } from '../core/types';
+import { getTerrainHeight, getTerrainHeightInterpolated } from '../shared/renderUtils';
 
 export interface OrbitCameraState {
   pitch: number;
@@ -139,6 +141,8 @@ export function degreesToOsrsCameraYaw(degrees: number): number {
   return Math.round(((((degrees % 360) + 360) % 360) * 2048) / 360) & 2047;
 }
 
+const ORIGIN_SQUARE_BLOCK = getMapSquareBlock();
+
 export class Projection3D implements Projection2D, Camera3D {
   private pitch: number;
   private yaw: number;
@@ -167,6 +171,8 @@ export class Projection3D implements Projection2D, Camera3D {
   private distanceOverride: boolean = false;
 
   private terrainHeights: Int32Array[] | null = null;
+  /** The squares a ray may pick a tile in: the displayed encounter's arena block. */
+  private pickableBlock: readonly MapSquareBlockEntry[] = ORIGIN_SQUARE_BLOCK;
   private scriptedCamera: ScriptedCameraPose | null = null;
   /** Lowest pitch nearby high ground currently forces, in fine units (1/256 JAU). */
   private terrainPitchFloor = 0;
@@ -289,26 +295,20 @@ export class Projection3D implements Projection2D, Camera3D {
     this.terrainHeights = heights;
   }
 
+  /**
+   * Picking accepts tiles in these squares only (default: the origin square). A hole in a sparse
+   * block is not pickable even though it lies inside the block's rectangle.
+   */
+  setPickableMapSquareBlock(block: readonly MapSquareBlockEntry[] = ORIGIN_SQUARE_BLOCK): void {
+    this.pickableBlock = block;
+  }
+
   private getTerrainHeightAt(tileX: number, tileY: number): number {
-    if (!this.terrainHeights) return 0;
-    const clampedX = Math.max(0, Math.min(64, Math.floor(tileX)));
-    const clampedY = Math.max(0, Math.min(64, Math.floor(tileY)));
-    return this.terrainHeights[clampedX]?.[clampedY] ?? 0;
+    return getTerrainHeight(this.terrainHeights, tileX, tileY);
   }
 
   private getTerrainHeightInterpolated(x: number, y: number): number {
-    if (!this.terrainHeights) return 0;
-    const tileX = Math.max(0, Math.min(63, Math.floor(x)));
-    const tileY = Math.max(0, Math.min(63, Math.floor(y)));
-    const fracX = Math.max(0, Math.min(1, x - tileX));
-    const fracY = Math.max(0, Math.min(1, y - tileY));
-    const hSW = this.terrainHeights[tileX]?.[tileY] ?? 0;
-    const hSE = this.terrainHeights[tileX + 1]?.[tileY] ?? 0;
-    const hNW = this.terrainHeights[tileX]?.[tileY + 1] ?? 0;
-    const hNE = this.terrainHeights[tileX + 1]?.[tileY + 1] ?? 0;
-    const hS = hSW + (hSE - hSW) * fracX;
-    const hN = hNW + (hNE - hNW) * fracX;
-    return hS + (hN - hS) * fracY;
+    return getTerrainHeightInterpolated(this.terrainHeights, x, y);
   }
 
   getPlayerCenterZ(simTileX: number, simTileY: number): number {
@@ -582,7 +582,7 @@ export class Projection3D implements Projection2D, Camera3D {
       const hitY = ray.origin.y + ray.direction.y * t;
       const tileX = Math.floor(hitX);
       const tileY = Math.floor(hitY);
-      if (tileX < 0 || tileX > 63 || tileY < 0 || tileY > 63) return null;
+      if (!isTileInMapSquareBlock(this.pickableBlock, tileX, tileY)) return null;
       return { x: tileX, y: tileY };
     }
 
@@ -598,7 +598,7 @@ export class Projection3D implements Projection2D, Camera3D {
       const tileX = Math.floor(x);
       const tileY = Math.floor(y);
 
-      if (tileX < 0 || tileX > 63 || tileY < 0 || tileY > 63) continue;
+      if (!isTileInMapSquareBlock(this.pickableBlock, tileX, tileY)) continue;
 
       const terrainZ = -this.getTerrainHeightAt(tileX, tileY) / 128;
 

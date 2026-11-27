@@ -2,6 +2,7 @@ import type { ActorFrameState, EventAudioPlayer } from '../../audio';
 import type { LocWithType } from '../../cache/CacheManager';
 import { getSpecialAttackDef } from '../../core/combat/player/specialAttacks/registry';
 import { GRID_SIZE, getArenaBounds, getWalkableTiles } from '../../core/constants';
+import { getArenaTileExtent } from '../../core/encounters/mapFootprint';
 import { type GameEvent, isCoreEvent } from '../../core/events/types';
 import type { ReplayDisplayFrame } from '../../core/ReplayRecorder';
 import { TileKeySetCache } from '../../core/tileKeySet';
@@ -31,7 +32,10 @@ import {
 import {
   createTerrainContext,
   getMapSquareBlock,
+  getMapSquareBlockTileBounds,
   getTerrainContextLoadOffsets,
+  isTileInMapSquareBlock,
+  type MapSquareBlockEntry,
   type MapSquareOffsets,
   type TerrainContext,
 } from '../../rs/map/mapSquareBlock';
@@ -95,7 +99,7 @@ import { NpcInstanceManager, type NpcOverlayHeights, PRIMARY_NPC_ACTOR_ID } from
 import { UIOverlayRenderer } from '../overlay/UIOverlayRenderer';
 import { type PlayerAnimatedMeshPair, PlayerAnimationController } from '../player/PlayerAnimationController';
 import type { PlayerAnimationSet, PlayerAnimModelAdapter } from '../player/playerAnimationTypes';
-import { getTerrainHeight, getTerrainHeightInterpolated } from '../shared/renderUtils';
+import { composeTerrainHeights, getTerrainHeight, getTerrainHeightInterpolated } from '../shared/renderUtils';
 import { resolveEncounterLocRenderOptions } from './encounterLocRenderOptions';
 import type { EncounterRenderConfig } from './encounterRenderConfig';
 import { GroundItemRenderer } from './GroundItemRenderer';
@@ -338,6 +342,8 @@ export class SceneCompositor {
   protected arenaBoundaryPairs: Int32Array | null = null;
   private arenaBoundaryPairsKey = '';
   protected terrainBounds: ArenaBounds | null = null;
+  /** The encounter footprint's arena squares: the actor height grid and the tile-space gates cover these. */
+  private arenaBlock: readonly MapSquareBlockEntry[] = getMapSquareBlock();
   /** The Tile Grid mesh and the terrain it was built on; see buildTileGrid3D. */
   private cachedTileGrid: { readonly heights: Int32Array[]; readonly command: NpcMesh3DCommand } | null = null;
   protected encounterRenderConfig: EncounterRenderConfig | undefined;
@@ -605,6 +611,7 @@ export class SceneCompositor {
 
   setEncounterRenderConfig(renderConfig?: EncounterRenderConfig): void {
     this.encounterRenderConfig = renderConfig;
+    this.arenaBlock = getMapSquareBlock(renderConfig?.arenaMapSquareOffsets);
     this.npcInstanceManager.setPrimaryNpcRenderConfig(renderConfig?.primaryNpc ?? null);
     this.setSceneObjectController(renderConfig?.createSceneObjectController?.() ?? null);
   }
@@ -707,6 +714,11 @@ export class SceneCompositor {
 
   getTerrainHeights(): Int32Array[] | null {
     return this.terrainHeights;
+  }
+
+  /** Whether `tile` is in one of the encounter's arena squares, where tile-space indicators may draw. */
+  protected isInArenaFootprint(tile: Coordinate): boolean {
+    return isTileInMapSquareBlock(this.arenaBlock, tile[0], tile[1]);
   }
 
   async loadNpc(npcModelLoader: NpcModelLoader, animSystem?: AnimationSystem): Promise<void> {
@@ -2522,8 +2534,8 @@ export class SceneCompositor {
     }
   }
 
-  private prepareCenterTerrain(mapData: MapSquareData, terrainBounds: ArenaBounds): void {
-    this.terrainHeights = mapData.tileHeights[0];
+  private prepareCenterTerrain(terrainHeights: Int32Array[], terrainBounds: ArenaBounds): void {
+    this.terrainHeights = terrainHeights;
     this.npcInstanceManager.setTerrainHeights(this.terrainHeights);
     this.spotAnimRenderer.setTerrainHeights(this.terrainHeights);
     this.terrainBounds = terrainBounds;
@@ -2557,11 +2569,16 @@ export class SceneCompositor {
     }
     const centerMapData = loadedSquares.get(`${centerMapX},${centerMapY}`);
     if (!centerMapData) throw new Error(`SceneCompositor: map square ${centerMapX},${centerMapY} not found`);
-    const minX = Math.min(...renderedBlock.map(({ tileOffsetX }) => tileOffsetX));
-    const maxX = Math.max(...renderedBlock.map(({ tileOffsetX }) => tileOffsetX + MAP_SQUARE_SIZE - 1));
-    const minY = Math.min(...renderedBlock.map(({ tileOffsetY }) => tileOffsetY));
-    const maxY = Math.max(...renderedBlock.map(({ tileOffsetY }) => tileOffsetY + MAP_SQUARE_SIZE - 1));
-    this.prepareCenterTerrain(centerMapData, {
+    const { minX, maxX, minY, maxY } = getMapSquareBlockTileBounds(renderedBlock);
+    // Actors stand only in the arena, so the shared height grid covers its squares; scenery squares
+    // keep their heights in their own terrain contexts. One arena square keeps its grid as it is.
+    const arenaHeights = composeTerrainHeights(
+      this.arenaBlock.flatMap(({ dx, dy, tileOffsetX, tileOffsetY }) => {
+        const heights = loadedSquares.get(`${centerMapX + dx},${centerMapY + dy}`)?.tileHeights[0];
+        return heights ? [{ tileOffsetX, tileOffsetY, heights }] : [];
+      }),
+    );
+    this.prepareCenterTerrain(arenaHeights ?? centerMapData.tileHeights[0], {
       minX,
       maxX,
       minY,
@@ -2648,11 +2665,13 @@ export class SceneCompositor {
 
   protected buildGridLines(queue: RenderQueue, projection: Projection2D, viewport?: Viewport): void {
     const bounds = this.getGridBounds();
+    // The arena rectangle starts at tile (0, 0): its south-west square is the origin.
+    const arena = getArenaTileExtent(this.arenaBlock);
     const margin = 3;
     let minX = Math.max(0, (bounds?.minX ?? 0) - margin);
-    let maxX = Math.min(GRID_SIZE - 1, (bounds?.maxX ?? GRID_SIZE - 1) + margin);
+    let maxX = Math.min(arena.width - 1, (bounds?.maxX ?? arena.width - 1) + margin);
     let minY = Math.max(0, (bounds?.minY ?? 0) - margin);
-    let maxY = Math.min(GRID_SIZE - 1, (bounds?.maxY ?? GRID_SIZE - 1) + margin);
+    let maxY = Math.min(arena.height - 1, (bounds?.maxY ?? arena.height - 1) + margin);
 
     if (viewport) {
       const vpMargin = 2;
@@ -3026,7 +3045,7 @@ export class SceneCompositor {
     tileIndicatorConfig: TileIndicatorConfig,
   ): void {
     if (target[0] === playerPos[0] && target[1] === playerPos[1]) return;
-    if (target[0] < 0 || target[0] >= GRID_SIZE || target[1] < 0 || target[1] >= GRID_SIZE) return;
+    if (!this.isInArenaFootprint(target)) return;
 
     const destinationConfig = tileIndicatorConfig.destinationTile;
     if (destinationConfig.enabled) {
@@ -3064,7 +3083,7 @@ export class SceneCompositor {
     playerPos: Coordinate,
     tileIndicatorConfig: TileIndicatorConfig,
   ): void {
-    if (hovered[0] < 0 || hovered[0] >= GRID_SIZE || hovered[1] < 0 || hovered[1] >= GRID_SIZE) return;
+    if (!this.isInArenaFootprint(hovered)) return;
     if (targetTile && hovered[0] === targetTile[0] && hovered[1] === targetTile[1]) return;
     if (hovered[0] === playerPos[0] && hovered[1] === playerPos[1]) return;
 
@@ -4143,7 +4162,7 @@ export class SceneCompositor {
     } else {
       const commands: RenderCommand[] = [];
 
-      if (playerTile[0] >= 0 && playerTile[0] < GRID_SIZE && playerTile[1] >= 0 && playerTile[1] < GRID_SIZE) {
+      if (this.isInArenaFootprint(playerTile)) {
         const trueTileConfig = tileIndicatorConfig.trueTile;
         if (trueTileConfig.enabled) {
           const trueTileHsl = this.hexToPackedHsl(trueTileConfig.color);
@@ -4199,10 +4218,7 @@ export class SceneCompositor {
       if (
         targetTile &&
         (targetTile[0] !== playerTile[0] || targetTile[1] !== playerTile[1]) &&
-        targetTile[0] >= 0 &&
-        targetTile[0] < GRID_SIZE &&
-        targetTile[1] >= 0 &&
-        targetTile[1] < GRID_SIZE
+        this.isInArenaFootprint(targetTile)
       ) {
         const destinationConfig = tileIndicatorConfig.destinationTile;
         if (destinationConfig.enabled) {
@@ -4240,10 +4256,7 @@ export class SceneCompositor {
         hoveredTile &&
         (hoveredTile[0] !== playerTile[0] || hoveredTile[1] !== playerTile[1]) &&
         (!targetTile || hoveredTile[0] !== targetTile[0] || hoveredTile[1] !== targetTile[1]) &&
-        hoveredTile[0] >= 0 &&
-        hoveredTile[0] < GRID_SIZE &&
-        hoveredTile[1] >= 0 &&
-        hoveredTile[1] < GRID_SIZE
+        this.isInArenaFootprint(hoveredTile)
       ) {
         const hoverConfig = tileIndicatorConfig.hoverTile;
         if (hoverConfig.enabled) {

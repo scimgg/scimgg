@@ -1,5 +1,6 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { useReplayPresentation, useReportMinimapZoom } from '../contexts/ReplayPresentationContext';
+import { getArenaTileExtent } from '../core/encounters/mapFootprint';
 import type { ReplayClickType } from '../core/ReplayRecorder';
 import { DEFAULT_COMPACT_ORBS_POSITION, type UIPosition } from '../hooks/usePersistedSettings';
 import {
@@ -29,7 +30,8 @@ import { MINIMAP, MOBILE } from '../resourcePack';
 import type { ArenaBounds } from '../rs/collision/WalkabilityAnalyzer';
 import type { OverlayTypeLoader, UnderlayTypeLoader } from '../rs/config/flotype/FloTypeLoader';
 import type { NpcTypeLoader } from '../rs/config/npctype/NpcTypeLoader';
-import type { MapLoader, MapSquareData } from '../rs/map/MapLoader';
+import { MAP_SQUARE_SIZE, type MapLoader, type MapSquareData } from '../rs/map/MapLoader';
+import { getMapSquareBlock, type MapSquareBlockEntry } from '../rs/map/mapSquareBlock';
 import type { TextureLoader } from '../rs/texture/TextureLoader';
 import {
   type CompactOrbId,
@@ -43,13 +45,7 @@ import { log } from '../util/Logger';
 import { DraggablePanel } from './DraggablePanel';
 import { MinimapOrbs } from './MinimapOrbs';
 import { COMPACT_ORBS_GEOMETRY, FIXED_ORBS_GEOMETRY, MOBILE_ORBS_GEOMETRY } from './minimapOrbGeometry';
-import {
-  blendUnderlays,
-  buildOverlayMinimapHsls,
-  computeTileLights,
-  drawMapSquareTerrain,
-  MAP_SQUARE_SIZE,
-} from './minimapTerrain';
+import { blendUnderlays, buildOverlayMinimapHsls, computeTileLights, drawMapSquareTerrain } from './minimapTerrain';
 import { PackImage } from './PackImage';
 import { PixelSprite } from './PixelSprite';
 import { useTooltip, useTooltipScale } from './Tooltip';
@@ -63,7 +59,13 @@ interface MinimapProps {
   textureLoader?: TextureLoader;
   npcTypeLoader?: NpcTypeLoader;
   minimapNpcDotUrl?: string;
+  /** The encounter's origin map square: simulation tile (0, 0) is its south-west corner. */
   mapSquare?: { x: number; y: number };
+  /**
+   * The squares the minimap draws, relative to `mapSquare`: the encounter footprint's arena block.
+   * Default: the origin square alone.
+   */
+  arenaBlock?: readonly MapSquareBlockEntry[];
   /** Initial camera yaw for first render. Use the imperative handle for updates. */
   initialCameraYaw?: number;
   speedMultiplier?: number;
@@ -166,13 +168,119 @@ const FIXED_COMPASS_CLIP_LEFT = 0;
 const FIXED_COMPASS_CLIP_TOP = 0;
 
 const DEFAULT_MAP_SQUARE = { x: 23, y: 157 };
-const MAP_SIZE = MAP_SQUARE_SIZE;
+const ORIGIN_SQUARE_BLOCK = getMapSquareBlock();
+/** Backing pixels per tile, on every axis and in every square. */
 const TILE_SCALE = 4;
-const GRID_SIZE = 1;
-const TOTAL_MAP_SIZE = MAP_SIZE * GRID_SIZE;
-const CANVAS_SIZE = TOTAL_MAP_SIZE * TILE_SCALE;
-const GRID_HALF = Math.floor(GRID_SIZE / 2);
-const GRID_TILE_OFFSET = GRID_HALF * MAP_SIZE;
+/** Backing pixels along one map square's side; the aperture shows this much at CSS scale 1. */
+const SQUARE_CANVAS_SIZE = MAP_SQUARE_SIZE * TILE_SCALE;
+
+/**
+ * The terrain bitmap's layout: the arena squares composed north up into one raster covering the
+ * arena rectangle from tile (0, 0), each square at its own pixel origin; squares outside the block
+ * stay black.
+ */
+export interface MinimapRaster {
+  /** Identifies the footprint, so a load for a previous encounter cannot paint this one. */
+  readonly key: string;
+  readonly origin: { readonly x: number; readonly y: number };
+  readonly squares: readonly MapSquareBlockEntry[];
+  /** Rows of tiles, for flipping north up. */
+  readonly tileHeight: number;
+  /** Backing pixels. */
+  readonly width: number;
+  readonly height: number;
+}
+
+/** `squares` is an arena block, whose south-west square is the origin (`resolveEncounterMapFootprint`). */
+export function resolveMinimapRaster(
+  origin: { readonly x: number; readonly y: number },
+  squares: readonly MapSquareBlockEntry[],
+): MinimapRaster {
+  const extent = getArenaTileExtent(squares);
+  return {
+    key: `${origin.x},${origin.y}:${squares.map(({ dx, dy }) => `${dx},${dy}`).join(';')}`,
+    origin,
+    squares,
+    tileHeight: extent.height,
+    width: extent.width * TILE_SCALE,
+    height: extent.height * TILE_SCALE,
+  };
+}
+
+/** The backing-pixel column and row of a square's north-west corner (`drawMapSquareTerrain`'s origin). */
+export function minimapSquarePixelOrigin(raster: MinimapRaster, square: MapSquareBlockEntry): { x: number; y: number } {
+  return {
+    x: square.tileOffsetX * TILE_SCALE,
+    y: (raster.tileHeight - square.tileOffsetY - MAP_SQUARE_SIZE) * TILE_SCALE,
+  };
+}
+
+/** The backing-pixel center of simulation tile (x, y), north up; fractional tiles move it smoothly. */
+export function minimapCanvasPoint(raster: MinimapRaster, x: number, y: number): { x: number; y: number } {
+  return {
+    x: x * TILE_SCALE + TILE_SCALE / 2,
+    y: (raster.tileHeight - 1 - y) * TILE_SCALE + TILE_SCALE / 2,
+  };
+}
+
+/**
+ * The terrain canvas's CSS transform: the player's tile at the aperture center, `osrsZoom` CSS px
+ * per tile, rotated by `yaw` about the player. The canvas is laid out at `clipSize / 256` CSS px per
+ * backing pixel (one square fills the aperture), so a taller or wider raster extends past it
+ * instead of being squeezed into it.
+ */
+export function minimapTerrainTransform(
+  raster: MinimapRaster,
+  playerX: number,
+  playerY: number,
+  yaw: number,
+  osrsZoom: number,
+  clipSize: number,
+): { transform: string; transformOrigin: string } {
+  const player = minimapCanvasPoint(raster, playerX, playerY);
+  const cssPerPixel = clipSize / SQUARE_CANVAS_SIZE;
+  const translateX = clipSize / 2 - player.x * cssPerPixel;
+  const translateY = clipSize / 2 - player.y * cssPerPixel;
+  const scale = minimapCssScale(osrsZoom, clipSize);
+  return {
+    transform: `translate(${translateX}px, ${translateY}px) scale(${scale}) rotate(${yaw}deg)`,
+    transformOrigin: `${(player.x / raster.width) * 100}% ${(player.y / raster.height) * 100}%`,
+  };
+}
+
+/**
+ * Where an NPC's dot sits in the aperture, in CSS px from its top-left, for the player drawn at
+ * (playerX, playerY): the same tile spacing and rotation as {@link minimapTerrainTransform}, so the
+ * dot stays over the NPC's terrain. Null outside the circular aperture.
+ */
+export function minimapNpcDotPosition(
+  npc: { readonly position: readonly [number, number]; readonly size: number },
+  playerX: number,
+  playerY: number,
+  yaw: number,
+  osrsZoom: number,
+  clipSize: number,
+): { x: number; y: number } | null {
+  const dtx = npc.position[0] + npc.size / 2 - playerX - 0.5;
+  const dty = npc.position[1] + npc.size / 2 - playerY - 0.5;
+  // Screen delta (Y flipped: +Y tile = up = -Y screen)
+  const screenDx = dtx * osrsZoom;
+  const screenDy = -dty * osrsZoom;
+  const yawRad = (yaw * Math.PI) / 180;
+  const cosY = Math.cos(yawRad);
+  const sinY = Math.sin(yawRad);
+  const rx = screenDx * cosY - screenDy * sinY;
+  const ry = screenDx * sinY + screenDy * cosY;
+  const clipRadius = clipSize / 2;
+  if (rx * rx + ry * ry > clipRadius * clipRadius) return null;
+  return { x: clipRadius + rx, y: clipRadius + ry };
+}
+
+/** Each raster square's map data, for the raster `key` it was loaded for. */
+interface LoadedMinimapSquares {
+  readonly key: string;
+  readonly squares: readonly (MapSquareData | null)[];
+}
 
 // OSRS minimap zoom: 2 (most zoomed out) to 8 (most zoomed in), default 4. Held in
 // those units, not CSS scale, because the aperture differs per layout (154 resizable,
@@ -185,7 +293,7 @@ const MINIMAP_ZOOM_FACTOR = 0.5;
 
 /** CSS scale that puts `osrsZoom` px per tile on a `clipSize`-wide aperture. */
 export function minimapCssScale(osrsZoom: number, clipSize: number): number {
-  return (osrsZoom * CANVAS_SIZE) / (TILE_SCALE * clipSize);
+  return (osrsZoom * SQUARE_CANVAS_SIZE) / (TILE_SCALE * clipSize);
 }
 
 /**
@@ -236,6 +344,7 @@ export const Minimap = forwardRef<MinimapHandle, MinimapProps>(function Minimap(
     npcTypeLoader,
     minimapNpcDotUrl,
     mapSquare,
+    arenaBlock = ORIGIN_SQUARE_BLOCK,
     initialCameraYaw = 180,
     speedMultiplier = 1,
     arenaBounds,
@@ -292,9 +401,7 @@ export const Minimap = forwardRef<MinimapHandle, MinimapProps>(function Minimap(
   const lastFrameTimeRef = useRef<number>(animationFrames.clock.now());
   const simulationStateRef = useRef(simulationState);
   const arenaBoundsRef = useRef(arenaBounds);
-  const [mapDataGrid, setMapDataGrid] = useState<(MapSquareData | null)[][]>(() =>
-    Array.from({ length: GRID_SIZE }, () => Array(GRID_SIZE).fill(null)),
-  );
+  const [loadedSquares, setLoadedSquares] = useState<LoadedMinimapSquares | null>(null);
   const [ownMinimapZoom, setMinimapZoom] = useState(DEFAULT_MINIMAP_ZOOM);
   const [xpOrbHovered, setXpOrbHovered] = useState(false);
   const { setScale: setUiScale } = useTooltip();
@@ -308,7 +415,14 @@ export const Minimap = forwardRef<MinimapHandle, MinimapProps>(function Minimap(
     reportMinimapZoom(ownMinimapZoom);
   }, [reportMinimapZoom, ownMinimapZoom]);
 
-  const effectiveMapSquare = mapSquare ?? DEFAULT_MAP_SQUARE;
+  const originX = (mapSquare ?? DEFAULT_MAP_SQUARE).x;
+  const originY = (mapSquare ?? DEFAULT_MAP_SQUARE).y;
+  const raster = useMemo(
+    () => resolveMinimapRaster({ x: originX, y: originY }, arenaBlock),
+    [originX, originY, arenaBlock],
+  );
+  const rasterRef = useRef(raster);
+  rasterRef.current = raster;
   // Fixed draws a smaller surround with a smaller opening, and the canvas fills
   // whichever one is mounted. Every px-per-tile and centering term below is derived
   // from this rather than from the resizable aperture.
@@ -364,15 +478,15 @@ export const Minimap = forwardRef<MinimapHandle, MinimapProps>(function Minimap(
   }, []);
 
   const applyMinimapTransforms = useCallback(
-    (playerCanvasX: number, playerCanvasY: number, yaw: number, osrsZoom: number, clipSize: number) => {
-      const playerPercentX = (playerCanvasX / CANVAS_SIZE) * 100;
-      const playerPercentY = (playerCanvasY / CANVAS_SIZE) * 100;
-      const translateX = clipSize / 2 - (playerCanvasX / CANVAS_SIZE) * clipSize;
-      const translateY = clipSize / 2 - (playerCanvasY / CANVAS_SIZE) * clipSize;
-      const scale = minimapCssScale(osrsZoom, clipSize);
-      const transform = `translate(${translateX}px, ${translateY}px) scale(${scale}) rotate(${yaw}deg)`;
-      const transformOrigin = `${playerPercentX}% ${playerPercentY}%`;
-
+    (playerX: number, playerY: number, yaw: number, osrsZoom: number, clipSize: number) => {
+      const { transform, transformOrigin } = minimapTerrainTransform(
+        rasterRef.current,
+        playerX,
+        playerY,
+        yaw,
+        osrsZoom,
+        clipSize,
+      );
       if (canvasRef.current) {
         canvasRef.current.style.transform = transform;
         canvasRef.current.style.transformOrigin = transformOrigin;
@@ -392,9 +506,7 @@ export const Minimap = forwardRef<MinimapHandle, MinimapProps>(function Minimap(
         const zoom = minimapZoomRef.current;
         const playerVisual = playerVisualTrackerRef.current.advance(0, speedMultiplierRef.current);
         const [visualX, visualY] = clampPlayerToArena(playerVisual.position[0], playerVisual.position[1]);
-        const playerCanvasX = (visualX + GRID_TILE_OFFSET) * TILE_SCALE + TILE_SCALE / 2;
-        const playerCanvasY = (TOTAL_MAP_SIZE - 1 - (visualY + GRID_TILE_OFFSET)) * TILE_SCALE + TILE_SCALE / 2;
-        applyMinimapTransforms(playerCanvasX, playerCanvasY, yaw, zoom, mapClipSizeRef.current);
+        applyMinimapTransforms(visualX, visualY, yaw, zoom, mapClipSizeRef.current);
       },
     }),
     [applyMinimapTransforms, clampPlayerToArena],
@@ -414,15 +526,17 @@ export const Minimap = forwardRef<MinimapHandle, MinimapProps>(function Minimap(
     return () => container.removeEventListener('wheel', handleMinimapWheel);
   }, [handleMinimapWheel]);
 
-  const blendedUnderlayHslGrid = useMemo(() => {
-    return mapDataGrid.map((row) =>
-      row.map((data) => (data && underlayLoader ? blendUnderlays(data, underlayLoader, 0) : null)),
-    );
-  }, [mapDataGrid, underlayLoader]);
+  const blendedUnderlayHsls = useMemo(
+    () =>
+      loadedSquares?.squares.map((data) => (data && underlayLoader ? blendUnderlays(data, underlayLoader, 0) : null)) ??
+      [],
+    [loadedSquares, underlayLoader],
+  );
 
-  const tileLightsGrid = useMemo(() => {
-    return mapDataGrid.map((row) => row.map((data) => (data ? computeTileLights(data, 0) : null)));
-  }, [mapDataGrid]);
+  const tileLights = useMemo(
+    () => loadedSquares?.squares.map((data) => (data ? computeTileLights(data, 0) : null)) ?? [],
+    [loadedSquares],
+  );
 
   const overlayHslMap = useMemo(
     () => (overlayLoader ? buildOverlayMinimapHsls(overlayLoader, textureLoader) : new Map<number, number>()),
@@ -434,19 +548,14 @@ export const Minimap = forwardRef<MinimapHandle, MinimapProps>(function Minimap(
 
     let active = true;
 
+    const { key, origin, squares } = raster;
     const loadData = async () => {
       try {
-        const grid: (MapSquareData | null)[][] = [];
-        for (let dx = -GRID_HALF; dx <= GRID_HALF; dx++) {
-          const row: (MapSquareData | null)[] = [];
-          for (let dy = -GRID_HALF; dy <= GRID_HALF; dy++) {
-            const data = await mapLoader.loadMapSquare(effectiveMapSquare.x + dx, effectiveMapSquare.y + dy);
-            row.push(data);
-          }
-          grid.push(row);
-        }
+        const loaded = await Promise.all(
+          squares.map(({ dx, dy }) => mapLoader.loadMapSquare(origin.x + dx, origin.y + dy)),
+        );
         if (active) {
-          setMapDataGrid(grid);
+          setLoadedSquares({ key, squares: loaded });
         }
       } catch (error) {
         log.error('UI', 'Failed to load minimap data:', error);
@@ -458,44 +567,42 @@ export const Minimap = forwardRef<MinimapHandle, MinimapProps>(function Minimap(
     return () => {
       active = false;
     };
-  }, [mapLoader, effectiveMapSquare.x, effectiveMapSquare.y]);
+  }, [mapLoader, raster]);
 
+  // Rasterized once per footprint or load, never per tick: the frame loop only moves the canvas.
   const terrainImageData = useMemo(() => {
-    const hasAnyData = mapDataGrid.some((row) => row.some((data) => data !== null));
-    if (!hasAnyData) return null;
+    // A load for the previous footprint is not this map.
+    if (loadedSquares?.key !== raster.key) return null;
+    if (!loadedSquares.squares.some((data) => data !== null)) return null;
 
-    const imgData = new ImageData(CANVAS_SIZE, CANVAS_SIZE);
+    const imgData = new ImageData(raster.width, raster.height);
     const pixels = new Uint32Array(imgData.data.buffer);
 
     const level = 0;
 
-    for (let gx = 0; gx < GRID_SIZE; gx++) {
-      for (let gy = 0; gy < GRID_SIZE; gy++) {
-        const mapData = mapDataGrid[gx][gy];
-        if (!mapData) {
-          continue;
-        }
-
-        drawMapSquareTerrain(
-          {
-            pixels,
-            width: CANVAS_SIZE,
-            height: CANVAS_SIZE,
-            tileScale: TILE_SCALE,
-            originX: gx * MAP_SIZE * TILE_SCALE,
-            originY: (GRID_SIZE - 1 - gy) * MAP_SIZE * TILE_SCALE,
-          },
-          mapData,
-          blendedUnderlayHslGrid[gx][gy],
-          tileLightsGrid[gx][gy],
-          overlayHslMap,
-          level,
-        );
-      }
-    }
+    raster.squares.forEach((square, index) => {
+      const mapData = loadedSquares.squares[index];
+      if (!mapData) return;
+      const pixelOrigin = minimapSquarePixelOrigin(raster, square);
+      drawMapSquareTerrain(
+        {
+          pixels,
+          width: raster.width,
+          height: raster.height,
+          tileScale: TILE_SCALE,
+          originX: pixelOrigin.x,
+          originY: pixelOrigin.y,
+        },
+        mapData,
+        blendedUnderlayHsls[index] ?? null,
+        tileLights[index] ?? null,
+        overlayHslMap,
+        level,
+      );
+    });
 
     return imgData;
-  }, [mapDataGrid, blendedUnderlayHslGrid, tileLightsGrid, overlayHslMap]);
+  }, [raster, loadedSquares, blendedUnderlayHsls, tileLights, overlayHslMap]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -507,21 +614,23 @@ export const Minimap = forwardRef<MinimapHandle, MinimapProps>(function Minimap(
     if (terrainImageData) {
       ctx.putImageData(terrainImageData, 0, 0);
     } else {
+      const { width, height } = raster;
       ctx.fillStyle = '#000';
-      ctx.fillRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
+      ctx.fillRect(0, 0, width, height);
       ctx.strokeStyle = '#333';
       ctx.lineWidth = 1;
       ctx.beginPath();
-      for (let i = 0; i <= TOTAL_MAP_SIZE; i += 8) {
-        const px = i * TILE_SCALE;
+      for (let px = 0; px <= width; px += 8 * TILE_SCALE) {
         ctx.moveTo(px, 0);
-        ctx.lineTo(px, CANVAS_SIZE);
+        ctx.lineTo(px, height);
+      }
+      for (let px = 0; px <= height; px += 8 * TILE_SCALE) {
         ctx.moveTo(0, px);
-        ctx.lineTo(CANVAS_SIZE, px);
+        ctx.lineTo(width, px);
       }
       ctx.stroke();
     }
-  }, [terrainImageData]);
+  }, [terrainImageData, raster]);
 
   useEffect(() => {
     const render = () => {
@@ -565,10 +674,8 @@ export const Minimap = forwardRef<MinimapHandle, MinimapProps>(function Minimap(
 
       const playerVisual = tracker.advance(deltaTime, speedMultiplierRef.current);
       const [visualX, visualY] = clampPlayerToArena(playerVisual.position[0], playerVisual.position[1]);
-      const playerCanvasX = (visualX + GRID_TILE_OFFSET) * TILE_SCALE + TILE_SCALE / 2;
-      const playerCanvasY = (TOTAL_MAP_SIZE - 1 - (visualY + GRID_TILE_OFFSET)) * TILE_SCALE + TILE_SCALE / 2;
       const clipSize = mapClipSizeRef.current;
-      applyMinimapTransforms(playerCanvasX, playerCanvasY, cameraYawRef.current, minimapZoomRef.current, clipSize);
+      applyMinimapTransforms(visualX, visualY, cameraYawRef.current, minimapZoomRef.current, clipSize);
 
       const state = simulationStateRef.current;
       for (const npc of state.npcs) {
@@ -578,27 +685,18 @@ export const Minimap = forwardRef<MinimapHandle, MinimapProps>(function Minimap(
             npcDot.style.display = 'none';
             continue;
           }
-          const npcCenterX = npc.position[0] + npc.size / 2;
-          const npcCenterY = npc.position[1] + npc.size / 2;
-          const dtx = npcCenterX - visualX - 0.5;
-          const dty = npcCenterY - visualY - 0.5;
-          const pxPerTile = minimapZoomRef.current;
-          // Screen delta (Y flipped: +Y tile = up = -Y screen)
-          const screenDx = dtx * pxPerTile;
-          const screenDy = -dty * pxPerTile;
-          const yawRad = (cameraYawRef.current * Math.PI) / 180;
-          const cosY = Math.cos(yawRad);
-          const sinY = Math.sin(yawRad);
-          const rx = screenDx * cosY - screenDy * sinY;
-          const ry = screenDx * sinY + screenDy * cosY;
-          const cx = clipSize / 2 + rx;
-          const cy = clipSize / 2 + ry;
-          const distSq = rx * rx + ry * ry;
-          const clipRadius = clipSize / 2;
-          if (distSq <= clipRadius * clipRadius) {
+          const dot = minimapNpcDotPosition(
+            npc,
+            visualX,
+            visualY,
+            cameraYawRef.current,
+            minimapZoomRef.current,
+            clipSize,
+          );
+          if (dot) {
             npcDot.style.display = '';
-            npcDot.style.left = `${cx}px`;
-            npcDot.style.top = `${cy}px`;
+            npcDot.style.left = `${dot.x}px`;
+            npcDot.style.top = `${dot.y}px`;
           } else {
             npcDot.style.display = 'none';
           }
@@ -615,13 +713,14 @@ export const Minimap = forwardRef<MinimapHandle, MinimapProps>(function Minimap(
     simulationState.playerPosition[0],
     simulationState.playerPosition[1],
   );
-  const initialPlayerCanvasX = (initialPlayerX + GRID_TILE_OFFSET) * TILE_SCALE + TILE_SCALE / 2;
-  const initialPlayerCanvasY = (TOTAL_MAP_SIZE - 1 - (initialPlayerY + GRID_TILE_OFFSET)) * TILE_SCALE + TILE_SCALE / 2;
-  const initialTranslateX = mapClipSize / 2 - (initialPlayerCanvasX / CANVAS_SIZE) * mapClipSize;
-  const initialTranslateY = mapClipSize / 2 - (initialPlayerCanvasY / CANVAS_SIZE) * mapClipSize;
-  const initialScale = minimapCssScale(minimapZoom, mapClipSize);
-  const initialTransform = `translate(${initialTranslateX}px, ${initialTranslateY}px) scale(${initialScale}) rotate(${cameraYawRef.current}deg)`;
-  const initialTransformOrigin = `${(initialPlayerCanvasX / CANVAS_SIZE) * 100}% ${(initialPlayerCanvasY / CANVAS_SIZE) * 100}%`;
+  const { transform: initialTransform, transformOrigin: initialTransformOrigin } = minimapTerrainTransform(
+    raster,
+    initialPlayerX,
+    initialPlayerY,
+    cameraYawRef.current,
+    minimapZoom,
+    mapClipSize,
+  );
 
   const compactGeometry = COMPACT_ORBS_GEOMETRY[compactOrbsLayout];
   const isMobileLayout = mobileContainer !== undefined;
@@ -957,11 +1056,13 @@ export const Minimap = forwardRef<MinimapHandle, MinimapProps>(function Minimap(
         >
           <canvas
             ref={canvasRef}
-            width={CANVAS_SIZE}
-            height={CANVAS_SIZE}
+            width={raster.width}
+            height={raster.height}
             style={{
-              width: '100%',
-              height: '100%',
+              // One square fills the aperture. A larger raster keeps the same CSS px per backing
+              // pixel and extends past the aperture, which clips it, rather than being squeezed in.
+              width: `${(raster.width / SQUARE_CANVAS_SIZE) * 100}%`,
+              height: `${(raster.height / SQUARE_CANVAS_SIZE) * 100}%`,
               display: 'block',
               transform: initialTransform,
               transformOrigin: initialTransformOrigin,

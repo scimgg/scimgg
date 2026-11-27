@@ -7,12 +7,17 @@ import { LobbyEncounter } from '../../encounters/lobby/LobbyEncounter';
 import { PlayerVisualTracker } from '../../render/core/interpolation';
 import { MINIMAP } from '../../resourcePack';
 import type { CacheInfo } from '../../rs/cache/CacheInfo';
+import { OverlayType } from '../../rs/config/flotype/FloType';
+import type { OverlayTypeLoader } from '../../rs/config/flotype/FloTypeLoader';
 import { NpcType } from '../../rs/config/npctype/NpcType';
 import type { NpcTypeLoader } from '../../rs/config/npctype/NpcTypeLoader';
+import type { MapLoader, MapSquareData } from '../../rs/map/MapLoader';
+import { getMapSquareBlock, type MapSquareBlockEntry } from '../../rs/map/mapSquareBlock';
 import { type NpcState, PrayerType, type SimulationState } from '../../types/simulation';
 import { animationFrames } from '../../util/animationFrames';
 import { ContextMenuProvider } from '../ContextMenu';
-import { Minimap } from '../Minimap';
+import { getEncounterMapFootprint } from '../gridEncounterMapSquare';
+import { Minimap, minimapCssScale } from '../Minimap';
 import { TooltipProvider } from '../Tooltip';
 
 function renderMinimap(compactOrbs: boolean, fixedLayout = false) {
@@ -414,5 +419,205 @@ describe('Minimap prayer orb state wiring', () => {
 
     const { container } = renderWithEngine(engine);
     expect(orbState(container).sweep).toBeNull();
+  });
+});
+
+/** A map square whose every tile is overlay `overlayId`, flat and unlit, so each square paints one color. */
+function uniformMapSquare(mapX: number, mapY: number, overlayId: number): MapSquareData {
+  const tiles = <T,>(make: () => T): T[][] => [Array.from({ length: 64 }, make)];
+  const corners = <T,>(make: () => T): T[][] => [Array.from({ length: 65 }, make)];
+  return {
+    mapX,
+    mapY,
+    tileHeights: corners(() => new Int32Array(65)),
+    tileUnderlays: tiles(() => new Uint16Array(64)),
+    tileOverlays: tiles(() => new Int16Array(64).fill(overlayId)),
+    tileShapes: tiles(() => new Uint8Array(64)),
+    tileRotations: tiles(() => new Uint8Array(64)),
+    tileRenderFlags: tiles(() => new Uint8Array(64)),
+    tileLightOcclusions: corners(() => new Uint8Array(65)),
+  };
+}
+
+/** Overlay 1 a dark red, overlay 2 a light green: two squares told apart by their pixels. */
+const OVERLAY_LOADER: OverlayTypeLoader = {
+  load: (id: number) => {
+    const type = new OverlayType(id, TEST_CACHE_INFO);
+    type.color = 1;
+    [type.hue, type.saturation, type.lightness] = id === 0 ? [0, 200, 60] : [20, 200, 180];
+    return type;
+  },
+  getCount: () => 2,
+  clearCache: () => {},
+};
+
+describe('Minimap terrain across map squares', () => {
+  const NORTH_ARENA = getMapSquareBlock([
+    { dx: 0, dy: 0 },
+    { dx: 0, dy: 1 },
+  ]);
+  const painted: ImageData[] = [];
+
+  afterEach(() => {
+    cleanup();
+    painted.length = 0;
+    vi.restoreAllMocks();
+  });
+
+  /** Records every bitmap the minimap puts on its canvas; the rest of the 2D context is inert. */
+  function capturePaints(): void {
+    const context = new Proxy({} as CanvasRenderingContext2D, {
+      get: (_target, key) => (key === 'putImageData' ? (image: ImageData) => painted.push(image) : () => {}),
+      set: () => true,
+    });
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(context);
+  }
+
+  function renderTerrain(
+    loadMapSquare: (mapX: number, mapY: number) => Promise<MapSquareData | null>,
+    mapSquare?: { x: number; y: number },
+    arenaBlock?: readonly MapSquareBlockEntry[],
+  ) {
+    const simulationState = new SimulationEngine({ encounter: new LobbyEncounter() }).getState();
+    const tree = (square = mapSquare, block = arenaBlock) => (
+      <TooltipProvider>
+        <ContextMenuProvider>
+          <Minimap
+            simulationState={{ ...simulationState, playerPosition: [28, 63] }}
+            mapLoader={{ loadMapSquare } as unknown as MapLoader}
+            overlayLoader={OVERLAY_LOADER}
+            mapSquare={square}
+            arenaBlock={block}
+            hasSpecialAttack
+            onRunToggle={() => {}}
+            onSpecialAttackToggle={() => {}}
+          />
+        </ContextMenuProvider>
+      </TooltipProvider>
+    );
+    const view = render(tree());
+    return {
+      ...view,
+      canvas: minimapParts(view.container).canvas,
+      rerenderWith: (square = mapSquare, block = arenaBlock) => view.rerender(tree(square, block)),
+    };
+  }
+
+  const pixelAt = (image: ImageData, x: number, y: number) => new Uint32Array(image.data.buffer)[y * image.width + x];
+
+  it('loads only the arena squares and composes them north up into one 256x512 bitmap', async () => {
+    capturePaints();
+    const loadMapSquare = vi.fn(async (mapX: number, mapY: number) =>
+      uniformMapSquare(mapX, mapY, mapY === 48 ? 1 : 2),
+    );
+    const { canvas } = renderTerrain(loadMapSquare, { x: 35, y: 47 }, NORTH_ARENA);
+
+    await waitFor(() => expect(painted).toHaveLength(1));
+    expect(loadMapSquare.mock.calls).toEqual([
+      [35, 47],
+      [35, 48],
+    ]);
+    expect([canvas?.width, canvas?.height]).toEqual([256, 512]);
+    // Laid out at the single square's CSS px per pixel, so it is twice the aperture's height, not squeezed into it.
+    expect([canvas?.style.width, canvas?.style.height]).toEqual(['100%', '200%']);
+
+    const [image] = painted;
+    const north = pixelAt(image, 114, 0);
+    const south = pixelAt(image, 114, 511);
+    expect(north).not.toBe(south);
+    expect(north >>> 24).toBe(0xff);
+    // Adjacent rows across the seam: tile y 64's last pixel row, then tile y 63's first.
+    expect(pixelAt(image, 114, 255)).toBe(north);
+    expect(pixelAt(image, 114, 256)).toBe(south);
+  });
+
+  it('leaves a missing square black and transparent rather than shifting the other', async () => {
+    capturePaints();
+    const loadMapSquare = vi.fn(async (mapX: number, mapY: number) =>
+      mapY === 48 ? null : uniformMapSquare(mapX, mapY, 2),
+    );
+    renderTerrain(loadMapSquare, { x: 35, y: 47 }, NORTH_ARENA);
+
+    await waitFor(() => expect(painted).toHaveLength(1));
+    expect(pixelAt(painted[0], 114, 255)).toBe(0);
+    expect(pixelAt(painted[0], 114, 256) >>> 24).toBe(0xff);
+  });
+
+  it('never paints a load that finishes after the footprint changed', async () => {
+    capturePaints();
+    let finishFirst: (() => void) | undefined;
+    const loadMapSquare = vi.fn((mapX: number, mapY: number) =>
+      mapX === 23
+        ? new Promise<MapSquareData>((resolve) => {
+            finishFirst = () => resolve(uniformMapSquare(mapX, mapY, 1));
+          })
+        : Promise.resolve(uniformMapSquare(mapX, mapY, 2)),
+    );
+    const { rerenderWith } = renderTerrain(loadMapSquare, { x: 23, y: 157 });
+    rerenderWith({ x: 35, y: 47 }, NORTH_ARENA);
+    await waitFor(() => expect(painted).toHaveLength(1));
+    await act(async () => finishFirst?.());
+
+    expect(painted).toHaveLength(1);
+    expect([painted[0].width, painted[0].height]).toEqual([256, 512]);
+  });
+
+  it("keeps the previous encounter's terrain off the new map while the new one loads", async () => {
+    capturePaints();
+    const pendingNorthArena: (() => void)[] = [];
+    const loadMapSquare = vi.fn((mapX: number, mapY: number) =>
+      mapX === 35
+        ? new Promise<MapSquareData>((resolve) => {
+            pendingNorthArena.push(() => resolve(uniformMapSquare(mapX, mapY, 2)));
+          })
+        : Promise.resolve(uniformMapSquare(mapX, mapY, 1)),
+    );
+    const { rerenderWith } = renderTerrain(loadMapSquare, { x: 23, y: 157 });
+    await waitFor(() => expect(painted).toHaveLength(1));
+
+    rerenderWith({ x: 35, y: 47 }, NORTH_ARENA);
+    // The new raster shows its placeholder grid, not the old square's terrain in the new layout.
+    expect(painted).toHaveLength(1);
+    await act(async () => {
+      for (const finish of pendingNorthArena) finish();
+    });
+
+    await waitFor(() => expect(painted).toHaveLength(2));
+    expect([painted[1].width, painted[1].height]).toEqual([256, 512]);
+  });
+
+  it('requests only the Inferno origin square, though its scene has five', async () => {
+    capturePaints();
+    const footprint = getEncounterMapFootprint('inferno');
+    if (!footprint) throw new Error('no Inferno footprint');
+    expect(footprint.sceneBlock).toHaveLength(5);
+    const loadMapSquare = vi.fn(async (mapX: number, mapY: number) => uniformMapSquare(mapX, mapY, 1));
+    const { canvas } = renderTerrain(loadMapSquare, footprint.origin, footprint.arenaBlock);
+
+    await waitFor(() => expect(painted).toHaveLength(1));
+    expect(loadMapSquare.mock.calls).toEqual([[35, 83]]);
+    expect([canvas?.width, canvas?.height]).toEqual([256, 256]);
+  });
+
+  it('keeps the default single square at its exact geometry', async () => {
+    capturePaints();
+    const loadMapSquare = vi.fn(async (mapX: number, mapY: number) => uniformMapSquare(mapX, mapY, 1));
+    const { canvas } = renderTerrain(loadMapSquare);
+
+    await waitFor(() => expect(painted).toHaveLength(1));
+    expect(loadMapSquare.mock.calls).toEqual([[23, 157]]);
+    expect([canvas?.width, canvas?.height, canvas?.style.width, canvas?.style.height]).toEqual([
+      256,
+      256,
+      '100%',
+      '100%',
+    ]);
+    // The player (28, 63) at the 154 px aperture's center, at the default zoom 4, by the pre-multi-square formula.
+    const px = 28 * 4 + 2;
+    const py = (63 - 63) * 4 + 2;
+    expect(canvas?.style.transform).toBe(
+      `translate(${77 - (px / 256) * 154}px, ${77 - (py / 256) * 154}px) scale(${minimapCssScale(4, 154)}) rotate(180deg)`,
+    );
+    expect(canvas?.style.transformOrigin).toBe(`${(px / 256) * 100}% ${(py / 256) * 100}%`);
   });
 });

@@ -23,6 +23,7 @@ import { classifyMesh3DCommands } from '../backends/picogl/commandClassifier';
 import type { Projection2D } from '../core/camera';
 import { createQueue, type RenderQueue } from '../core/commands';
 import { describePlayerEffects } from '../effects/playerEffectDescriptors';
+import { getTerrainHeightInterpolated } from '../shared/renderUtils';
 import { SceneCompositor, Z_LAYERS } from './SceneCompositor';
 import type { RenderContext } from './types';
 
@@ -1008,6 +1009,61 @@ describe('SceneCompositor surface loading', () => {
     expect(scene['surfaceHeightResolver'].resolve(10.5, 10.5, 3)).toBe(-640);
     expect(scene['resolveSurfaceHeight'](-0.5, 10.5)).toBe(-192);
     expect(scene['resolveSurfaceHeight'](64.5, 10.5)).toBe(0);
+  });
+
+  it('composes every arena square into the actor height grid, not the scenery squares', async () => {
+    const { scene, mapLoader } = terrainFixture();
+    scene.setEncounterRenderConfig({
+      terrainMapSquare: { x: 0, y: 0 },
+      mapSquareOffsets: [
+        { dx: -1, dy: 0 },
+        { dx: 0, dy: 0 },
+        { dx: 1, dy: 0 },
+      ],
+      // The origin and the square east of it; the west square is scenery only.
+      arenaMapSquareOffsets: [
+        { dx: 0, dy: 0 },
+        { dx: 1, dy: 0 },
+      ],
+      locRender: { levels: [0] },
+    });
+
+    await scene.buildTerrainMeshes3D(mapLoader);
+
+    const heights = scene.getTerrainHeights();
+    expect(heights).toHaveLength(128);
+    // Both sides of the seam at x = 64: the origin square (map x 0) and the east square (map x 1).
+    expect(getTerrainHeightInterpolated(heights, 62.5, 10.5)).toBe(-256);
+    expect(getTerrainHeightInterpolated(heights, 64.5, 10.5)).toBe(-384);
+    expect(scene['isInArenaFootprint']([64, 10])).toBe(true);
+    expect(scene['isInArenaFootprint']([-1, 10])).toBe(false);
+  });
+
+  it('keeps the origin square as the height grid when it is the only arena square', async () => {
+    const { scene, mapLoader } = terrainFixture();
+    const loaded = new Map<string, MapSquareData>();
+    const recordingLoader = {
+      loadMapSquare: async (mapX: number, mapY: number) => {
+        const map = await mapLoader.loadMapSquare(mapX, mapY);
+        loaded.set(`${mapX},${mapY}`, map);
+        return map;
+      },
+    };
+    scene.setEncounterRenderConfig({
+      terrainMapSquare: { x: 0, y: 0 },
+      // The scene draws two squares, but the arena is the origin alone (Inferno's shape).
+      mapSquareOffsets: [
+        { dx: -1, dy: 0 },
+        { dx: 0, dy: 0 },
+      ],
+      locRender: { levels: [0] },
+    });
+
+    await scene.buildTerrainMeshes3D(recordingLoader);
+
+    expect(scene.getTerrainHeights()).toBe(loaded.get('0,0')?.tileHeights[0]);
+    expect(scene['isInArenaFootprint']([-1, 10])).toBe(false);
+    expect(scene['isInArenaFootprint']([63, 63])).toBe(true);
   });
 
   it.each([

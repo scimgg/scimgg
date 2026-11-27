@@ -5,12 +5,10 @@
  * terrain by the same rules.
  */
 import type { OverlayTypeLoader, UnderlayTypeLoader } from '../rs/config/flotype/FloTypeLoader';
-import type { MapSquareData } from '../rs/map/MapLoader';
+import { MAP_SQUARE_SIZE, type MapSquareData } from '../rs/map/MapLoader';
 import type { TextureLoader } from '../rs/texture/TextureLoader';
 import { adjustOverlayLight, adjustUnderlayLight, HSL_RGB_MAP, INVALID_HSL_COLOR, packHsl } from '../rs/util/ColorUtil';
 
-/** Tiles along a map square's side. */
-export const MAP_SQUARE_SIZE = 64;
 const MAP_SIZE = MAP_SQUARE_SIZE;
 const LOCAL_TILE_SIZE = 128;
 const HALF_TILE_SIZE = LOCAL_TILE_SIZE / 2;

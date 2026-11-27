@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useReplayFrameStore } from '../../contexts/ReplayFrameContext';
 import { useSimulationContext } from '../../contexts/SimulationContext';
 import { useTickProgressStore } from '../../contexts/TickProgressContext';
-import { GRID_SIZE } from '../../core/constants';
+import type { ArenaTileExtent } from '../../core/encounters/mapFootprint';
 import type { GameEvent } from '../../core/events/types';
 import { createProjection, type Projection, type ProjectionType } from '../../core/projection';
 import type { ReplayClickType } from '../../core/ReplayRecorder';
@@ -12,6 +12,7 @@ import type { SimulationEngine } from '../../core/SimulationEngine';
 import { useClickAnimation } from '../../hooks/useClickAnimation';
 import { useDevicePixelRatio } from '../../hooks/useDevicePixelRatio';
 import { REPLAY_CLICK_OWNERSHIP_PROPS, type WorldClickType } from '../../input/replayClickFeedback';
+import { MAP_SQUARE_SIZE } from '../../rs/map/MapLoader';
 import { WATCH_INPUT_GATED_ATTR } from '../../tutorial/runtime/tutorialInputBoundary';
 import type { EntityHiderOptions } from '../../types/entityHider';
 import type { LineMarker } from '../../types/lineMarkers';
@@ -49,6 +50,7 @@ import type { RenderContext, SceneBuilderLike } from '../scene/types';
 import { HITSPLAT_SPRITE_BY_TYPE } from './hitsplatSprites';
 
 const BASE_TILE_SIZE = 32;
+const ORIGIN_SQUARE_EXTENT: ArenaTileExtent = { width: MAP_SQUARE_SIZE, height: MAP_SQUARE_SIZE };
 const MIN_ZOOM = 0.25;
 const MAX_ZOOM = 3.0;
 const ROTATION_DRAG_THRESHOLD = 80;
@@ -92,6 +94,11 @@ interface RenderViewportProps {
   /** Live countdown positioning, read every frame; its steps animate while the tick stays 0. */
   getStartPositionPreparation?: () => StartPositionPreparation | null;
   projectionType?: ProjectionType;
+  /**
+   * The tiles the view covers and accepts clicks on, from tile (0, 0): the displayed encounter's
+   * arena rectangle (`EncounterMapFootprint.arenaTileExtent`). Default: the origin map square.
+   */
+  tileExtent?: ArenaTileExtent;
   renderer: Renderer;
   sceneBuilder: SceneBuilderLike;
   width?: number;
@@ -145,6 +152,7 @@ export const RenderViewport: React.FC<RenderViewportProps> = ({
   getTargetTile,
   getStartPositionPreparation,
   projectionType = 'top-down',
+  tileExtent = ORIGIN_SQUARE_EXTENT,
   renderer,
   sceneBuilder,
   width = 800,
@@ -211,15 +219,16 @@ export const RenderViewport: React.FC<RenderViewportProps> = ({
 
   const effectiveTileSize = BASE_TILE_SIZE * zoomLevel;
 
+  const { width: gridWidth, height: gridHeight } = tileExtent;
   const projection = useMemo<Projection>(
     () =>
       createProjection(projectionType, {
-        gridWidth: GRID_SIZE,
-        gridHeight: GRID_SIZE,
+        gridWidth,
+        gridHeight,
         tileSize: effectiveTileSize,
         rotation: cameraRotation,
       }),
-    [projectionType, cameraRotation, effectiveTileSize],
+    [projectionType, cameraRotation, effectiveTileSize, gridWidth, gridHeight],
   );
 
   const cameraOffsetRef = useRef({ x: 0, y: 0 });
