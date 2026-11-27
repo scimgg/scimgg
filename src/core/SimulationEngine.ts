@@ -582,10 +582,14 @@ export class SimulationEngine {
   }
 
   /**
-   * Whether the tick just advanced had the player busy. The live loop drops the walk target the
-   * player clicked meanwhile, as the game drops clicks made while busy.
+   * Whether the tick just advanced discarded the walk target it was given, as the game drops clicks
+   * made while the player is busy (`EncounterEngineRules.playerInputLocked`). Every caller that
+   * carries a walk target into the next tick (the live loop, a manual step, a replay takeover's
+   * resume target) clears it when this is true, so any further busy state that drops the walk
+   * belongs here. A reconstructed engine answers for its last re-simulated tick, so takeover reads
+   * it straight off the rebuilt engine.
    */
-  public wasLastTickInputLocked(): boolean {
+  public didLastTickDiscardWalkTarget(): boolean {
     return this.lastTickInputLocked;
   }
 

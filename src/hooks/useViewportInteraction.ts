@@ -71,6 +71,12 @@ export function useViewportInteraction({
     )
       return;
     engineRef.current.advanceTick(moveTarget);
+    // As in the live loop: a click dropped while busy must not stay queued (and marked) for the next
+    // step or for auto-advance to walk to.
+    if (engineRef.current.didLastTickDiscardWalkTarget()) {
+      setTargetTile(null);
+      targetTileRef.current = null;
+    }
     const newState = engineRef.current.getState();
     const tickEvents = engineRef.current.getLastTickEvents();
     replay.recordFrame(newState.currentTick, moveTarget, newState, tickEvents, getReplayUiState());
