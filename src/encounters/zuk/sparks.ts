@@ -1,5 +1,5 @@
 import type { EncounterContext, EnvironmentalDamage } from '../../core/encounters/types';
-import { type EncounterVisualCue, emitEncounterVisual } from '../../core/events/encounterVisual';
+import { type EncounterVisualBatch, emitEncounterVisual } from '../../core/events/encounterVisual';
 import type { Coordinate } from '../../types/simulation';
 import type { ZukSparkVolleyCommand } from './commands';
 
@@ -59,7 +59,7 @@ type Landing = {
 export class ZukSparkLandings {
   private pending: Landing[] = [];
 
-  emit(command: Pick<ZukSparkVolleyCommand, 'sparks'>, tick: number): EncounterVisualCue | undefined {
+  emit(command: Pick<ZukSparkVolleyCommand, 'sparks'>, tick: number): EncounterVisualBatch | undefined {
     const sparks = structuredClone(command.sparks);
     this.pending.push(...sparks.map((spark) => ({ tick: tick + 3, spark })));
     const projectiles = sparks.flatMap((spark) =>

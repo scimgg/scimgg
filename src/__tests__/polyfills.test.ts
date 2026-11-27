@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { EncounterVisualCue } from '../core/events/encounterVisual';
+import type { EncounterVisualBatch } from '../core/events/encounterVisual';
 import { generateSparkVolley } from '../encounters/zuk/sparks';
 import { createColosseumActor } from '../npcs/colosseum/actors';
 import { createInfernoActor } from '../npcs/inferno/actors';
@@ -141,12 +141,12 @@ describe('structuredClone DTO fallback', () => {
     const inferno = createInfernoActor('shield', 'glyph', [1, 2]);
     const colosseum = createColosseumActor('beam_crystal', 'crystal', [3, 4]);
     const sparks = generateSparkVolley({ source: [30, 50], player: [30, 44], random: () => 0.5 });
-    const infernoCue: EncounterVisualCue = {
+    const infernoCue: EncounterVisualBatch = {
       animations: [{ actorId: 'glyph', clipId: 'idle', delayCycles: 0 }],
       projectiles: [],
       graphics: [{ spotAnimId: 659, target: { kind: 'tile', position: [30, 44] }, height: 0, delayCycles: 2 }],
     };
-    const colosseumCue: EncounterVisualCue = {
+    const colosseumCue: EncounterVisualBatch = {
       animations: [],
       graphics: [
         { spotAnimId: 1, target: { kind: 'tile', position: [3, 4] }, delayCycles: 1, height: 0 },

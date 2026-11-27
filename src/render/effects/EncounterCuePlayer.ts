@@ -1,12 +1,8 @@
-import {
-  type EncounterClipCue,
-  type EncounterGraphicCue,
-  isEncounterVisualEvent,
-} from '../../core/events/encounterVisual';
+import { type EncounterGraphicCue, isEncounterVisualEvent } from '../../core/events/encounterVisual';
 import { type GameEvent, isCoreEvent } from '../../core/events/types';
 import type { NpcSnapshot } from '../../types/simulation';
 import { type ActorCueLife, ActorCueLives } from '../core/actorCueLife';
-import { encounterCueId } from '../core/encounterCueIndex';
+import { encounterCueId, type ScheduledEncounterClip } from '../core/encounterCueIndex';
 import type { ReplayEffectDestination, ReplayEffectIndex } from '../core/replayEffectIndex';
 import { getTerrainHeightInterpolated } from '../shared/renderUtils';
 import { NpcProjectileFlights, type NpcProjectileFrame, npcVisualTargetCentre } from './NpcProjectileFlights';
@@ -22,11 +18,8 @@ export type EncounterCueFrame = NpcProjectileFrame & {
   readonly resolveAttachment: (actorId: string) => SpotAnimTransform | null;
 };
 
-/** A clip due to start on an actor at `cycle`, for the life of the actor it was emitted for. */
-export type DueEncounterClip = { readonly cue: EncounterClipCue; readonly cycle: number; readonly life: ActorCueLife };
-
 /** The actors a live frame shows, after its tick: what its cues' actor lives are worked out from. */
-export type EncounterCueActors = { readonly npcs: readonly NpcSnapshot[]; readonly currentTick: number };
+type EncounterCueActors = { readonly npcs: readonly NpcSnapshot[]; readonly currentTick: number };
 
 type Graphic = {
   readonly cue: EncounterGraphicCue;
@@ -53,7 +46,7 @@ type Graphic = {
 export class EncounterCuePlayer {
   private readonly flights: NpcProjectileFlights;
   private readonly graphics = new Map<string, Graphic>();
-  private animations: DueEncounterClip[] = [];
+  private animations: ScheduledEncounterClip[] = [];
   /** Live play's actor lives; in replay, the index's own lives answer at the destination. */
   private readonly lives = new ActorCueLives();
   private replay: { readonly index: ReplayEffectIndex; readonly destination: ReplayEffectDestination } | undefined;
@@ -127,7 +120,7 @@ export class EncounterCuePlayer {
   }
 
   /** The clips due by `cycle`, in start order (emission order within a cycle), removed from the queue. */
-  takeAnimations(cycle: number): DueEncounterClip[] {
+  takeAnimations(cycle: number): ScheduledEncounterClip[] {
     let due = 0;
     while (due < this.animations.length && this.animations[due].cycle <= cycle) due++;
     return due === 0 ? [] : this.animations.splice(0, due);

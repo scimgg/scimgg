@@ -1507,7 +1507,7 @@ export class SceneCompositor {
    * on an actor no longer standing, or under a clip key its type does not declare, is skipped; one of an
    * actor life that has ended never reaches here (see `ActorCueLife`).
    */
-  private playEncounterNpcClock(state: SimulationState, interpolatedTick = state.currentTick): void {
+  private advanceNpcAnimationsToTick(state: SimulationState, interpolatedTick = state.currentTick): void {
     const cycle = interpolatedTick * 30;
     this.startNpcAnimationClock(state.currentTick * 30);
     const due: { readonly cycle: number; readonly trigger: NpcAnimationTrigger }[] = [];
@@ -2353,7 +2353,7 @@ export class SceneCompositor {
     if (!is2D) {
       frameProfiler.beginPhase('npcAnims');
       if (!history || !this.restoreEncounterPrimaries(ctx))
-        this.playEncounterNpcClock(simulationState, interpolatedTick);
+        this.advanceNpcAnimationsToTick(simulationState, interpolatedTick);
       // Advances nothing: applies triggers held for a model that has loaded since, and settles poses.
       this.npcInstanceManager.updateAnimations(0, this.speedMultiplier, []);
       this.reconstructPrunedCorpses(simulationState.npcs);

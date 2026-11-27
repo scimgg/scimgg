@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   actorPresentationsRemoved,
-  type EncounterVisualCue,
+  type EncounterVisualBatch,
   emitEncounterVisual,
   encounterVisual,
   isActorPresentationsRemovedEvent,
@@ -9,7 +9,7 @@ import {
 } from '../encounterVisual';
 import { TickEvents } from '../TickEvents';
 
-const cue: EncounterVisualCue = {
+const cue: EncounterVisualBatch = {
   animations: [{ actorId: 'zuk', clipId: 'attack', delayCycles: 0 }],
   projectiles: [],
   graphics: [

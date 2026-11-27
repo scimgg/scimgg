@@ -15,7 +15,7 @@ import type {
 } from '../../core/encounters/types';
 import {
   actorPresentationsRemoved,
-  type EncounterVisualCue,
+  type EncounterVisualBatch,
   emitEncounterVisual,
   encounterVisual,
 } from '../../core/events/encounterVisual';
@@ -329,7 +329,7 @@ export class ZukWaveDirector {
   executeCommand(command: ZukEncounterCommand, ctx: EncounterCommandContext): EncounterCommandResult {
     const boss = this.boss;
     if (!boss?.alive) return {};
-    let cue: EncounterVisualCue | undefined;
+    let cue: EncounterVisualBatch | undefined;
     switch (command.type) {
       case 'emit-spark-volley':
         cue = this.sparks.emit(command, ctx.tick);

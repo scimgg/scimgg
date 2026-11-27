@@ -12,6 +12,13 @@ import { ReplayDeferredPrimaryIndex } from './replayDeferredPrimaryIndex';
 import type { ReplayEffectSourceFrame } from './replayEffectContext';
 import type { ReplayEffectDestination } from './replayEffectIndex';
 
+/** A clip due to start on an actor at `cycle`, for the `life` of the actor it was emitted for. */
+export type ScheduledEncounterClip = {
+  readonly cue: EncounterClipCue;
+  readonly cycle: number;
+  readonly life: ActorCueLife;
+};
+
 /** A cue's identity: its batch, its family and its ordinal there. Shared by live and replayed play. */
 export const encounterCueId = (eventId: number, family: 'projectile' | 'graphic', ordinal: number): string =>
   `cue-${eventId}-${family}-${ordinal}`;
@@ -113,10 +120,8 @@ export class EncounterCueIndex {
    * Clips owed but not started at the destination, with their start cycles and actor lives, in
    * emission order, none on an ended life.
    */
-  pendingAnimations(
-    destination: ReplayEffectDestination,
-  ): { cue: EncounterClipCue; cycle: number; life: ActorCueLife }[] {
-    const result: { cue: EncounterClipCue; cycle: number; life: ActorCueLife }[] = [];
+  pendingAnimations(destination: ReplayEffectDestination): ScheduledEncounterClip[] {
+    const result: ScheduledEncounterClip[] = [];
     for (const { cue, tick, life } of this.animations.pending(destination, (clip) => clip.delayCycles))
       if (life && !life.isEndedBy(destination)) result.push({ cue, cycle: tick * 30 + cue.delayCycles, life });
     return result;

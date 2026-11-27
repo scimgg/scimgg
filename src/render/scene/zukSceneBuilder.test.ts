@@ -115,7 +115,7 @@ class SceneProbe extends InfernoSceneCompositor {
   }
   /** The Inferno's clips play from the tick and NPCs alone; it derives no triggers from the rest. */
   animate(state: Pick<SimulationState, 'currentTick' | 'npcs'>, tick: number): void {
-    this['playEncounterNpcClock'](state as SimulationState, tick);
+    this['advanceNpcAnimationsToTick'](state as SimulationState, tick);
   }
 }
 
@@ -2636,9 +2636,8 @@ describe('Inferno scene (no primary NPC)', () => {
 
 /**
  * Characterization of a recording in the old `inferno_visual` wire shape (`legacyInfernoRecording`),
- * drawn by the shipped Inferno scene. Observed only through the render queue and NPC poses, so this
- * block is meant to pass unchanged through every commit of the encounter-cue migration: continuous
- * playback and a direct seek must agree with each other and with these values.
+ * drawn by the shipped Inferno scene and observed only through the render queue and NPC poses:
+ * continuous playback and a direct seek must agree with each other and with these values.
  *
  * Free-running idle phase is not compared; a seek does not restore it
  * (docs/architecture/replay-timeline-discontinuity.md, Limits).
@@ -2838,9 +2837,9 @@ describe('legacy inferno_visual recording: continuous playback versus direct see
     expect(draw(switched, '3d')).toEqual(expected);
   });
 
-  // A baseline failure on 49ef532: played one cycle per frame, the corpse ended at 178, a frame
-  // before a seek ended it (179), as the death timer was credited the frame's delta from before the
-  // death. Replay now poses each snapshot corpse at its exact age every frame, before it is pruned.
+  // Played one cycle per frame, the corpse must end on the cycle a seek ends it (179): replay poses
+  // each snapshot corpse at its exact age every frame, before it is pruned, never crediting its death
+  // timer a frame's delta from before the death.
   it('ends a pruned corpse on the same cycle whether played or sought', async () => {
     const { at } = await legacyScene();
     expect(activeWindows((cycle) => at(cycle), 0, 270, idleSeqIds).clips['healer:2638']).toEqual([90, 179]);

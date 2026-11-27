@@ -66,15 +66,16 @@ export type EncounterGraphicCue = {
   readonly height: number;
 };
 
-export type EncounterVisualCue = {
+/** One `encounter_visual` batch: the clips, projectiles and graphics a mechanic schedules together. */
+export type EncounterVisualBatch = {
   readonly animations: readonly EncounterClipCue[];
   readonly projectiles: readonly NpcProjectileCue[];
   readonly graphics: readonly EncounterGraphicCue[];
 };
 
 export const ENCOUNTER_VISUAL_EVENT = 'encounter_visual';
-export type EncounterVisualEvent = GameEvent & EncounterVisualCue & { readonly type: typeof ENCOUNTER_VISUAL_EVENT };
-export type UnstampedEncounterVisualEvent = EncounterVisualCue & { readonly type: typeof ENCOUNTER_VISUAL_EVENT };
+export type EncounterVisualEvent = GameEvent & EncounterVisualBatch & { readonly type: typeof ENCOUNTER_VISUAL_EVENT };
+export type UnstampedEncounterVisualEvent = EncounterVisualBatch & { readonly type: typeof ENCOUNTER_VISUAL_EVENT };
 
 const cycles = z.number().int().nonnegative();
 const coordinate = z.tuple([z.number(), z.number()]);
@@ -108,13 +109,13 @@ const graphicTargetSchema = z.union([
   z.object({ kind: z.literal('attached'), actorId: z.string().min(1) }),
 ]);
 
-export const encounterVisualCueSchema = z.object({
+export const encounterVisualBatchSchema = z.object({
   animations: z.array(z.object({ actorId: z.string().min(1), clipId: z.string().min(1), delayCycles: cycles })),
   projectiles: z.array(npcProjectileCueSchema),
   graphics: z.array(z.object({ spotAnimId: cycles, target: graphicTargetSchema, delayCycles: cycles, height: cycles })),
 });
 
-const encounterVisualEventSchema = encounterVisualCueSchema.extend({
+const encounterVisualEventSchema = encounterVisualBatchSchema.extend({
   type: z.literal(ENCOUNTER_VISUAL_EVENT),
   eventId: cycles,
   tick: cycles,
@@ -126,16 +127,16 @@ export function isEncounterVisualEvent(event: GameEvent): event is EncounterVisu
 
 /**
  * The batch as an unstamped event, for an emitter that returns its events rather than emitting them
- * (`TickEvents.emit` stamps the tick and id). The cue is copied, so the caller may reuse it.
+ * (`TickEvents.emit` stamps the tick and id). The batch is copied, so the caller may reuse it.
  */
-export function encounterVisual(cue: EncounterVisualCue): UnstampedEncounterVisualEvent {
-  return { type: ENCOUNTER_VISUAL_EVENT, ...structuredClone(cue) };
+export function encounterVisual(batch: EncounterVisualBatch): UnstampedEncounterVisualEvent {
+  return { type: ENCOUNTER_VISUAL_EVENT, ...structuredClone(batch) };
 }
 
 /** Emits the batch; an empty one carries nothing and is not emitted, so callers may build one unconditionally. */
-export function emitEncounterVisual(events: TickEvents, cue: EncounterVisualCue): void {
-  if (cue.animations.length === 0 && cue.projectiles.length === 0 && cue.graphics.length === 0) return;
-  events.emit(encounterVisual(cue));
+export function emitEncounterVisual(events: TickEvents, batch: EncounterVisualBatch): void {
+  if (batch.animations.length === 0 && batch.projectiles.length === 0 && batch.graphics.length === 0) return;
+  events.emit(encounterVisual(batch));
 }
 
 /**
