@@ -94,10 +94,15 @@ Every other declaration is a checked projection of the catalog:
 - [`modules.ts`](../../src/encounters/modules.ts): node-safe runtime manifest (factory, descriptor,
   `variantFactories`, controls, intro). It must stay free of render/UI imports: its node consumers
   would otherwise pull picogl, which needs a browser global.
-- [`presentationModules.ts`](../../src/encounters/presentationModules.ts): render config, opening
-  camera, audio layer, picker art, and a scene builder only when the encounter needs its own; without
-  one it gets the common `SceneCompositor`, which loads every NPC type and effect the render config
-  declares and holds a 3D replay frame until they settle.
+- [`presentationModules.ts`](../../src/encounters/presentationModules.ts): opening camera, audio
+  layer, picker art, and a scene builder only when the encounter needs its own; without one it gets
+  the common `SceneCompositor`, which loads every NPC type and effect the render config declares and
+  holds a 3D replay frame until they settle.
+- `ENCOUNTER_RENDER_CONFIGS` ([`declaredNpcSeqIds.ts`](../../src/encounters/declaredNpcSeqIds.ts)):
+  the one registration of each encounter's render config, keyed by its presentation entry's kind.
+  It is node-safe, so cache trimming and frame-sound extraction read the same map.
+  `getEncounterRenderConfig` resolves a variant kind through its presentation entry and adds the
+  descriptor's map squares.
 - [`registry.ts`](../../src/encounters/registry.ts): owns the populated `encounterRegistry`, so
   `src/core` keeps only the `EncounterRegistry` class and never imports a concrete encounter.
 - [`slugs.ts`](../../src/encounters/slugs.ts) derives routes; `registered: false` withholds an entry
@@ -127,7 +132,7 @@ The core descriptor owns an encounter's map squares. `mapSquare` is the origin s
 south-west tile is simulation (0, 0), and a tile with y ≥ 64 is simply in the square to the north
 (coordinates are translated by whole squares, never flipped). `mapSquareOffsets` lists every square
 the encounter loads, relative to the origin; omitted, it is the origin alone. Each offset is an
-arena square unless it is marked `sceneryOnly: true`. A presentation module never declares map
+arena square unless it is marked `sceneryOnly: true`. An authored render config never declares map
 squares: `withDescriptorMapBlock` ([`encounterMapBlock.ts`](../../src/render/scene/encounterMapBlock.ts))
 copies the origin and squares from the descriptor, for `getEncounterRenderConfig` and for a scene
 builder made without a render config.
@@ -255,27 +260,36 @@ spawn command (reset instead); reviving before the defeat is adjudicated is supp
 5. Add only the projections needed: mechanics keys in
    [`types/simulation.ts`](../../src/types/simulation.ts), commands in
    [`core/encounters/commands.ts`](../../src/core/encounters/commands.ts).
-6. Add one entry each to `modules.ts` and `presentationModules.ts`, then lobby access and tutorials
-   where applicable.
+6. Add one entry each to `modules.ts` and `presentationModules.ts`, register its render config in
+   `ENCOUNTER_RENDER_CONFIGS`, then add lobby access and tutorials where applicable.
 7. Test source-backed behavior, full-engine tick timing, NPC stage enrollment, reset/seed
-   determinism, snapshot cloneability and manifest agreement.
+   determinism, snapshot cloneability and manifest agreement. Give each new kind, variants included,
+   a scenario in `ENCOUNTER_DYNAMIC_COVERAGE` in
+   [`cache-runtime.check.ts`](../../scripts/cache-runtime.check.ts), which fails until one exists.
 
 ### Presenting it
 
-A new encounter needs no scene code of its own to animate, fly, place and replay its effects:
+A new encounter needs no scene code of its own to animate, fly, place and replay its effects. The
+default encounter cue player, and the cue index in `ReplayEffectIndex` it restores from, consume
+`encounter_visual` batches; `actor_presentations_removed` is a lifecycle instruction that drops
+presentations, not a cue. An encounter's semantic events still reach their existing consumers
+(audio rules, controllers), but nothing maps an arbitrary boss event to a default cue, and there is
+no mapper to register: a boss that emits only its own `attack_started`-like event plays no clip in
+the default scene. Build the batch at the decision point instead, with a pure local function if
+that helps. The protocol is in [Visual batches](events.md#visual-batches).
 
 1. **Emit** each visual transition that is a set of scheduled instructions as one `encounter_visual`
    batch (`emitEncounterVisual`) where the mechanic decides it, with every per-occurrence fact it
    needs (delays, targets, heights) recorded there, never recovered later from a landed frame. A
-   practice command that replaces a set of NPC types emits `actor_presentations_removed`. See
-   [Visual batches](events.md#visual-batches).
-2. **Declare** the assets in its `renderConfig.ts`: each NPC type with keyed `attackClips` (the
-   batch's `clipId`s) and every spot animation. The same declarations drive loading, replay
-   readiness, cache trimming and frame-sound extraction (`npx tsx scripts/extract-frame-sounds.ts`
-   for new clips; name new sound ids in `audio/soundNames.ts`).
+   practice command that replaces a set of NPC types emits `actor_presentations_removed`.
+2. **Declare** the assets in its `renderConfig.ts`, registered in `ENCOUNTER_RENDER_CONFIGS`: each
+   NPC type with keyed `attackClips` (the batch's `clipId`s) and every spot animation. The same
+   declarations drive loading, replay readiness, cache trimming and frame-sound extraction
+   (`npx tsx scripts/extract-frame-sounds.ts` for new clips; name new sound ids in
+   `audio/soundNames.ts`).
 3. **Use the default scene builder**: no `sceneBuilder` in `presentationModules.ts`. The common
-   `SceneCompositor` plays the batches on one NPC clock, live and after any seek, from the shared
-   `ReplayEffectIndex`.
+   `SceneCompositor` gets the kind's resolved render config and plays the batches on one NPC clock,
+   live and after any seek.
 4. **Override only real presentation differences** in a scene subclass: an opening camera or
    cutscene, overlays, a graphic's draw style (`encounterGraphicStyle`). Persistent LOC hazards are a
    snapshot plus a scene-object controller ([scene objects](scene-objects.md)); explicit event sounds
