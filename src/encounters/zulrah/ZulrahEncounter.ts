@@ -1,6 +1,6 @@
 import { type NpcActor, submergeNpc } from '../../core/actors/NpcActor';
 import type { ArenaConfig } from '../../core/arena/ArenaConfig';
-import { getDefaultArenaConfig, isWalkableTile } from '../../core/constants';
+import { isWalkableTile } from '../../core/constants';
 import { ACTIVE_ENCOUNTER_OUTCOME, type EncounterOutcome } from '../../core/encounters/outcome';
 import type { EncounterSnapshotContext, ZulrahSnapshot } from '../../core/encounters/snapshot';
 import type {
@@ -24,6 +24,7 @@ import {
   snakelingExpireTick,
 } from '../../npcs/zulrah/snakeling';
 import { createZulrahActor, getZulrahState, transformZulrah, zulrahDefinition } from '../../npcs/zulrah/zulrah';
+import { getBoundsFromRegion } from '../../rs/collision/WalkabilityAnalyzer';
 import type { Coordinate, MechanicsConfig } from '../../types/simulation';
 import {
   fillCloudSites,
@@ -33,6 +34,7 @@ import {
   ZULRAH_FILL_BARRAGES,
   type ZulrahCloud,
 } from './clouds';
+import { zulrahIslandTiles } from './constants';
 import {
   buildZulrahControls,
   ZULRAH_ATTACKS_KEY,
@@ -370,8 +372,14 @@ export class ZulrahEncounter implements Encounter {
     return 'ZulrahAttack';
   }
 
+  /**
+   * The pre-cache arena: the island's own walkable tiles, until the cache bake (real collision,
+   * pillars included) replaces it. Not the global default, which the cache sets to Yama's arena.
+   * Simulator policy, as Sol Heredit's: the player can move on the island from the first tick.
+   */
   getArenaConfig(): ArenaConfig {
-    return getDefaultArenaConfig();
+    const walkableTiles = zulrahIslandTiles();
+    return { bounds: getBoundsFromRegion(walkableTiles), walkableTiles, collisionMap: null };
   }
 
   private initialPhase(): PhaseRuntime {

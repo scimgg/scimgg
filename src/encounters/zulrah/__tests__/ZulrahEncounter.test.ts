@@ -4,8 +4,11 @@ import {
   clearResolvedArenaConfigs,
   getArenaAllowUnboundedFallback,
   getArenaConfig,
+  getDefaultArenaConfig,
   isInTileSpace,
+  isWalkableTile,
   setArenaConfig,
+  setDefaultArenaConfig,
   setResolvedArenaConfig,
 } from '../../../core/constants';
 import { VENOM_THRESHOLD } from '../../../core/poison';
@@ -31,6 +34,7 @@ import { createEmptyStats } from '../../../types/equipmentStats';
 import { parseInventoryFromSetup } from '../../../types/inventory';
 import { type Coordinate, type MechanicsConfig, PrayerType } from '../../../types/simulation';
 import { pickCloudSites, ZULRAH_CLOUD_FILL_ORDER, ZULRAH_CLOUD_SITES } from '../clouds';
+import { zulrahIslandTiles } from '../constants';
 import {
   ZULRAH_OPENING_PAUSE_TICKS,
   ZULRAH_OPENING_RISE_TICKS,
@@ -686,18 +690,6 @@ describe('ZulrahSceneObjectController', () => {
 });
 
 describe('Zulrah island across two map squares', () => {
-  /** The island the cache flood-fills from the start tile: base y 60-63, arms x 22-24 and 32-34 to y 70. */
-  function islandArena(): Set<string> {
-    const tiles = new Set<string>();
-    for (let x = 22; x <= 34; x++) for (let y = 60; y <= 63; y++) tiles.add(`${x},${y}`);
-    for (const [minX, maxX] of [
-      [22, 24],
-      [32, 34],
-    ])
-      for (let x = minX; x <= maxX; x++) for (let y = 64; y <= 70; y++) tiles.add(`${x},${y}`);
-    return tiles;
-  }
-
   const originalArena = getArenaConfig();
   const originalFallback = getArenaAllowUnboundedFallback();
   afterEach(() => {
@@ -707,7 +699,7 @@ describe('Zulrah island across two map squares', () => {
 
   /** As the app does once the cache resolves the arena: store it for the kind, then reapply. */
   function installIsland(run?: Run): void {
-    const walkableTiles = islandArena();
+    const walkableTiles = zulrahIslandTiles();
     const config = { bounds: getBoundsFromRegion(walkableTiles), walkableTiles, collisionMap: null };
     setResolvedArenaConfig('zulrah', config);
     if (run) run.engine.reapplyArenaConfig();
@@ -715,11 +707,65 @@ describe('Zulrah island across two map squares', () => {
   }
 
   it('counts the arm tiles past y 63 as usable tiles once the arena reaches them', () => {
+    // One map square's frame, as before the arena reached into 35_48.
+    setArenaConfig(
+      {
+        bounds: { minX: 0, minY: 0, maxX: 63, maxY: 63, width: 64, height: 64 },
+        walkableTiles: null,
+        collisionMap: null,
+      },
+      false,
+    );
     expect(isInTileSpace(23, 69)).toBe(false);
     installIsland();
     expect(isInTileSpace(23, 69)).toBe(true);
     expect(isInTileSpace(33, 70)).toBe(true);
     expect(isInTileSpace(23, 71)).toBe(false);
+  });
+
+  it("uses the island, not the global default (Yama's arena once the cache loads), before its own bake", () => {
+    const previousDefault = getDefaultArenaConfig();
+    const yamaLike = new Set(['32,30', '32,31']);
+    setDefaultArenaConfig({ bounds: getBoundsFromRegion(yamaLike), walkableTiles: yamaLike, collisionMap: null });
+    try {
+      const run = startRun(6);
+      expect(run.encounter.getArenaConfig().walkableTiles).toEqual(zulrahIslandTiles());
+      expect(getArenaConfig().walkableTiles).toEqual(zulrahIslandTiles());
+      expect(isWalkableTile(...ZULRAH_PLAYER_START)).toBe(true);
+      expect(isWalkableTile(32, 30)).toBe(false);
+      // The start tile is on it, and the pillars and the water are not.
+      expect(isWalkableTile(25, 63)).toBe(false);
+      expect(isWalkableTile(28, 64)).toBe(false);
+    } finally {
+      setDefaultArenaConfig(previousDefault);
+    }
+  });
+
+  it('walks a halberd from the base round a pillar and up an arm to hit the middle form', () => {
+    const run = startRun(6, { zulrahAttacks: false, zulrahClouds: false });
+    installIsland(run);
+    const front: Coordinate = [28, 62];
+    run.engine.setEquipment({ weapon: 29796 }); // Noxious halberd
+    // Weapon reach comes from the cache's item params, which unit tests do not load: set the halberd's 2.
+    const player = run.world.getPlayer();
+    if (!player) throw new Error('No player');
+    player.equipmentStats = { ...player.equipmentStats, attackRange: 2 };
+    for (let i = 0; i < 20; i++) run.engine.advanceTick(front);
+    expect(player.position).toEqual(front);
+    run.engine.setAttackTarget(ZULRAH_ACTOR_ID);
+    let attackedFrom: Coordinate | null = null;
+    for (let i = 0; i < 10 && !attackedFrom; i++) {
+      run.engine.advanceTick([player.position[0], player.position[1]]);
+      const attacked = run.engine
+        .getLastTickEvents()
+        .some((event) => event.type === 'attack_started' && event.sourceId === player.id);
+      if (attacked) attackedFrom = [player.position[0], player.position[1]];
+    }
+    // The base's front row (y 62) is 3 tiles from the footprint (y 65-69), and y 63 between the pillars
+    // is not walkable, so only the arms' inner columns (x 24 and 32, from y 63) are in a halberd's reach.
+    expect(attackedFrom).not.toBeNull();
+    expect([24, 32]).toContain(attackedFrom?.[0]);
+    expect(attackedFrom?.[1]).toBeGreaterThanOrEqual(63);
   });
 
   it('lets the player walk up an arm to its tip', () => {
