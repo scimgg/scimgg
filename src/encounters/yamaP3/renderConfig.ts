@@ -1,13 +1,12 @@
 import { VOID_FLARE_DETONATED_DEATH_CAUSE } from '../../npcs/yama/timing';
-import type { EncounterRenderConfig } from '../../render/scene/encounterRenderConfig';
+import type { AuthoredEncounterRenderConfig } from '../../render/scene/encounterRenderConfig';
 import { SpotAnimID } from '../../rs/config/spotanimtype/SpotAnimID';
 import { YAMA_NPC_ID, YAMA_SIMULATOR_POSITION } from '../../rs/model/NpcModelLoader';
 import { OSRS_TICK_MS } from '../../types/simulation';
 import { YAMA_VICTORY_COMPLETION_DELAY_TICKS } from './constants';
 import { YamaSceneObjectController } from './YamaSceneObjectController';
 
-export const YAMA_ENCOUNTER_RENDER_CONFIG: EncounterRenderConfig = {
-  // terrainMapSquare auto-derived from EncounterDescriptor.mapSquare at registration.
+export const YAMA_ENCOUNTER_RENDER_CONFIG: AuthoredEncounterRenderConfig = {
   primaryNpc: {
     actorId: 'yama',
     npcTypeId: YAMA_NPC_ID,

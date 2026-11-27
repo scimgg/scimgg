@@ -39,7 +39,7 @@ import { advanceProjectileMotion } from '../effects/projectileMotion';
 import { makeSnapshot } from '../npc/__tests__/npcFacingTestHarness';
 import { NpcAnimationController } from '../npc/NpcAnimationController';
 import { PRIMARY_NPC_ACTOR_ID } from '../npc/NpcInstanceManager';
-import type { EncounterRenderConfig } from './encounterRenderConfig';
+import { type EncounterRenderConfig, getEncounterRenderConfig } from './encounterRenderConfig';
 import { InfernoSceneCompositor } from './InfernoSceneCompositor';
 import { Z_LAYERS } from './SceneCompositor';
 import type { RenderContext } from './types';
@@ -1916,9 +1916,12 @@ describe('Zuk scene builder', () => {
     }
   });
 
-  it('declares the retained terrain block without forcing a Zuk death duration', () => {
-    expect(INFERNO_RENDER_CONFIG.terrainMapSquare).toEqual(ZUK_MAP_SQUARE);
-    expect(INFERNO_RENDER_CONFIG.mapSquareOffsets).toEqual(ZUK_MAP_SQUARE_OFFSETS);
+  it('resolves the retained terrain block from the descriptor without forcing a Zuk death duration', () => {
+    const resolved = getEncounterRenderConfig('inferno');
+    expect(resolved?.terrainMapSquare).toEqual(ZUK_MAP_SQUARE);
+    // The scene draws all five squares; the arena, and so the actor height grid, is the origin alone.
+    expect(resolved?.mapSquareOffsets).toEqual(ZUK_MAP_SQUARE_OFFSETS.map(({ dx, dy }) => ({ dx, dy })));
+    expect(resolved?.arenaMapSquareOffsets).toEqual([{ dx: 0, dy: 0 }]);
     // Zuk is no primary NPC any more; his death clip is his preload's, with no forced duration.
     const zuk = INFERNO_RENDER_CONFIG.preloadNpcTypes?.find((type) => type.npcTypeId === ZUK_NPC_ID);
     expect(zuk).toMatchObject({ deathSeqId: ZUK_SEQS.zuk.death, bossDeathAnimationEnabled: true });

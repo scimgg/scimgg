@@ -161,9 +161,6 @@ export function collectCacheRoots(usage?: CacheUsage): CacheRoots {
     for (const id of config.spotAnimIds ?? []) {
       add(roots.spotAnims, id, `${kind} render config spotAnimIds`);
     }
-    if (config.terrainMapSquare) {
-      addMapSquares(roots, config.terrainMapSquare, config.mapSquareOffsets, `${kind} render config terrainMapSquare`);
-    }
   }
   for (const [seqId, label] of collectDeclaredNpcSeqIds()) add(roots.seqs, seqId, label);
   for (const module of ENCOUNTER_CORE_MODULES) {

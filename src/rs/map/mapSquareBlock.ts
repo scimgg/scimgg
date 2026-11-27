@@ -33,6 +33,44 @@ export function getMapSquareBlock(offsets: MapSquareOffsets = CENTER_MAP_SQUARE)
   }));
 }
 
+/** An inclusive tile rectangle in the block's local (simulation) coordinates. */
+export interface TileBounds {
+  readonly minX: number;
+  readonly maxX: number;
+  readonly minY: number;
+  readonly maxY: number;
+}
+
+/** The smallest tile rectangle covering every square of `block`; a hole in a sparse layout is inside it. */
+export function getMapSquareBlockTileBounds(block: readonly MapSquareBlockEntry[]): TileBounds {
+  if (block.length === 0) throw new Error('getMapSquareBlockTileBounds: empty map square block');
+  return {
+    minX: Math.min(...block.map(({ tileOffsetX }) => tileOffsetX)),
+    maxX: Math.max(...block.map(({ tileOffsetX }) => tileOffsetX + MAP_SQUARE_SIZE - 1)),
+    minY: Math.min(...block.map(({ tileOffsetY }) => tileOffsetY)),
+    maxY: Math.max(...block.map(({ tileOffsetY }) => tileOffsetY + MAP_SQUARE_SIZE - 1)),
+  };
+}
+
+/**
+ * The square holding local tile (x, y), relative to the block's origin square. Floored, so a tile
+ * south or west of the origin (a negative coordinate) lands in the square at -1, not 0.
+ */
+export function getMapSquareOffsetOfTile(x: number, y: number): MapSquareOffset {
+  return { dx: Math.floor(x / MAP_SQUARE_SIZE), dy: Math.floor(y / MAP_SQUARE_SIZE) };
+}
+
+/** Whether local tile (x, y) lies in one of `block`'s squares, not merely inside its bounding rectangle. */
+export function isTileInMapSquareBlock(block: readonly MapSquareBlockEntry[], x: number, y: number): boolean {
+  // Inline rather than through getMapSquareOffsetOfTile: picking probes this per ray step.
+  const dx = Math.floor(x / MAP_SQUARE_SIZE);
+  const dy = Math.floor(y / MAP_SQUARE_SIZE);
+  for (const square of block) {
+    if (square.dx === dx && square.dy === dy) return true;
+  }
+  return false;
+}
+
 export function getTerrainContextLoadOffsets(renderedOffsets: MapSquareOffsets): MapSquareOffsets {
   const seen = new Set<string>();
   const result: MapSquareOffset[] = [];

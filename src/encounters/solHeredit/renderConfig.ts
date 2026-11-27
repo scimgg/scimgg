@@ -13,17 +13,16 @@ import {
 } from '../../npcs/colosseum/constants';
 import { FLOOR_EFFECT_DEPTH_BIAS } from '../../render/effects/spotAnimRenderPolicy';
 import { FULL_MAP_SQUARE_ALL_LEVELS } from '../../render/environment/locRenderOptions';
-import type { EncounterRenderConfig } from '../../render/scene/encounterRenderConfig';
+import type { AuthoredEncounterRenderConfig } from '../../render/scene/encounterRenderConfig';
 import type { Coordinate } from '../../types/simulation';
-import { SOL_MAP_SQUARE, SOL_START_POSITION } from './constants';
+import { SOL_START_POSITION } from './constants';
 import { SolHereditSceneObjectController } from './SolHereditSceneObjectController';
 
 // Empirical tolerance for the totem's coplanar platform glow: eight D24 window-depth
 // steps in NDC, toward the camera under reversed-Z. Not a cache-derived face bias.
 const TOTEM_TRANSPARENT_DEPTH_BIAS_OFFSET = (8 * 2) / (2 ** 24 - 1);
 
-export const SOL_HEREDIT_RENDER_CONFIG: EncounterRenderConfig = {
-  terrainMapSquare: SOL_MAP_SQUARE,
+export const SOL_HEREDIT_RENDER_CONFIG: AuthoredEncounterRenderConfig = {
   primaryNpc: {
     actorId: SOL_ACTOR_ID,
     npcTypeId: SOL_NPC_ID,

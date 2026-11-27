@@ -1042,6 +1042,54 @@ describe('RenderViewport mouse input', () => {
     expect(onTileClick).not.toHaveBeenCalled();
   });
 
+  it('picks tiles across the supplied arena extent, the square north of the origin included', () => {
+    let frame: FrameRequestCallback | undefined;
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      frame = callback;
+      return 1;
+    });
+    const onTileClick = vi.fn();
+    // A 1x2 arena: the origin square and the one north of it, as `arenaTileExtent` resolves it.
+    render(
+      <RenderViewport
+        simulationState={makeSimulationState()}
+        onTileClick={onTileClick}
+        showCoordinates={false}
+        renderer={makeRenderer()}
+        sceneBuilder={makeSceneBuilder()}
+        tileExtent={{ width: 64, height: 128 }}
+      />,
+    );
+    const canvas = screen.getByLabelText('Game Grid');
+    stubCanvasRect(canvas);
+    act(() => frame?.(1000));
+
+    // The camera centers the player (31, 37) in the 800x600 canvas: 32 px tiles, north up over 128 rows.
+    const tileCenter = (x: number, y: number) => ({ x: (x + 0.5) * 32, y: (127 - y + 0.5) * 32 });
+    const player = tileCenter(31, 37);
+    const offset = { x: Math.round(player.x - 400), y: Math.round(player.y - 300) };
+    const click = (x: number, y: number) => {
+      const center = tileCenter(x, y);
+      fireEvent.mouseDown(canvas, {
+        button: 0,
+        buttons: 1,
+        clientX: center.x - offset.x,
+        clientY: center.y - offset.y,
+      });
+    };
+    click(28, 63);
+    click(28, 64);
+    click(28, 127);
+    // One row past the north square's top is outside the arena.
+    click(28, 128);
+
+    expect(onTileClick.mock.calls.map(([tile]) => tile)).toEqual([
+      [28, 63],
+      [28, 64],
+      [28, 127],
+    ]);
+  });
+
   it('does not record replay cursor markers for middle or right buttons', () => {
     const onReplayCursorClick = vi.fn();
     render(

@@ -1,11 +1,11 @@
 import { encounterPresentationModuleForKind } from '../../encounters/presentationModules';
-import { encounterRegistry } from '../../encounters/registry';
 import type { MapSquareOffsets } from '../../rs/map/mapSquareBlock';
 import type { Coordinate, SimulationState } from '../../types/simulation';
 import type { LocRenderOptions } from '../environment/locRenderOptions';
 import type { SceneObjectLocData } from '../graphics/SceneObjectRenderer';
 import type { SceneObjectController } from '../graphics/sceneObjectTypes';
 import type { AnimPlayMode } from '../npc/animationTypes';
+import { withDescriptorMapBlock } from './encounterMapBlock';
 
 export interface NpcRenderConfig {
   actorId: string;
@@ -79,13 +79,18 @@ export interface EncounterRenderConfig {
    */
   spotAnimIds?: readonly number[];
   /**
-   * Map-square coordinates (`map[x]_[y]` in the OSRS cache) the terrain mesh
-   * is built from. Encounter authors normally declare the map square once in
-   * the core descriptor; this render-side module mirrors it into the render
-   * config so SceneCompositor stays registry-agnostic.
+   * The origin map square (`map[x]_[y]` in the OSRS cache) the terrain mesh is built around.
+   * Copied from the core descriptor by {@link getEncounterRenderConfig} so SceneCompositor stays
+   * registry-agnostic; an encounter's presentation module never declares it.
    */
   terrainMapSquare?: { x: number; y: number };
+  /** Every square the scene draws (the descriptor footprint's scene block). Omitted: the origin alone. */
   mapSquareOffsets?: MapSquareOffsets;
+  /**
+   * The footprint's arena squares: the composed actor height grid, 3D tile-space overlays and the
+   * hover/destination gates cover these. Omitted: the origin alone.
+   */
+  arenaMapSquareOffsets?: MapSquareOffsets;
   /**
    * Per-encounter loc-render filter, choosing how cache locs (walls, scenery,
    * pillars) around the playable area are clipped. Omit for self-contained
@@ -100,15 +105,11 @@ export interface EncounterRenderConfig {
   createSceneObjectController?: EncounterSceneObjectControllerFactory;
 }
 
-function withDescriptorMapBlock(config: EncounterRenderConfig, encounterKind: string): EncounterRenderConfig {
-  const descriptor = encounterRegistry.getDescriptorForKind(encounterKind);
-  if (!descriptor) return config;
-  return {
-    ...config,
-    terrainMapSquare: config.terrainMapSquare ?? descriptor.mapSquare,
-    mapSquareOffsets: descriptor.mapSquareOffsets,
-  };
-}
+/** A presentation module's render config: the map footprint is the core descriptor's alone. */
+export type AuthoredEncounterRenderConfig = Omit<
+  EncounterRenderConfig,
+  'terrainMapSquare' | 'mapSquareOffsets' | 'arenaMapSquareOffsets'
+>;
 
 /**
  * Render config per encounter kind, taken from the presentation manifest and merged with the

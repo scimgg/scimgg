@@ -8,8 +8,8 @@ coverage
 .env.local
 .env.*.local
 
-# A fork's own ./sandbox extension (docs/sandbox.md); a fork that wants one commits it with -f.
-/scripts/sandbox/local.sh
+# A fork's own ./dev-sandbox settings (docs/sandbox.md); a fork that wants one commits it with -f.
+/dev-sandbox.local
 
 # The golden real-cache copy some suites read (src/test/helpers/real-cache.ts).
 .test-cache/

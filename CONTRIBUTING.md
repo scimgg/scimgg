@@ -136,9 +136,9 @@ synthesizer is an example of the clean-room approach the policy expects:
    ```
 
    The [sandbox](./docs/sandbox.md) runs them without giving the code your credentials:
-   `./sandbox test --worktree` and `./sandbox shell --worktree -- npm run typecheck` check your
-   own changes. For someone else's branch, run `./sandbox test <branch>` from a checkout of
-   `main` instead, because the sandbox script comes from the checkout it runs in.
+   `./dev-sandbox test --worktree` and `./dev-sandbox shell --worktree -- npm run typecheck` check
+   your own changes. For someone else's branch, run `./dev-sandbox test <branch>` from a checkout
+   of `main` instead, because the sandbox script comes from the checkout it runs in.
 
 ## Pull requests
 
@@ -149,7 +149,7 @@ synthesizer is an example of the clean-room approach the policy expects:
 - Update the encounter's facts, open questions and policy notes in the same pull request.
 - Run the checks listed under [Building an encounter](#building-an-encounter) and say which you ran.
 - To review or try someone else's pull request, run it in the [sandbox](./docs/sandbox.md)
-  (`./dev-sandbox --pr N`, `./sandbox test --pr N`) rather than checking it out and running it
+  (`./dev-sandbox --pr N`, `./dev-sandbox test --pr N`) rather than checking it out and running it
   directly: its dependencies, tests and dev server would run with your credentials.
 - Never include raw captures, game assets or personal data.
 - Contribute only work that is yours to license under MIT and that follows the

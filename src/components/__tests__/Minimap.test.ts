@@ -1,7 +1,18 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
-import { createMinimapWheelHandler, minimapCssScale, resolveMinimapZoom } from '../Minimap';
+import { getMapSquareBlock } from '../../rs/map/mapSquareBlock';
+import {
+  createMinimapWheelHandler,
+  type MinimapRaster,
+  minimapCanvasPoint,
+  minimapCssScale,
+  minimapNpcDotPosition,
+  minimapSquarePixelOrigin,
+  minimapTerrainTransform,
+  resolveMinimapRaster,
+  resolveMinimapZoom,
+} from '../Minimap';
 
 const minimapSourcePath = fileURLToPath(new URL('../Minimap.tsx', import.meta.url));
 const minimapSource = readFileSync(minimapSourcePath, 'utf8');
@@ -211,5 +222,120 @@ describe('resolveMinimapZoom', () => {
     // The format's bound is deliberately loose so raising MAX_MINIMAP_ZOOM cannot invalidate
     // existing recordings, which leaves the clamp as the only thing bounding the render.
     expect([resolveMinimapZoom(64, 4), resolveMinimapZoom(0.5, 4)]).toEqual([8, 2]);
+  });
+});
+
+// A 1x2 arena: the origin square 35_47 (sim y 0-63) and 35_48 north of it (sim y 64-127).
+const NORTH_ARENA = getMapSquareBlock([
+  { dx: 0, dy: 0 },
+  { dx: 0, dy: 1 },
+]);
+
+/**
+ * Where a backing pixel of the terrain canvas lands in the aperture, by the CSS the minimap applies:
+ * the canvas laid out at `clipSize / 256` CSS px per backing pixel from the aperture's top-left, then
+ * `translate scale rotate` about its transform origin.
+ */
+function applyTerrainCss(
+  raster: MinimapRaster,
+  css: { transform: string; transformOrigin: string },
+  clipSize: number,
+  pixel: { x: number; y: number },
+): { x: number; y: number } {
+  const number = /-?\d+(?:\.\d+)?(?:e[+-]?\d+)?/g;
+  const [tx, ty, scale, yaw] = (css.transform.match(number) ?? []).map(Number);
+  const [ox, oy] = (css.transformOrigin.match(number) ?? []).map(Number);
+  const cssPerPixel = clipSize / 256;
+  const origin = { x: (ox / 100) * raster.width * cssPerPixel, y: (oy / 100) * raster.height * cssPerPixel };
+  const dx = pixel.x * cssPerPixel - origin.x;
+  const dy = pixel.y * cssPerPixel - origin.y;
+  const rad = (yaw * Math.PI) / 180;
+  return {
+    x: origin.x + tx + scale * (dx * Math.cos(rad) - dy * Math.sin(rad)),
+    y: origin.y + ty + scale * (dx * Math.sin(rad) + dy * Math.cos(rad)),
+  };
+}
+
+describe('minimap raster across map squares', () => {
+  const raster = resolveMinimapRaster({ x: 35, y: 47 }, NORTH_ARENA);
+
+  it('composes a 1x2 arena into one 256x512 bitmap, north square on top', () => {
+    expect([raster.width, raster.height]).toEqual([256, 512]);
+    const [south, north] = NORTH_ARENA;
+    expect(minimapSquarePixelOrigin(raster, north)).toEqual({ x: 0, y: 0 });
+    expect(minimapSquarePixelOrigin(raster, south)).toEqual({ x: 0, y: 256 });
+  });
+
+  it('keeps tiles either side of the seam one tile apart, north above south', () => {
+    const below = minimapCanvasPoint(raster, 28, 63);
+    const above = minimapCanvasPoint(raster, 28, 64);
+    expect(above).toEqual({ x: 114, y: 254 });
+    expect(below).toEqual({ x: 114, y: 258 });
+  });
+
+  it('keys the raster by footprint', () => {
+    expect(raster.key).not.toBe(resolveMinimapRaster({ x: 35, y: 47 }, getMapSquareBlock()).key);
+    expect(raster.key).not.toBe(resolveMinimapRaster({ x: 35, y: 48 }, NORTH_ARENA).key);
+  });
+
+  it('keeps the single-square layout exactly', () => {
+    const single = resolveMinimapRaster({ x: 23, y: 157 }, getMapSquareBlock());
+    expect([single.width, single.height]).toEqual([256, 256]);
+    expect(minimapCanvasPoint(single, 31.25, 37)).toEqual({ x: 31.25 * 4 + 2, y: (63 - 37) * 4 + 2 });
+    // The transform the minimap applied before the raster could hold more than one square.
+    const clip = 154;
+    const zoom = 4;
+    const px = 31.25 * 4 + 2;
+    const py = (63 - 37) * 4 + 2;
+    expect(minimapTerrainTransform(single, 31.25, 37, 30, zoom, clip)).toEqual({
+      transform: `translate(${clip / 2 - (px / 256) * clip}px, ${clip / 2 - (py / 256) * clip}px) scale(${minimapCssScale(zoom, clip)}) rotate(30deg)`,
+      transformOrigin: `${(px / 256) * 100}% ${(py / 256) * 100}%`,
+    });
+  });
+
+  it.each([
+    ['resizable', 154, 2],
+    ['resizable', 154, 4],
+    ['resizable', 154, 8],
+    ['fixed', 148, 4],
+    ['fixed', 148, 8],
+  ])('keeps the player centered and NPC dots over their terrain across the seam (%s, clip %i, zoom %i)', (_layout, clip, zoom) => {
+    const npcs = [
+      { position: [28, 64] as [number, number], size: 1 },
+      { position: [30, 66] as [number, number], size: 2 },
+      { position: [26, 60] as [number, number], size: 3 },
+    ];
+    for (const yaw of [0, 90, 213]) {
+      for (const [playerX, playerY] of [
+        [28, 63],
+        [27.5, 64.25],
+      ] as const) {
+        const css = minimapTerrainTransform(raster, playerX, playerY, yaw, zoom, clip);
+        const player = applyTerrainCss(raster, css, clip, minimapCanvasPoint(raster, playerX, playerY));
+        expect(player.x).toBeCloseTo(clip / 2, 9);
+        expect(player.y).toBeCloseTo(clip / 2, 9);
+        for (const npc of npcs) {
+          const dot = minimapNpcDotPosition(npc, playerX, playerY, yaw, zoom, clip);
+          if (!dot) throw new Error('NPC dot outside the aperture');
+          // The NPC's center, as a tile-center point: its south-west tile plus half its size, less half a tile.
+          const center = minimapCanvasPoint(
+            raster,
+            npc.position[0] + npc.size / 2 - 0.5,
+            npc.position[1] + npc.size / 2 - 0.5,
+          );
+          const terrain = applyTerrainCss(raster, css, clip, center);
+          expect(dot.x).toBeCloseTo(terrain.x, 9);
+          expect(dot.y).toBeCloseTo(terrain.y, 9);
+        }
+        // Tiles are `zoom` CSS px apart on every axis, the seam included.
+        const below = applyTerrainCss(raster, css, clip, minimapCanvasPoint(raster, 28, 63));
+        const above = applyTerrainCss(raster, css, clip, minimapCanvasPoint(raster, 28, 64));
+        expect(Math.hypot(above.x - below.x, above.y - below.y)).toBeCloseTo(zoom, 9);
+      }
+    }
+  });
+
+  it('hides a dot outside the circular aperture', () => {
+    expect(minimapNpcDotPosition({ position: [28, 120], size: 1 }, 28, 63, 0, 4, 154)).toBeNull();
   });
 });

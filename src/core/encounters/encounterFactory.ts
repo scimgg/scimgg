@@ -1,5 +1,5 @@
-import type { MapSquareOffsets } from '../../rs/map/mapSquareBlock';
 import type { EncounterCollisionSpec } from '../arena/collisionSpec';
+import type { EncounterMapSquareOffsets } from './mapFootprint';
 import type { EncounterSetupNoteRule } from './setupNotes';
 import type { Encounter, EncounterVariant } from './types';
 
@@ -9,8 +9,15 @@ export interface EncounterDescriptor {
   kind: string;
   displayName: string;
   description: string;
+  /** The origin map square: simulation tile (0, 0) is its south-west corner. */
   mapSquare: { x: number; y: number };
-  mapSquareOffsets?: MapSquareOffsets;
+  /**
+   * Every map square the encounter loads, relative to {@link mapSquare}; omitted means the origin
+   * square alone. Each is an arena square unless marked `sceneryOnly`. Read it through
+   * `resolveEncounterMapFootprint` (`./mapFootprint`), which splits the roles; see
+   * docs/architecture/encounters.md (Map footprint).
+   */
+  mapSquareOffsets?: EncounterMapSquareOffsets;
   playerStart: [number, number];
   /**
    * Arena collision spec. Defaults to `{ mode: 'auto' }` when omitted: collision

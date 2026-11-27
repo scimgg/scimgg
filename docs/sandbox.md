@@ -1,27 +1,28 @@
 # Running code you did not write
 
-`./sandbox` and `./dev-sandbox` run a commit, a pull request or your working tree in a Docker
-sandbox that holds none of your credentials. Use them to review or try someone else's pull request,
+`./dev-sandbox` runs a commit, a pull request or your working tree in a Docker sandbox that holds
+none of your credentials. Use them to review or try someone else's pull request,
 and to run the checks on your own change before you open one. Running a pull request's code
 directly (`npm ci`, `npm test`, `npm run dev`) would give its dependencies' install scripts, its
 tests and its dev server your credentials, SSH keys and everything else your user can reach.
 
 ```bash
-./dev-sandbox --pr 12              # pull request 12: dev server, opened in a separate browser profile
-./dev-sandbox --worktree           # your checkout, uncommitted changes included
-./dev-sandbox --status             # running sandboxes; --stop [TARGET] stops one
-./sandbox test --pr 12 [-- ARGS]   # npm test [-- ARGS]; also build, and shell [-- CMD]
-./sandbox seed --pr 12             # download the game data it needs (once per machine, see Seeds)
-./sandbox status                   # sandboxes, disk use and limits
-./sandbox clean [TARGET | --all]   # free the disk (see Disk)
+./dev-sandbox --pr 12                  # pull request 12: dev server, in a separate browser profile
+./dev-sandbox --worktree               # your checkout, uncommitted changes included
+./dev-sandbox --stop [TARGET | --all]  # stop dev servers
+./dev-sandbox test --pr 12 [-- ARGS]   # npm test [-- ARGS]; also build, and shell [-- CMD]
+./dev-sandbox seed --pr 12             # the game data it needs (once per machine, see Seeds)
+./dev-sandbox status                   # dev servers, snapshots, disk use and limits (also --status)
+./dev-sandbox clean [TARGET | --all]   # free the disk (see Disk)
 ```
 
-`./sandbox --help` and `./dev-sandbox --help` list every command and option.
+`./dev-sandbox --help` lists every command and option. Starting the dev server is the default; for a
+branch named like a command (`test`, say), write `./dev-sandbox dev test`.
 
-Run them from a checkout you trust, such as your own clone of `main`. The script, its helpers in
-`scripts/sandbox/` and the lockfile checker come from the checkout they run in, never from the code
-under test, so a pull request cannot change how it is sandboxed. Do not run `./sandbox` from a
-checkout of a pull request.
+Run it from a checkout you trust, such as your own clone of `main`. The script, the helpers it
+carries and the lockfile checker come from the checkout it runs in, never from the code under test,
+so a pull request cannot change how it is sandboxed. Do not run `./dev-sandbox` from a checkout of a
+pull request.
 
 ## Targets
 
@@ -46,9 +47,9 @@ the server for the old content, as `npm run dev` would.
   that name your user id. Nothing else from your machine: no home directory, SSH or GitHub
   credentials, Docker socket, or environment variables.
 - **Containers:** the official `node` slim image pinned by digest, plus the compilers native
-  modules need to build offline (`scripts/sandbox/Dockerfile`), as your non-root user id, with every
-  capability dropped, `no-new-privileges`, a read-only root, `/tmp` and `HOME` in memory, and CPU,
-  memory and process limits.
+  modules need to build offline (from a Dockerfile in the script), as your non-root user id, with
+  every capability dropped, `no-new-privileges`, a read-only root, `/tmp` and `HOME` in memory, and
+  CPU, memory and process limits.
 - **Network:** only `npm ci --ignore-scripts` has it, after `scripts/check-lockfile.mjs` from your
   checkout passes, in a directory holding nothing but `package.json` and `package-lock.json`.
   Dependency install scripts (`npm rebuild`), `npm run setup`, the tests, the build, the shell and
@@ -68,7 +69,7 @@ What it does not protect against:
   internet and anything on `localhost` that the browser can.
 - Docker itself, which is root-equivalent on a Linux host.
 - A snapshot is writable by its own code, so a later run of the same commit sees what an earlier
-  run left behind. `./sandbox clean TARGET` resets it.
+  run left behind. `./dev-sandbox clean TARGET` resets it.
 
 ## Requirements and platforms
 
@@ -94,8 +95,7 @@ What it does not protect against:
 ## Isolation self-test
 
 Before the first run on a Docker daemon, and again when its ID or version changes, the script runs
-`scripts/sandbox/probe.mjs` in containers started with the same flags as the real ones. It takes a
-few seconds.
+a probe in containers started with the same flags as the real ones. It takes a few seconds.
 
 - A container without a network must have only the loopback interface, no route, no DNS and no
   internet, and a file it writes into a mounted directory must come out owned by you.
@@ -105,8 +105,9 @@ few seconds.
   on `127.0.0.1`.
 
 Only a "no route" error counts as unreachable; a refused connection or a timeout fails the test.
-If any check fails, nothing runs, and there is no weaker mode to fall back to. `./sandbox selftest`
-runs it again; the report is in `~/.cache/scimgg-sandbox/selftest/last.log`.
+If any check fails, nothing runs, and there is no weaker mode to fall back to.
+`./dev-sandbox selftest` runs it again; the report is in
+`~/.cache/scimgg-sandbox/selftest/last.log`.
 
 ## Seeds
 
@@ -116,11 +117,11 @@ read-only. A command that needs something missing stops before running anything,
 missing, and prints the command that fetches it:
 
 ```bash
-./sandbox seed --pr 12             # the pinned cache, item icons and health bars (about 225 MB)
-./sandbox seed --pr 12 --test-cache  # also the older cache some test suites need (160 MB)
+./dev-sandbox seed --pr 12               # pinned cache, item icons, health bars (about 225 MB)
+./dev-sandbox seed --pr 12 --test-cache  # also the older cache some suites need (160 MB)
 ```
 
-`./sandbox seed` downloads only what the target pins, only from the sources setup uses (the
+`./dev-sandbox seed` downloads only what the target pins, only from the sources setup uses (the
 OpenRS2 archive, RuneLite's icon host and RuneLite's GitHub repository), and checks every file
 against its SHA-256 pin before saving it. It runs code from your checkout, not the target's, in a
 container that has network and sees the target's files read-only, as data. Files are kept by their
@@ -152,19 +153,47 @@ At the start of each command that prepares a snapshot, the script removes:
 
 It never removes the snapshot of a running sandbox or of another run in progress, and it notes on
 one line what it removed. An interrupted or failed preparation leaves nothing behind: its
-half-made snapshot or dependency set is removed. `./sandbox status` shows the use per category and
-the limits. `./sandbox clean` removes every snapshot and dependency set, `./sandbox clean TARGET`
-one snapshot, and `./sandbox clean --all` also the seeds, caches, browser profile, the images the
-script pulled or built, and the `refs/sandbox/` references in your clone.
+half-made snapshot or dependency set is removed. `./dev-sandbox status` shows the use per category
+and the limits. `./dev-sandbox clean` removes every snapshot and dependency set,
+`./dev-sandbox clean TARGET` one snapshot, and `./dev-sandbox clean --all` also the seeds, caches,
+browser profile, the images the script pulled or built, and the `refs/sandbox/` references in your
+clone.
 
 On one machine, a new lockfile took about 50 seconds to install and set up, another commit with
 the same lockfile about 15 seconds, and the full test suite about 2.5 minutes.
 
-## Forks: `scripts/sandbox/local.sh`
+## How the script is put together
+
+`dev-sandbox` is one file. The small programs that run inside the containers (the isolation probe,
+the relay, the seed checker and downloader, and the working-tree archiver) and the image's
+Dockerfile are embedded at its end. It writes the helpers to
+`~/.cache/scimgg-sandbox/tools/<hash>/`, named by the hash of their content, and mounts that
+directory read-only; a directory whose files no longer match its name is rewritten.
+
+## Forks: `dev-sandbox.local`
 
 A fork whose tree needs something different (another Node version, other seed data, another setup
-step) can add `scripts/sandbox/local.sh` instead of editing the shared files, so it can keep merging
-changes to them. It is git-ignored here; a fork commits it with `git add -f`. The script sources it
-at startup as trusted code with your permissions, the same as the script itself, and never from a
-snapshot. The variables and the `sandbox_local_target` hook it can set are listed under "Local
-extensions" at the top of `./sandbox`.
+step) can add a `dev-sandbox.local` next to the script instead of editing it, so it can keep merging
+changes to the script. It is git-ignored here; a fork commits it with `git add -f`. The script
+sources it at startup, after its own definitions, as trusted code with your permissions, the same as
+the script itself, and never from a snapshot. It may set:
+
+- `NODE_IMAGES`: append `MAJOR=IMAGE@sha256:...` words to pin another Node version;
+- `SANDBOX_APT_PACKAGES`: Debian packages the image adds, such as a native module's `-dev`
+  libraries;
+- `SANDBOX_DOCKERFILE`: a Dockerfile of its own (with `ARG NODE_IMAGE`, `ARG PACKAGES` and
+  `LABEL scimgg.sandbox=1`) instead of the built-in one;
+- `sandbox_local_target`, a function called once per command after the target is resolved and
+  before any of its code runs. `blob PATH` and `has_blob PATH` read the target's committed files as
+  data. It may set:
+  - `VARIETY`, a name for this kind of tree (default `public`);
+  - `NODE_MAJOR`, the Node version to run (default: the tree's `.nvmrc`);
+  - `SEED_CHECK=(...)`, the seed check, run with the command name appended in a container with no
+    network and the tree read-only at `/work`; exit status 3 means something is missing;
+  - `SEED_CHECK_ALWAYS=1`, to check before the dev server and the build of a prepared snapshot too;
+  - `PREPARE_SCRIPT`, the bash run once, with no network, to prepare a new snapshot;
+  - `BUILD_SCRIPT`, the bash `build` runs, with the arguments after `--` as `"$@"`;
+  - `SEED_FETCH=(...)`, what `./dev-sandbox seed` runs, with network and the tree read-only;
+  - `RUN_FLAGS+=(...)`, read-only `--mount` and `-e` flags for every container that checks or runs
+    the snapshot, for instance to mount the fork's own helper scripts;
+  - `SEED_FLAGS+=(...)`, `--mount` flags for the `./dev-sandbox seed` container.

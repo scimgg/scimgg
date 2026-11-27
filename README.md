@@ -67,8 +67,8 @@ harness](./docs/testing/ui-harness.md), and `./dev check` runs the type, lint an
 `./dev --help` lists them all.
 
 To run someone else's pull request without giving its code your credentials, use `./dev-sandbox
---pr N` and `./sandbox test --pr N`, which run it in Docker with no network and none of your files
-(see [`docs/sandbox.md`](./docs/sandbox.md)). They also run your own uncommitted changes with
+--pr N` and `./dev-sandbox test --pr N`, which run it in Docker with no network and none of your
+files (see [`docs/sandbox.md`](./docs/sandbox.md)). They also run your own uncommitted changes with
 `--worktree`.
 
 ### Why there is a setup step

@@ -156,7 +156,7 @@ import { useChatLog } from './chatLog';
 import { chromeZoomStyle, useZoomTransition } from './chromeZoom';
 import { DETAILED_DPS_SEED_HEIGHT, DetailedDpsOverlay } from './DetailedDpsOverlay';
 import { GamePanel as GamePanelBase } from './GamePanel';
-import { getMinimapMapSquare } from './gridEncounterMapSquare';
+import { getEncounterMapFootprint } from './gridEncounterMapSquare';
 import { HintBar } from './HintBar';
 import { InfoBoxOverlay, InfoBoxPanel } from './InfoBox';
 import { selectInfoboxes } from './InfoBox/selectInfoboxes';
@@ -1927,6 +1927,13 @@ export const Grid: React.FC<Partial<GridProps>> = (props) => {
       },
     ),
   );
+  // The displayed encounter's footprint: its arena block bounds the Debug view, 3D picking and the
+  // minimap. Resolved once per descriptor, so the blocks keep their identity across renders.
+  const mapFootprint = getEncounterMapFootprint(encounterKind);
+  const arenaBlock = mapFootprint?.arenaBlock;
+  useEffect(() => {
+    projection3DRef.current.setPickableMapSquareBlock(arenaBlock);
+  }, [arenaBlock]);
 
   const getReplayViewportState = useCallback((): ReplayViewportState | undefined => {
     if (rendererType !== 'webgl') return undefined;
@@ -2865,6 +2872,7 @@ export const Grid: React.FC<Partial<GridProps>> = (props) => {
                         getTargetTile={getLiveTargetTile}
                         getStartPositionPreparation={getStartPositionPreparation}
                         projectionType="top-down"
+                        tileExtent={mapFootprint?.arenaTileExtent}
                         renderer={canvas2DRenderer}
                         sceneBuilder={sceneBuilder}
                         width={fixedSceneRect ? fixedSceneRect.width : size.width}
@@ -3007,7 +3015,8 @@ export const Grid: React.FC<Partial<GridProps>> = (props) => {
                         textureLoader={textureLoader}
                         npcTypeLoader={npcTypeLoader}
                         minimapNpcDotUrl={minimapNpcDotUrl}
-                        mapSquare={getMinimapMapSquare(encounterKind)}
+                        mapSquare={mapFootprint?.origin}
+                        arenaBlock={arenaBlock}
                         speedMultiplier={speedMultiplier}
                         arenaBounds={getArenaBounds()}
                         hasSpecialAttack={weaponHasSpecialAttack(playerEquipment?.weapon, enumTypeLoader)}

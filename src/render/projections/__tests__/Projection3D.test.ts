@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
+import { getMapSquareBlock } from '../../../rs/map/mapSquareBlock';
 import type { Viewport } from '../../core/camera';
 import { getBackingStoreDimensions, getRasterDimensions } from '../../core/raster';
 import type { Vec2 } from '../../core/types';
+import { composeTerrainHeights } from '../../shared/renderUtils';
 import {
   createProjection3D,
   degreesToOsrsCameraYaw,
@@ -1175,5 +1177,82 @@ describe('Projection3D — scripted (cutscene) camera', () => {
     expect(cam.getViewMatrix()).toEqual(released.getViewMatrix());
     cam.updateCamera({ yaw: 90 });
     expect(cam.getCameraState().yaw).toBe(90);
+  });
+});
+
+describe('Projection3D — arena footprint picking', () => {
+  // The camera looks down on the seam between the origin square (y 0-63) and the one north of it.
+  const seamCamera = () =>
+    createProjection3D(VIEWPORT, { targetX: 28, targetY: 64, yaw: 180, pitch: -87.5, distance: 18 });
+  const NORTH_ARENA = getMapSquareBlock([
+    { dx: 0, dy: 0 },
+    { dx: 0, dy: 1 },
+  ]);
+  const pick = (projection: Projection3D, x: number, y: number) => {
+    const screen = projection.tileToScreen({ x: x + 0.5, y: y + 0.5 });
+    if (!screen) throw new Error('tile off screen');
+    return projection.screenToTile(screen);
+  };
+
+  // A ray over a tile outside the footprint is not picked there. On flat ground nothing is picked; a
+  // ray march carries on to the first footprint tile it is under, as it always has at the arena edge.
+  const outside = (tile: { x: number; y: number } | null) => tile === null || tile.y < 64;
+
+  it.each([
+    ['flat ground', null],
+    ['ray-marched terrain', 'terrain'],
+  ] as const)('picks only origin-square tiles by default (%s)', (_label, terrain) => {
+    const projection = seamCamera();
+    if (terrain) projection.setTerrainHeights(flatTerrain());
+    expect(pick(projection, 28, 63)).toEqual({ x: 28, y: 63 });
+    expect(outside(pick(projection, 28, 64))).toBe(true);
+    if (!terrain) expect(pick(projection, 28, 64)).toBeNull();
+  });
+
+  it.each([
+    ['flat ground', null],
+    ['ray-marched terrain', 'terrain'],
+  ] as const)('picks the tiles of every arena square (%s)', (_label, terrain) => {
+    const projection = seamCamera();
+    projection.setPickableMapSquareBlock(NORTH_ARENA);
+    if (terrain) {
+      projection.setTerrainHeights(
+        composeTerrainHeights([
+          { tileOffsetX: 0, tileOffsetY: 0, heights: flatTerrain() },
+          { tileOffsetX: 0, tileOffsetY: 64, heights: flatTerrain() },
+        ]),
+      );
+    }
+    expect(pick(projection, 28, 63)).toEqual({ x: 28, y: 63 });
+    expect(pick(projection, 28, 64)).toEqual({ x: 28, y: 64 });
+    projection.setPickableMapSquareBlock();
+    expect(outside(pick(projection, 28, 64))).toBe(true);
+  });
+
+  it('rejects a hole in a sparse block even inside its rectangle', () => {
+    const projection = createProjection3D(VIEWPORT, { targetX: 64, targetY: 64, yaw: 180, pitch: -87.5, distance: 18 });
+    // An L: the origin, the square north of it and the one north-east; the square east of the origin is a hole.
+    projection.setPickableMapSquareBlock(
+      getMapSquareBlock([
+        { dx: 0, dy: 0 },
+        { dx: 0, dy: 1 },
+        { dx: 1, dy: 1 },
+      ]),
+    );
+    expect(pick(projection, 63, 63)).toEqual({ x: 63, y: 63 });
+    expect(pick(projection, 64, 64)).toEqual({ x: 64, y: 64 });
+    expect(pick(projection, 64, 63)).toBeNull();
+  });
+
+  it('follows terrain on the square north of the origin instead of clamping to tile 63', () => {
+    const projection = createProjection3D(VIEWPORT, { targetX: 28, targetY: 64, yaw: 180, pitch: -87.5, distance: 18 });
+    const raised = composeTerrainHeights([
+      { tileOffsetX: 0, tileOffsetY: 0, heights: flatTerrain() },
+      { tileOffsetX: 0, tileOffsetY: 64, heights: terrainAtHeight(-640) },
+    ]);
+    projection.setTerrainHeights(raised);
+    // Ground level on the origin square, five tiles up (-640 / 128) on the north square.
+    expect(projection.getPlayerCenterZ(28.5, 10.5) - projection.getFollowHeight()).toBeCloseTo(0, 9);
+    expect(projection.getPlayerCenterZ(28.5, 74.5) - projection.getFollowHeight()).toBeCloseTo(5, 9);
   });
 });
