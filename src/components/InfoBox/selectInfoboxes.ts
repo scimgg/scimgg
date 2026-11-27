@@ -1,3 +1,4 @@
+import { VENOM_IMMUNITY_CUTOFF } from '../../core/poison';
 import { INFOBOX_ITEM_IDS } from '../../data/infoboxItemIds';
 import { encounterInfobox } from '../../encounters/practiceChrome';
 import { type CombatTimers, POISON_TICK_INTERVAL } from '../../types/playerState';
@@ -123,7 +124,23 @@ export function selectInfoboxes(state: SimulationState, settings?: InfoBoxSettin
     });
   }
 
-  if (state.poisonVarp < 0) {
+  // One box at a time, as RuneLite's timers plugin shows them (`TimersAndBuffsPlugin`, ANTIVENOM and
+  // ANTIPOISON): anti-venom while venom is blocked, counting down to the cutoff, then antipoison.
+  if (state.poisonVarp < VENOM_IMMUNITY_CUTOFF) {
+    const venomSteps = VENOM_IMMUNITY_CUTOFF - 1 - state.poisonVarp;
+    const remainingTicks = venomSteps * POISON_TICK_INTERVAL + state.poisonTickCounter;
+    const immunityTimeText = formatTicksToClock(remainingTicks);
+
+    infoboxes.push({
+      id: 'antivenom',
+      itemId: INFOBOX_ITEM_IDS.antivenom,
+      text: immunityTimeText,
+      ticksRemaining: remainingTicks,
+      sampledAtTick: state.currentTick,
+      tooltipTitle: 'Anti-venom',
+      tooltipDetail: `Venom immunity (${immunityTimeText} remaining)`,
+    });
+  } else if (state.poisonVarp < 0) {
     const immunityVarpUnits = Math.abs(state.poisonVarp);
     const remainingTicks = (immunityVarpUnits - 1) * POISON_TICK_INTERVAL + state.poisonTickCounter;
     const immunityTimeText = formatTicksToClock(remainingTicks);

@@ -11,6 +11,8 @@ export const INFOBOX_ITEM_IDS = {
   saturatedHeart: 27641,
   /** Antipoison(4) — matches RuneLite's GameTimer.ANTIPOISON icon. */
   antipoison: 2446,
+  /** Anti-venom(4) — matches RuneLite's GameTimer.ANTIVENOM icon. */
+  antivenom: 12905,
   /** Surge potion(4), the full dose, for the surge potion cooldown. */
   surgePotion: 30875,
 } as const;
