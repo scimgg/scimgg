@@ -28,6 +28,9 @@ Not simulated: the random out-of-pattern phases the wiki describes after the fir
 | [`../../npcs/zulrah/snakeling.ts`](../../npcs/zulrah/snakeling.ts) | Snakeling definition |
 | [`../../npcs/zulrah/constants.ts`](../../npcs/zulrah/constants.ts) | Ids and mechanic constants, each with its source |
 
-Shared engine support it relies on: tiles past one map square (`isInTileSpace`), hidden NPCs
-(`NpcActor.hidden`), a per-NPC hit cap (`incomingHitCap`), the `playerStunned` engine rule, and
-venom-immune helms (`data/venomImmunity.ts`).
+Shared engine support it relies on: NPC attack reach and line of sight (`canNpcAttack`), tiles past
+one map square (`isInTileSpace`), hidden NPCs
+(`NpcActor.hidden`), a per-NPC hit cap (`incomingHitCap`, which the player's expected
+damage and max hit also follow), the `playerStunned` engine rule, and
+the poison counter's venom, cure and immunity rules (`core/poison.ts`), including the venom-immune
+helms (`data/venomImmunity.ts`).

@@ -37,7 +37,7 @@ export type FirstPartyPlayerAttackInput = {
   > &
     Readonly<Partial<Pick<PlayerActor, 'vitals' | 'soulreaper'>>>;
   readonly target: Readonly<Pick<NpcActor, 'size' | 'npcTypeId' | 'formulaStats' | 'debuffs'>> &
-    Readonly<Partial<Pick<NpcActor, 'vitals'>>>;
+    Readonly<Partial<Pick<NpcActor, 'vitals' | 'incomingHitCap'>>>;
   readonly formulaStyle: CombatFormulaStyle;
   readonly resources: ResolvedAttackResources;
   readonly attackSpeedTicks: number;
@@ -197,7 +197,11 @@ function planFirstPartyPlayerAttackInternal(
     resources: input.resources,
     attackSpeedTicks: input.attackSpeedTicks,
     delivery: input.delivery,
-    application: input.application,
+    // The projection's expected and maximum applied damage follow the target's hit cap.
+    application:
+      input.target.incomingHitCap === undefined
+        ? input.application
+        : { ...input.application, targetHitCap: input.target.incomingHitCap },
     profile,
     manualCast: input.manualCast,
     standardAccuracyMode: input.standardAccuracyMode,

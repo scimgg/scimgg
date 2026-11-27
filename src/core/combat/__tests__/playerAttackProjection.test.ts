@@ -329,6 +329,46 @@ describe('projectPlayerAttack', () => {
     expect(projection.maximumAppliedDamagePerAttack).toBe(20);
   });
 
+  describe("with the target's hit cap (Zulrah's: over 50 becomes 45-50)", () => {
+    const capped: PlayerDamageApplication = { ...IDENTITY_APPLICATION, targetHitCap: { above: 50, min: 45, max: 50 } };
+    const roll48To53 = hit({ kind: 'uniform', minimumInclusive: 48, maximumInclusive: 53 });
+
+    it('counts each capped hit at the replacement mean, 47.5, and its maximum at 50', () => {
+      const uncappedProjection = projectPlayerAttack(plan([roll48To53]));
+      const cappedProjection = projectPlayerAttack(plan([roll48To53], capped));
+
+      // 48..53 uncapped: mean 50.5, max 53. Capped: (48 + 49 + 50 + 3 x 47.5) / 6 = 48.25, max 50.
+      expect(uncappedProjection.expectedAppliedDamagePerAttack).toBe(50.5);
+      expect(uncappedProjection.maximumAppliedDamagePerAttack).toBe(53);
+      expect(cappedProjection.hits[0]).toMatchObject({
+        expectedRolledDamage: 50.5,
+        maximumRolledDamage: 53,
+        maximumAppliedDamage: 50,
+      });
+      expect(cappedProjection.hits[0].expectedAppliedDamage).toBeCloseTo(48.25, 10);
+      expect(cappedProjection.expectedAppliedDamagePerAttack).toBeCloseTo(48.25, 10);
+      expect(cappedProjection.maximumAppliedDamagePerAttack).toBe(50);
+      expect(cappedProjection.appliedDamagePerSecond).toBeCloseTo(48.25 / 2.4, 10);
+    });
+
+    it('caps the damage after the application multipliers, as the impact does', () => {
+      const doubled: PlayerDamageApplication = { ...capped, outgoingDamageMultiplier: 2 };
+      const at = (damage: number) => projectPlayerAttack(plan([hit({ kind: 'fixed', damage })], doubled)).hits[0];
+
+      expect(at(25)).toMatchObject({ expectedAppliedDamage: 50, maximumAppliedDamage: 50 });
+      expect(at(26)).toMatchObject({ expectedAppliedDamage: 47.5, maximumAppliedDamage: 50 });
+    });
+
+    it('caps each hit of a multi-hit attack on its own', () => {
+      const projection = projectPlayerAttack(
+        plan([hit({ kind: 'fixed', damage: 60 }), hit({ kind: 'fixed', damage: 30 })], capped),
+      );
+
+      expect(projection.expectedAppliedDamagePerAttack).toBe(77.5);
+      expect(projection.maximumAppliedDamagePerAttack).toBe(80);
+    });
+  });
+
   it('merges independent hit states while projecting totals and DPS', () => {
     const wideUniform: DamageSpec = { kind: 'uniform', minimumInclusive: 0, maximumInclusive: 1_000 };
 

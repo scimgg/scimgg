@@ -6,6 +6,13 @@ import {
   type NpcActor,
 } from '../../../core/actors/NpcActor';
 import { npcHitDelayFromEndTime } from '../../../core/combat/hitDelay';
+import {
+  type FirstPartyPlayerAttackInput,
+  planFirstPartyPlayerAttack,
+  projectFirstPartyPlayerAttack,
+  resolveFirstPartyPlayerAttack,
+} from '../../../core/combat/player/firstPartyPlayerAttack';
+import { resolvePlayerAttack } from '../../../core/combat/playerAttackResolution';
 import { RECOIL_DELAY_TICKS, recoilDamage } from '../../../core/combat/recoil';
 import {
   clearResolvedArenaConfigs,
@@ -51,6 +58,7 @@ import { createCollisionMap, getBoundsFromRegion } from '../../../rs/collision/W
 import { enqueueEnginePendingHit } from '../../../test/helpers/pendingHits';
 import { createEmptyStats } from '../../../types/equipmentStats';
 import { parseInventoryFromSetup } from '../../../types/inventory';
+import { createDefaultTimers } from '../../../types/playerState';
 import { type Coordinate, type MechanicsConfig, PrayerType } from '../../../types/simulation';
 import {
   cloudCenter,
@@ -413,6 +421,94 @@ describe('Zulrah damage cap', () => {
 
   it('still never deals more than the HP left', () => {
     expect(landHit(startRun(4), 90, 20)).toBe(20);
+  });
+
+  describe("in the player's expected damage", () => {
+    /** A Soulreaper axe swing at 300 melee strength: max hit 75 (floor((132 x 364 + 320) / 640)). */
+    function swingAt(target: FirstPartyPlayerAttackInput['target']): FirstPartyPlayerAttackInput {
+      const level = { current: 99, max: 99 };
+      return {
+        player: {
+          stats: {
+            attack: level,
+            strength: level,
+            defence: level,
+            ranged: level,
+            magic: level,
+            prayer: level,
+            hitpoints: level,
+            agility: level,
+          },
+          equipment: { weapon: 28338 },
+          equipmentStats: { ...createEmptyStats(), attackSlash: 100, meleeStrength: 300 },
+          activePrayer: null,
+          offensivePrayer: PrayerType.Piety,
+          selectedAttackStyleIndex: 1,
+          combatTimers: createDefaultTimers(),
+        },
+        target,
+        formulaStyle: 'melee_slash',
+        resources: { kind: 'none', source: 'none' },
+        attackSpeedTicks: 5,
+        delivery: { style: 'melee', attackKind: 'melee_slash', impactDelayTicks: 1 },
+        application: { outgoingDamageMultiplier: 1, specialAttackDamageMultiplier: 1 },
+        manualCast: false,
+        isSpecialAttack: false,
+        standardAccuracyMode: 'single_roll',
+      };
+    }
+    const zulrahActor = () => {
+      const zulrah = startRun(3).zulrah();
+      if (!zulrah?.incomingHitCap) throw new Error('No capped Zulrah');
+      return zulrah;
+    };
+
+    it("counts a hit over 50 at the cap draw's mean and caps the max hit at 50", () => {
+      const zulrah = zulrahActor();
+      const capped = projectFirstPartyPlayerAttack(swingAt(zulrah));
+      const uncapped = projectFirstPartyPlayerAttack(swingAt({ ...zulrah, incomingHitCap: undefined }));
+      if (!capped || !uncapped) throw new Error('Expected projections');
+
+      expect(uncapped.maximumRolledDamagePerAttack).toBe(75);
+      expect(uncapped.maximumAppliedDamagePerAttack).toBe(75);
+      expect(capped.maximumRolledDamagePerAttack).toBe(75);
+      expect(capped.maximumAppliedDamagePerAttack).toBe(50);
+      // Rolls 0-75 (76 values) at accuracy p: each of 51-75 counts 47.5 instead of itself,
+      // sum(51..75) - 25 x 47.5 = 1575 - 1187.5 = 387.5 less per 76 accurate rolls.
+      expect(capped.accuracy).toBe(uncapped.accuracy);
+      expect(capped.expectedAppliedDamagePerAttack).toBeCloseTo(
+        uncapped.expectedAppliedDamagePerAttack - (capped.accuracy * 387.5) / 76,
+        10,
+      );
+      expect(capped.dps).toBeCloseTo(capped.expectedAppliedDamagePerAttack / 3, 10);
+    });
+
+    it('records that expectation on the swing without drawing any extra combat RNG', () => {
+      const zulrah = zulrahActor();
+      const counted = (seed: number) => {
+        const random = mulberry32(seed);
+        let draws = 0;
+        return {
+          random: () => {
+            draws += 1;
+            return random();
+          },
+          draws: () => draws,
+        };
+      };
+      for (const target of [zulrah, { ...zulrah, incomingHitCap: undefined }]) {
+        const plan = planFirstPartyPlayerAttack(swingAt(target));
+        if (plan?.kind !== 'ready') throw new Error('Expected a ready plan');
+        const swing = counted(11);
+        const rollOnly = counted(11);
+        const result = resolveFirstPartyPlayerAttack(plan, swing.random);
+        const rolled = resolvePlayerAttack(plan, rollOnly.random);
+
+        expect(swing.draws()).toBe(rollOnly.draws());
+        expect(result.hits.map((h) => h.damage)).toEqual(rolled.hits.map((h) => h.rolledDamage));
+        expect(result.expectedHit).toBe(projectFirstPartyPlayerAttack(swingAt(target))?.expectedAppliedDamagePerAttack);
+      }
+    });
   });
 });
 
