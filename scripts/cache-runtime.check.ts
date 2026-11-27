@@ -4,6 +4,7 @@
  * serves empty or in a container the production mirror may not use (stored and gzip only, no bzip2).
  * Independent of the trimmer's root discovery by design; see `cacheRuntimeFixture.ts`. Run with
  * `npm run check:cache-runtime` (`CACHE_RUNTIME_TRIMMED_DIR=dist/osrs-cache` checks a built artifact). */
+// biome-ignore-all lint/complexity/useLiteralKeys: the check reads private engine and renderer state, which TypeScript allows only through bracket access.
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
