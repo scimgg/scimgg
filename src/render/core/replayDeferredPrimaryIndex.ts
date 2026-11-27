@@ -11,6 +11,8 @@ type Sweep<Clip> = {
   sourceCursor: number;
   dueCursor: number;
   current: Timed<Clip> | undefined;
+  /** The earliest cue that has become due on a life still lasting: the base pose's origin. */
+  first: Timed<Clip> | undefined;
   cycle: number;
   throughFrameIndex: number;
 };
@@ -27,6 +29,7 @@ const createSweep = <Clip>(): Sweep<Clip> => ({
   sourceCursor: 0,
   dueCursor: 0,
   current: undefined,
+  first: undefined,
   cycle: -Infinity,
   throughFrameIndex: -1,
 });
@@ -66,7 +69,8 @@ export class ReplayDeferredPrimaryIndex<Clip> {
       destination.throughFrameIndex < life.sweep.throughFrameIndex ||
       // A clip taken from a life that has ended since (an id reused with no spawn tick to tell the
       // lives apart) goes with it: the sweep is rebuilt without it.
-      life.sweep.current?.life?.isEndedBy(destination)
+      life.sweep.current?.life?.isEndedBy(destination) ||
+      life.sweep.first?.life?.isEndedBy(destination)
     ) {
       life.sweep = createSweep();
     }
@@ -95,6 +99,7 @@ export class ReplayDeferredPrimaryIndex<Clip> {
         if (cue.cycle <= sweep.cycle) {
           sweep.dueCursor = 0;
           sweep.current = undefined;
+          sweep.first = undefined;
         }
         sweep.cues.push(cue);
       }
@@ -103,15 +108,17 @@ export class ReplayDeferredPrimaryIndex<Clip> {
     for (; sweep.dueCursor < sweep.cues.length; sweep.dueCursor++) {
       const cue = sweep.cues[sweep.dueCursor];
       if (cue.cycle > destination.cycle) break;
+      // Queued while its life lasted, due once it has ended: it never plays.
+      if (cue.life?.isEndedBy(destination)) continue;
+      sweep.first ??= cue;
       const current = sweep.current && sampleTimed(sweep.current, cue.cycle) ? sweep.current.spec : undefined;
       if (cue.spec.replaces || canReplacePrimary(current?.priority, cue.spec.priority)) sweep.current = cue;
     }
     sweep.cycle = destination.cycle;
     sweep.throughFrameIndex = destination.throughFrameIndex;
-    const firstCycle = sweep.cues[0]?.cycle;
     return {
       primary: sweep.current ? sampleTimed(sweep.current, destination.cycle) : null,
-      firstCycle: firstCycle !== undefined && firstCycle <= destination.cycle ? firstCycle : undefined,
+      firstCycle: sweep.first?.cycle,
       rebuilt,
       pending: life.pending,
     };
