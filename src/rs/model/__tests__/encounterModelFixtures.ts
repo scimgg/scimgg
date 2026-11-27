@@ -5,14 +5,16 @@
  */
 import type { LocWithType } from '../../../cache/CacheManager';
 import { SOL_MAP_X, SOL_MAP_Y } from '../../../encounters/solHeredit/constants';
+import {
+  FIREBALL_PRELOAD_IDS,
+  VOID_FLARE_PRELOAD_IDS,
+  WAVE_PRELOAD_IDS,
+  YAMA_ATTACK_PRELOAD_IDS,
+} from '../../../encounters/yamaP3/spotAnims';
 import { COLOSSEUM_SPOT_ANIM_IDS } from '../../../npcs/colosseum/visualEvents';
 import { INFERNO_SPOT_ANIM_IDS } from '../../../npcs/inferno/constants';
 import { AnimationSystem } from '../../../render/backends/picogl/AnimationSystem';
-import { FIREBALL_PRELOAD_IDS } from '../../../render/effects/controllers/FireballController';
 import { PLAYER_GRAPHIC_PRELOAD_IDS } from '../../../render/effects/controllers/PlayerGraphicController';
-import { VOID_FLARE_PRELOAD_IDS } from '../../../render/effects/controllers/VoidFlareController';
-import { WAVE_PRELOAD_IDS } from '../../../render/effects/controllers/WaveController';
-import { YAMA_ATTACK_PRELOAD_IDS } from '../../../render/effects/controllers/YamaAttackController';
 import type { LocRenderOptions } from '../../../render/environment/locRenderOptions';
 import { resolveEncounterLocRenderOptions } from '../../../render/scene/encounterLocRenderOptions';
 import { getEncounterRenderConfig } from '../../../render/scene/encounterRenderConfig';

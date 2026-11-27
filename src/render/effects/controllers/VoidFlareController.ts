@@ -1,6 +1,6 @@
 import { isPracticeSpawn } from '../../../core/actors/NpcActor';
 import type { GameEvent } from '../../../core/events/types';
-import { SpotAnimID } from '../../../rs/config/spotanimtype/SpotAnimID';
+import { VOID_FLARE_EXPLOSION_SPOT_ANIM_ID } from '../../../encounters/yamaP3/spotAnims';
 import type { Coordinate, NpcSnapshot } from '../../../types/simulation';
 import type { Projection2D } from '../../core/camera';
 import { type ChargeBarDirection, chargeBarFillWidthPx, type RenderQueue } from '../../core/commands';
@@ -58,12 +58,6 @@ function isCoordinate(value: unknown): value is Coordinate {
 function isVoidFlareVariant(value: unknown): value is VoidFlareVariant {
   return value === 'fire' || value === 'shadow';
 }
-
-// Always blue: which color a detonation shows is unresolved across the Yama captures.
-const EXPLOSION_SPOTANIM_ID = SpotAnimID.VFX_VOIDFLARE_EXPLODE_BLUE;
-
-// The human impact is a player graphic the encounter emits; preloaded so the first one shows.
-export const VOID_FLARE_PRELOAD_IDS = [EXPLOSION_SPOTANIM_ID, SpotAnimID.VFX_VOIDFLARE_HUMAN_IMPACT_BLUE];
 
 export class VoidFlareController {
   private explodingFlares: ExplodingFlare[] = [];
@@ -129,7 +123,11 @@ export class VoidFlareController {
     }
 
     const cycle = interpolatedTick * CLIENT_TICKS_PER_GAME_TICK;
-    const durationCycles = getOneShotDurationCycles(renderer, EXPLOSION_SPOTANIM_ID, EXPLOSION_FALLBACK_CYCLES);
+    const durationCycles = getOneShotDurationCycles(
+      renderer,
+      VOID_FLARE_EXPLOSION_SPOT_ANIM_ID,
+      EXPLOSION_FALLBACK_CYCLES,
+    );
     this.explodingFlares = this.explodingFlares.filter((flare) => {
       const instanceId = `voidflare-explode-${flare.flareId}`;
       const startCycle = flare.explodeTick * CLIENT_TICKS_PER_GAME_TICK;
@@ -149,7 +147,7 @@ export class VoidFlareController {
           renderer,
           {
             instanceId,
-            spotAnimId: EXPLOSION_SPOTANIM_ID,
+            spotAnimId: VOID_FLARE_EXPLOSION_SPOT_ANIM_ID,
             startCycle,
             transformSource: {
               kind: 'static',

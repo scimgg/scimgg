@@ -473,6 +473,11 @@ export class SceneCompositor {
   /** Each NPC type the render config declares, with the settings it loads with; see `setEncounterRenderConfig`. */
   private declaredNpcTypes: ReadonlyMap<number, NpcTypeLoadConfig> = new Map();
   private declaredNpcTypeIds: readonly number[] = [];
+  /**
+   * Every effect the render config declares, once each: its `spotAnimIds` and the primary NPC's death
+   * effect. Preloaded with the encounter's assets, and what their readiness waits for.
+   */
+  private declaredSpotAnimIds: readonly number[] = [];
   private previousEffectCycle: number | undefined;
   private previousEffectFrame: number | undefined;
   private readonly pendingReplaySpotAnims = new Set<number>();
@@ -578,18 +583,6 @@ export class SceneCompositor {
     });
   }
 
-  private loadPrimaryNpcDeathSpotAnim(spotAnimModelLoader: SpotAnimModelLoader): void {
-    const spotAnimId = this.encounterRenderConfig?.primaryNpc?.deathSpotAnimId;
-    if (spotAnimId !== undefined) {
-      this.spotAnimRenderer.loadById(spotAnimModelLoader, spotAnimId);
-    }
-  }
-
-  private isPrimaryNpcDeathSpotAnimLoaded(): boolean {
-    const spotAnimId = this.encounterRenderConfig?.primaryNpc?.deathSpotAnimId;
-    return spotAnimId === undefined || this.spotAnimRenderer.isLoaded(spotAnimId);
-  }
-
   /**
    * Starts a stopped NPC animation clock on the whole client cycle at or before `cycle`. Live play
    * starts on a tick boundary; a restore lands mid-cycle, and starting there would leave every actor
@@ -648,6 +641,10 @@ export class SceneCompositor {
     this.arenaBlock = getMapSquareBlock(renderConfig?.arenaMapSquareOffsets);
     this.declaredNpcTypes = this.declaredNpcTypeConfigs(renderConfig);
     this.declaredNpcTypeIds = [...this.declaredNpcTypes.keys()];
+    const deathSpotAnimId = renderConfig?.primaryNpc?.deathSpotAnimId;
+    this.declaredSpotAnimIds = [
+      ...new Set([...(renderConfig?.spotAnimIds ?? []), ...(deathSpotAnimId === undefined ? [] : [deathSpotAnimId])]),
+    ];
     this.npcInstanceManager.setPrimaryNpcRenderConfig(renderConfig?.primaryNpc ?? null);
     this.setSceneObjectController(renderConfig?.createSceneObjectController?.() ?? null);
   }
@@ -1112,8 +1109,7 @@ export class SceneCompositor {
   async loadSpotAnims(spotAnimModelLoader: SpotAnimModelLoader): Promise<void> {
     if (this._disposed) return;
     this.spotAnimRenderer.bindLoader(spotAnimModelLoader);
-    await this.loadEncounterSpotAnims(spotAnimModelLoader);
-    this.loadPrimaryNpcDeathSpotAnim(spotAnimModelLoader);
+    this.loadEncounterSpotAnims(spotAnimModelLoader);
     await this.loadPlayerGraphicSpotAnims(spotAnimModelLoader);
   }
 
@@ -1122,8 +1118,7 @@ export class SceneCompositor {
     return (
       (!spotAnimModelLoader || this.spotAnimRenderer.isBoundTo(spotAnimModelLoader)) &&
       this.isEncounterSpotAnimsLoaded() &&
-      this.isPlayerGraphicSpotAnimsLoaded() &&
-      this.isPrimaryNpcDeathSpotAnimLoaded()
+      this.isPlayerGraphicSpotAnimsLoaded()
     );
   }
 
@@ -1561,14 +1556,15 @@ export class SceneCompositor {
     _is2D: boolean,
   ): void {}
 
-  protected async loadEncounterSpotAnims(spotAnimModelLoader: SpotAnimModelLoader): Promise<void> {
-    const ids = this.encounterRenderConfig?.spotAnimIds;
-    if (ids?.length) this.spotAnimRenderer.preload(spotAnimModelLoader, [...ids]);
+  private loadEncounterSpotAnims(spotAnimModelLoader: SpotAnimModelLoader): void {
+    if (this.declaredSpotAnimIds.length > 0)
+      this.spotAnimRenderer.preload(spotAnimModelLoader, [...this.declaredSpotAnimIds]);
   }
 
-  protected isEncounterSpotAnimsLoaded(): boolean {
-    const ids = this.encounterRenderConfig?.spotAnimIds;
-    for (let index = 0; ids && index < ids.length; index++)
+  /** Whether every effect the render config declares has settled, usable or not. */
+  private isEncounterSpotAnimsLoaded(): boolean {
+    const ids = this.declaredSpotAnimIds;
+    for (let index = 0; index < ids.length; index++)
       if (!this.spotAnimRenderer.isLoaded(ids[index] as number)) return false;
     return true;
   }
@@ -1624,8 +1620,8 @@ export class SceneCompositor {
       unavailable = true;
     }
     if (!this.isEncounterSpotAnimsLoaded()) return 'pending';
-    const spotAnimIds = this.encounterRenderConfig?.spotAnimIds;
-    for (let index = 0; !unavailable && spotAnimIds && index < spotAnimIds.length; index++)
+    const spotAnimIds = this.declaredSpotAnimIds;
+    for (let index = 0; !unavailable && index < spotAnimIds.length; index++)
       if (!this.spotAnimRenderer.isUsable(spotAnimIds[index] as number)) unavailable = true;
     return unavailable ? 'unavailable' : 'ready';
   }

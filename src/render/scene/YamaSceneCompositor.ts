@@ -2,18 +2,18 @@ import { isYamaSnapshot } from '../../core/encounters/snapshot';
 import type { GameEvent } from '../../core/events/types';
 import { getFireballDangerTiles } from '../../encounters/yamaP3/fireball';
 import { YAMA_ENCOUNTER_RENDER_CONFIG } from '../../encounters/yamaP3/renderConfig';
+import { VOID_FLARE_PRELOAD_IDS } from '../../encounters/yamaP3/spotAnims';
 import type { WaveConfig } from '../../encounters/yamaP3/waves';
-import type { SpotAnimModelLoader } from '../../rs/model/SpotAnimModelLoader';
 import { packHsl } from '../../rs/util/ColorUtil';
 import type { Coordinate, DamageHistoryEntry, SimulationState } from '../../types/simulation';
 import type { Projection2D, Viewport } from '../core/camera';
 import type { FillStyle, RenderQueue } from '../core/commands';
 import type { ReplayEffectDestination, ReplayFrameReader } from '../core/replayEffectIndex';
 import { rgba, rgbaFromHex, vec2 } from '../core/types';
-import { FIREBALL_PRELOAD_IDS, FireballController } from '../effects/controllers/FireballController';
-import { VOID_FLARE_PRELOAD_IDS, VoidFlareController } from '../effects/controllers/VoidFlareController';
-import { WAVE_PRELOAD_IDS, WaveController } from '../effects/controllers/WaveController';
-import { YAMA_ATTACK_PRELOAD_IDS, YamaAttackController } from '../effects/controllers/YamaAttackController';
+import { FireballController } from '../effects/controllers/FireballController';
+import { VoidFlareController } from '../effects/controllers/VoidFlareController';
+import { WaveController } from '../effects/controllers/WaveController';
+import { YamaAttackController } from '../effects/controllers/YamaAttackController';
 import { type NpcAnimationTrigger, PRIMARY_NPC_ACTOR_ID } from '../npc/NpcInstanceManager';
 import { getLocCenterHeight } from '../shared/renderUtils';
 import type { NpcRenderConfig } from './encounterRenderConfig';
@@ -297,43 +297,8 @@ export class YamaSceneCompositor extends SceneCompositor {
     ];
   }
 
-  protected override async loadEncounterSpotAnims(spotAnimModelLoader: SpotAnimModelLoader): Promise<void> {
-    await this.loadWaveSpotAnims(spotAnimModelLoader);
-    await this.loadFireballSpotAnims(spotAnimModelLoader);
-    await this.loadVoidFlareSpotAnims(spotAnimModelLoader);
-  }
-
-  protected override isEncounterSpotAnimsLoaded(): boolean {
-    return this.isWaveSpotAnimsLoaded();
-  }
-
-  private async loadWaveSpotAnims(spotAnimModelLoader: SpotAnimModelLoader): Promise<void> {
-    this.spotAnimModelLoader = spotAnimModelLoader;
-    this.spotAnimRenderer.preload(spotAnimModelLoader, WAVE_PRELOAD_IDS);
-    await this.loadAttackSpotAnims(spotAnimModelLoader);
-  }
-
   private getPrimaryNpcRenderConfig(): NpcRenderConfig {
     return this.encounterRenderConfig?.primaryNpc ?? YAMA_ENCOUNTER_RENDER_CONFIG.primaryNpc!;
-  }
-
-  private isWaveSpotAnimsLoaded(): boolean {
-    return WAVE_PRELOAD_IDS.every((id) => this.spotAnimRenderer.isLoaded(id));
-  }
-
-  private async loadFireballSpotAnims(spotAnimModelLoader: SpotAnimModelLoader): Promise<void> {
-    this.spotAnimModelLoader = spotAnimModelLoader;
-    this.spotAnimRenderer.preload(spotAnimModelLoader, FIREBALL_PRELOAD_IDS);
-  }
-
-  private async loadVoidFlareSpotAnims(spotAnimModelLoader: SpotAnimModelLoader): Promise<void> {
-    this.spotAnimModelLoader = spotAnimModelLoader;
-    this.spotAnimRenderer.preload(spotAnimModelLoader, VOID_FLARE_PRELOAD_IDS);
-  }
-
-  private async loadAttackSpotAnims(spotAnimModelLoader: SpotAnimModelLoader): Promise<void> {
-    this.spotAnimModelLoader = spotAnimModelLoader;
-    this.spotAnimRenderer.preload(spotAnimModelLoader, YAMA_ATTACK_PRELOAD_IDS);
   }
 
   private buildYama(

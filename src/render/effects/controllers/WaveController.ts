@@ -167,13 +167,3 @@ export class WaveController {
     } as NpcMesh3DCommand);
   }
 }
-
-export const WAVE_PRELOAD_IDS = [
-  SpotAnimID.VFX_SHADOW_WALL_SMALL,
-  SpotAnimID.VFX_SHADOW_WALL_01,
-  SpotAnimID.VFX_SHADOW_WALL_02,
-  SpotAnimID.VFX_SHADOW_WALL_03,
-  SpotAnimID.VFX_FIRE_WALL_01,
-  SpotAnimID.VFX_FIRE_WALL_02,
-  SpotAnimID.VFX_FIRE_WALL_03,
-];

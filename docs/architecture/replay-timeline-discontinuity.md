@@ -149,9 +149,12 @@ spawn, holds destination movement constant, and starts a walking clip at the ear
 due cue or 50 client cycles after spawn. Every replay frame poses each snapshot corpse at its exact
 age from its local `despawnTick`, without stepping death animations, so continuous playback ends a
 corpse on the cycle a seek would; a frame that rebuilds the cues also restores, from history, the
-corpses still on display whose NPCs the simulation already pruned. In 3D, every encounter's replay presentation waits until each spot
-animation and NPC type its render config declares has settled (`SceneCompositor.encounterAssetState`:
-loaded or failed, which is not proof of usable geometry), retrying without latching; a 2D view never
+corpses still on display whose NPCs the simulation already pruned. Both come after the NPC clock
+reaches the destination and before any NPC model is queued, so a frame draws each corpse as posed
+and none its own clock step expired. In 3D, every encounter's replay presentation waits until each
+NPC type its render config declares and each effect (its `spotAnimIds` and the primary NPC's death
+effect) has settled (`SceneCompositor.encounterAssetState`: loaded or failed, which is not proof of
+usable geometry), retrying without latching; a 2D view never
 waits. While it waits the cue player holds nothing and the frame sounds sync silently; corpses and an
 encounter's own timelines, which need no cue assets, are still posed.
 

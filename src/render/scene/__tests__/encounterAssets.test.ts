@@ -5,6 +5,9 @@ import { getArenaAllowUnboundedFallback, getArenaConfig, setArenaConfig } from '
 import type { ReplayDisplayFrame } from '../../../core/ReplayRecorder';
 import { SimulationEngine } from '../../../core/SimulationEngine';
 import { LobbyEncounter } from '../../../encounters/lobby/LobbyEncounter';
+import { YAMA_ENCOUNTER_RENDER_CONFIG } from '../../../encounters/yamaP3/renderConfig';
+import { FIREBALL_PRELOAD_IDS, WAVE_PRELOAD_IDS } from '../../../encounters/yamaP3/spotAnims';
+import { YAMA_NPC_ID } from '../../../rs/model/NpcModelLoader';
 import {
   IDENTITY_PROJECTION,
   installSyntheticSpotAnims,
@@ -19,6 +22,7 @@ import { configureEncounterScene, createEncounterSceneBuilder } from '../encount
 import { SceneCompositor } from '../SceneCompositor';
 import { SceneBuilderRegistry, sceneBuilderFactoryFor } from '../sceneBuilderFactory';
 import type { RenderContext } from '../types';
+import { YamaSceneCompositor } from '../YamaSceneCompositor';
 
 /**
  * The base compositor owns an encounter's asset loading and readiness from its render config alone:
@@ -227,6 +231,58 @@ describe('encounter replay readiness', () => {
 
     installSyntheticSpotAnims(scene, [EFFECT]);
     expect(assetState(scene)).toBe('ready');
+  });
+
+  const DEATH_EFFECT = 9101;
+  it.each([
+    {
+      // Yama's falling-rock impact: one of the effects beside his waves.
+      missing: 'a Yama effect other than a wave',
+      create: () => new YamaSceneCompositor(),
+      config: YAMA_ENCOUNTER_RENDER_CONFIG,
+      spotAnimId: FIREBALL_PRELOAD_IDS[0] as number,
+    },
+    {
+      missing: "the primary NPC's death effect",
+      create: () => new SceneCompositor(),
+      config: { ...WITH_PRIMARY, primaryNpc: { ...WITH_PRIMARY.primaryNpc!, deathSpotAnimId: DEATH_EFFECT } },
+      spotAnimId: DEATH_EFFECT,
+    },
+  ])('holds a 3D replay frame until $missing settles, and an empty one releases it as unusable', async ({
+    create,
+    config,
+    spotAnimId,
+  }) => {
+    const scene = create();
+    scene.setEncounterRenderConfig(config);
+    scenes.push(scene);
+    const { loader, animation } = syntheticNpcAssets((id) => (id === YAMA_NPC_ID ? 5 : 1));
+    await scene.loadNpc(loader, animation);
+    const declared = [...(config.spotAnimIds ?? []), config.primaryNpc?.deathSpotAnimId].filter(
+      (id): id is number => id !== undefined,
+    );
+    expect(declared).toContain(spotAnimId);
+    expect(WAVE_PRELOAD_IDS).not.toContain(spotAnimId);
+    installSyntheticSpotAnims(
+      scene,
+      declared.filter((id) => id !== spotAnimId),
+    );
+
+    expect(assetState(scene)).toBe('pending');
+    expect(drawReplay(scene, '3d').replayPresentationReady).toBe(false);
+    expect(drawReplay(scene, '2d').replayPresentationReady).toBe(true);
+
+    // The cache had nothing for it: settled, so the frame is shown, but not drawable.
+    scene['spotAnimRenderer']['meshCache'].set(spotAnimId, {
+      static: [],
+      frames: [],
+      frameLengths: [],
+      frameStep: -1,
+      heightOffset: 0,
+    });
+    expect(assetState(scene)).toBe('unavailable');
+    expect(scene['spotAnimRenderer'].isUsable(spotAnimId)).toBe(false);
+    expect(drawReplay(scene, '3d').replayPresentationReady).toBe(true);
   });
 });
 

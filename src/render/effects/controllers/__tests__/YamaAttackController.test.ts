@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import type { AttackKind, GameEvent } from '../../../../core/events/types';
+import { YAMA_ATTACK_PRELOAD_IDS } from '../../../../encounters/yamaP3/spotAnims';
 import { SpotAnimID } from '../../../../rs/config/spotanimtype/SpotAnimID';
 import type { RenderQueue } from '../../../core/commands';
 import { SpotAnimRenderer } from '../../SpotAnimRenderer';
-import { YAMA_ATTACK_PRELOAD_IDS, YamaAttackController } from '../YamaAttackController';
+import { YamaAttackController } from '../YamaAttackController';
 
 function fixture() {
   const renderer = new SpotAnimRenderer();

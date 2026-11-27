@@ -4,6 +4,7 @@ import type { ReplayDisplayFrame } from '../../../core/ReplayRecorder';
 import { SimulationEngine } from '../../../core/SimulationEngine';
 import { YAMA_SPAWN_FIREBALL_COMMAND, YAMA_SPAWN_VOID_FLARE_COMMAND } from '../../../encounters/yamaP3/commands';
 import { YAMA_ENCOUNTER_RENDER_CONFIG } from '../../../encounters/yamaP3/renderConfig';
+import { YAMA_ATTACK_PRELOAD_IDS } from '../../../encounters/yamaP3/spotAnims';
 import { YamaEncounter } from '../../../encounters/yamaP3/YamaEncounter';
 import { YAMA_NPC_ID } from '../../../rs/model/NpcModelLoader';
 import { legacyYamaRecording } from '../../../test/helpers/legacyEncounterRecordings';
@@ -22,7 +23,6 @@ import type { SimulationState } from '../../../types/simulation';
 import { log } from '../../../util/Logger';
 import type { Projection2D } from '../../core/camera';
 import type { RenderQueue } from '../../core/commands';
-import { YAMA_ATTACK_PRELOAD_IDS } from '../../effects/controllers/YamaAttackController';
 import type { FightStartCountdownPhase, SceneObjectFrameContext } from '../../graphics/sceneObjectTypes';
 import { PRIMARY_NPC_ACTOR_ID } from '../../npc/NpcInstanceManager';
 import type { SceneCompositor } from '../SceneCompositor';
@@ -210,7 +210,8 @@ describe('legacy Yama recording: continuous playback versus direct seek', () => 
   });
 
   async function legacyScene() {
-    // As `createYamaSceneBuilder` composes it, without the builder's wrapper.
+    // The compositor `createYamaSceneBuilder` returns, with Yama's authored config: these frames load
+    // no terrain, so the descriptor's map squares it adds would change nothing.
     const scene = new YamaSceneCompositor();
     scene.setEncounterRenderConfig(YAMA_ENCOUNTER_RENDER_CONFIG);
     built.push(scene);

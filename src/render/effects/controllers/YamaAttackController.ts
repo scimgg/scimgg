@@ -48,14 +48,6 @@ export function describeYamaAttack(event: GameEvent): YamaAttackDescriptor | und
   };
 }
 
-export const YAMA_ATTACK_PRELOAD_IDS = [
-  SpotAnimID.VFX_NPC_YAMA_MAGIC_SHADOW_SPOTANIM01,
-  SpotAnimID.VFX_NPC_YAMA_MAGIC_FIRE_SPOTANIM01,
-  SpotAnimID.VFX_NPC_YAMA_FIRE_SKULL_SPOTANIM01,
-  SpotAnimID.VFX_PLAYER_YAMA_MAGIC_SHADOW_IMPACT01,
-  SpotAnimID.VFX_PLAYER_YAMA_MAGIC_FIRE_IMPACT01,
-];
-
 export class YamaAttackController {
   private activeNpcCastEffect: ActiveEffect | null = null;
   private activePlayerImpactEffect: ActiveEffect | null = null;
