@@ -2,7 +2,12 @@ import type { NpcActor } from '../../core/actors/NpcActor';
 import type { PlayerActor } from '../../core/actors/PlayerActor';
 import { calculateProjectileEndTime } from '../../core/combat/hitDelay';
 import { isNpcActionReady, scheduleNpcAction } from '../../core/combat/npcActionClock';
-import { type AttackPlan, projectileDistance, resolveAttackRequest } from '../../core/combat/npcAttackRequest';
+import {
+  type AttackPlan,
+  canNpcAttack,
+  projectileDistance,
+  resolveAttackRequest,
+} from '../../core/combat/npcAttackRequest';
 import { contextAttackDecisions, contextDecisions } from '../../core/decisionRandom';
 import type { EncounterTickResult, EnvironmentalDamage } from '../../core/encounters/types';
 import { canNpcActThisTurn, canReceiveNewAttack } from '../../core/npcDeath';
@@ -19,6 +24,7 @@ import {
   ZULRAH_CLOUD,
   ZULRAH_CLOUD_ORB_SPOTANIM_ID,
   ZULRAH_HIT_CAP,
+  ZULRAH_LOS_GIVE_UP_TICKS,
   ZULRAH_MAGIC_SPOTANIM_ID,
   ZULRAH_MAX_HIT,
   ZULRAH_NPC_ID_BY_FORM,
@@ -58,6 +64,8 @@ export type ZulrahActorState = {
   lastImpactTick: TickNumber | null;
   /** The tail in progress: the tile it locked when the stare began, and the tick it lands. */
   pendingTail: { readonly target: Coordinate; readonly landTick: TickNumber } | null;
+  /** Consecutive ticks a due attack has waited for line of sight (`waitForSight`). */
+  blockedTicks: number;
 };
 
 export type ZulrahDefinitionConfig = {
@@ -143,6 +151,11 @@ export const zulrahDefinition = createNpcDefinition<ZulrahActorState, ZulrahDefi
     if (actor.hidden || !isNpcActionReady(actor.combat, context.tick)) return { environmentalDamages: damages };
     if (!player || !canReceiveNewAttack(player)) return { environmentalDamages: damages };
 
+    if (state.actions[0] === 'attack' && !canNpcAttack(actor, player, PLANS.range)) {
+      waitForSight(actor, state, context);
+      return { environmentalDamages: damages };
+    }
+    state.blockedTicks = 0;
     const action = state.actions.shift();
     switch (action) {
       case 'attack': {
@@ -179,12 +192,6 @@ function takeAttack(
   // An attack turn faces the player, dropping the bearing a surfacing or a spit left (private gameplay
   // capture zulrah-packet-data-1.txt, e.g. t258; also t301, where the turn made no attack).
   delete actor.actionFacing;
-  if (!config.attacksEnabled()) {
-    // Spends the turn without the attack, so the phase keeps its length.
-    state.lastImpactTick = context.tick;
-    return EMPTY;
-  }
-  // Reported from play: it faces south until the player hits it or it first attacks, then tracks the player.
   actor.combat.targetId = 'player';
   const style = selectStyle(actor, state, config, context);
   const attack = resolveAttackRequest({
@@ -195,12 +202,16 @@ function takeAttack(
     plan: PLANS[style],
   });
   if (!attack) throw new TypeError(`Missing formula stats for ${actor.id}`);
-  // Every ranged or magic attack that does not miss envenoms, prayer or not (`ZULRAH_VENOM`).
-  const venom = config.venomEnabled() && attack.accuracySucceeded;
   state.attacksMade += 1;
   state.lastImpactTick = context.tick + attack.impactDelayTicks;
   actor.combat.attackStyle = style;
   actor.combat.lastAttackTick = context.tick;
+  // With attacks off the turn is still taken in full, after the same sight wait, and its style and rolls
+  // are still drawn from the encounter's stream, so turning attacks back on mid-fight continues with the
+  // rolls an all-on run would make. Only the attack, its damage, venom and visual are dropped.
+  if (!config.attacksEnabled()) return EMPTY;
+  // Every ranged or magic attack that does not miss envenoms, prayer or not (`ZULRAH_VENOM`).
+  const venom = config.venomEnabled() && attack.accuracySucceeded;
   emitInfernoVisual(context.tickEvents, {
     animations: [{ actorId: actor.id, clipId: 'attack', delayCycles: 0 }],
     projectiles: [projectileCue(actor, player, style)],
@@ -237,6 +248,30 @@ function selectStyle(
       return exhaustive;
     }
   }
+}
+
+/**
+ * A due ranged or magic attack waits while Zulrah cannot see the player, retrying every tick; the
+ * first tick it can see the player it attacks, and its 3-tick clock restarts from there. The check is
+ * the engine's NPC reach (`canNpcAttack`): the ray runs from the player's tile to the nearest tile of
+ * Zulrah's footprint, and Zulrah's turn comes before the player moves, so it sees where the player
+ * ended the previous tick. Measured in private gameplay captures, whose hidden and visible tiles
+ * (docs/encounters/zulrah-facts-spec.md) this ray reproduces on the pinned cache's pillars; the reverse
+ * ray, Zulrah to player, would hide (24,64) from the south spot, where zulrah-packet-data-2.txt shows
+ * attacks (t3074, t3077).
+ *
+ * Simulator policy (approved, unverified): blocked on `ZULRAH_LOS_GIVE_UP_TICKS` consecutive ticks,
+ * it drops the phase's remaining attacks, and its next turn (an `after` special) or its dive comes on
+ * the following tick. Zulrah faces the player while it waits (zulrah-packet-data-2.txt t3071-t3073).
+ */
+function waitForSight(actor: NpcActor, state: ZulrahActorState, context: NpcDefinitionContext): void {
+  delete actor.actionFacing;
+  actor.combat.targetId = 'player';
+  state.blockedTicks += 1;
+  if (state.blockedTicks < ZULRAH_LOS_GIVE_UP_TICKS) return;
+  state.blockedTicks = 0;
+  while (state.actions[0] === 'attack') state.actions.shift();
+  scheduleNpcAction(actor.combat, context.tick, 1);
 }
 
 /** A tail whose stare has run its course lands: damage and a stun if the player is still under it. */
@@ -458,6 +493,7 @@ export function createZulrahActor(input: CreateZulrahActorInput) {
     attacksMade: 0,
     lastImpactTick: null,
     pendingTail: null,
+    blockedTicks: 0,
   });
 }
 
@@ -491,6 +527,7 @@ export function transformZulrah(actor: NpcActor, input: Omit<CreateZulrahActorIn
   state.attacksMade = 0;
   state.lastImpactTick = null;
   state.pendingTail = null;
+  state.blockedTicks = 0;
 }
 
 export function getZulrahState(actor: NpcActor): ZulrahActorState | null {

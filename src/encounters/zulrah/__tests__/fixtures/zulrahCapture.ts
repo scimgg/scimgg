@@ -206,6 +206,64 @@ export const ZULRAH_CAPTURE_OPENING = {
  */
 export const ZULRAH_CAPTURE_FIRST_ATTACKABLE = { emerge: 3239, refused: [3241, 3242], attack: 3243 } as const;
 
+export type ZulrahCaptureSightTile = {
+  readonly spot: 'middle' | 'east' | 'south';
+  /** The player's tile at the start of the tick (where it ended the previous one). */
+  readonly tile: Coordinate;
+  readonly visible: boolean;
+  /** The capture, and the turns seen from this tile: attacks if visible, due and unmade if not. */
+  readonly capture: 1 | 2 | 3;
+  readonly ticks: readonly number[];
+};
+
+/**
+ * Line of sight from the player's tile to Zulrah at each spot, by its due ranged and magic turns. The
+ * pillars that hide the player are the single tiles (25, 63) and (31, 63) (the pinned cache's only
+ * projectile blockers on the island).
+ */
+export const ZULRAH_CAPTURE_SIGHT: readonly ZulrahCaptureSightTile[] = [
+  { spot: 'east', tile: [24, 63], visible: false, capture: 1, ticks: [301, 304] },
+  { spot: 'east', tile: [24, 63], visible: false, capture: 2, ticks: [3137, 3140, 3143] },
+  { spot: 'east', tile: [24, 64], visible: true, capture: 2, ticks: [3131, 3134] },
+  { spot: 'east', tile: [23, 66], visible: true, capture: 2, ticks: [3128] },
+  { spot: 'south', tile: [24, 68], visible: false, capture: 2, ticks: [3071] },
+  { spot: 'south', tile: [24, 66], visible: false, capture: 2, ticks: [3073] },
+  { spot: 'south', tile: [24, 65], visible: false, capture: 2, ticks: [3160, 3163] },
+  { spot: 'south', tile: [24, 64], visible: true, capture: 2, ticks: [3074, 3077, 3157, 3168] },
+  { spot: 'south', tile: [24, 63], visible: true, capture: 2, ticks: [3151, 3154, 3165] },
+  { spot: 'middle', tile: [24, 62], visible: false, capture: 1, ticks: [363, 366, 369, 372] },
+  { spot: 'middle', tile: [24, 67], visible: true, capture: 1, ticks: [360] },
+  // Behind the east pillar: the extra phase, rotation 4 phases 8, 9 and 12.
+  {
+    spot: 'middle',
+    tile: [32, 62],
+    visible: false,
+    capture: 3,
+    ticks: [844, 847, 997, 1000, 1003, 1006, 1013, 1016, 1083, 1086, 1089],
+  },
+  { spot: 'middle', tile: [32, 63], visible: true, capture: 3, ticks: [849, 994] },
+];
+
+/**
+ * A due attack waiting off its 3-tick grid (capture 2, blue south): an attack on t3157 from (24, 64);
+ * hidden at (24, 65) t3160-t3164; the player reached (24, 63) at the end of t3164 and the attack went
+ * off on t3165, then t3168. The phase made all 5 of its attacks.
+ */
+export const ZULRAH_CAPTURE_SIGHT_RESUME = {
+  attack: 3157,
+  hidden: [24, 65],
+  hiddenThrough: 3164,
+  seenFrom: [24, 63],
+  resumed: 3165,
+  next: 3168,
+} as const satisfies Record<string, number | Coordinate>;
+
+/**
+ * The give-up the policy reproduces (capture 2, green east, rotation 2 phase 7, no specials after): the
+ * third attack on t3134, its next due and blocked from t3137 on, the dive on t3145.
+ */
+export const ZULRAH_CAPTURE_SIGHT_GIVE_UP = { lastAttack: 3134, blockedFrom: 3137, dive: 3145 } as const;
+
 /**
  * A phase the wiki's rotation 4 table does not list (capture 3), between phases 3 and 4: after blue
  * west, Zulrah surfaced blue at the middle (t832, moved and transformed with no form change), spat 3

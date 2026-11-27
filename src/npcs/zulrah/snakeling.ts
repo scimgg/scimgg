@@ -80,7 +80,6 @@ export const snakelingDefinition = createNpcDefinition<SnakelingState, Snakeling
     const plan = PLANS[actor.state.style];
     if (!canNpcAttack(actor, player, plan)) return none;
     scheduleNpcAction(actor.combat, context.tick, SNAKELING.attackSpeedTicks);
-    if (!config.attacksEnabled()) return none;
     const attack = resolveAttackRequest({
       attacker: actor,
       target: player,
@@ -96,6 +95,9 @@ export const snakelingDefinition = createNpcDefinition<SnakelingState, Snakeling
         SNAKELING_VENOM_CHANCE,
       );
     actor.combat.lastAttackTick = context.tick;
+    // With attacks off the rolls are still drawn, as for Zulrah's own turns, so the encounter's stream
+    // stays aligned with an all-on run; only the attack, its venom and visual are dropped.
+    if (!config.attacksEnabled()) return none;
     emitInfernoVisual(context.tickEvents, {
       animations: [{ actorId: actor.id, clipId: 'attack', delayCycles: 0 }],
       projectiles: actor.state.style === 'magic' ? [magicBolt(actor, player)] : [],

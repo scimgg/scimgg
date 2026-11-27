@@ -20,15 +20,20 @@ import {
   SNAKELING,
   SNAKELING_MAGIC_NPC_ID,
   SNAKELING_MELEE_NPC_ID,
+  ZULRAH_ATTACK_SPEED_TICKS,
   ZULRAH_CLOUD,
   ZULRAH_CLOUD_LOC_ID,
+  ZULRAH_LOS_GIVE_UP_TICKS,
+  ZULRAH_MAGIC_SPOTANIM_ID,
   ZULRAH_NPC_ID_BY_FORM,
+  ZULRAH_RANGED_SPOTANIM_ID,
   ZULRAH_SNAKELING_ORB_SPOTANIM_ID,
   ZULRAH_TAIL,
 } from '../../../npcs/zulrah/constants';
 import { snakelingDefinition } from '../../../npcs/zulrah/snakeling';
 import { getZulrahState, isInTailArea, isTailSafeTile, zulrahDefinition } from '../../../npcs/zulrah/zulrah';
-import { getBoundsFromRegion } from '../../../rs/collision/WalkabilityAnalyzer';
+import { CollisionFlag } from '../../../rs/collision/CollisionFlag';
+import { createCollisionMap, getBoundsFromRegion } from '../../../rs/collision/WalkabilityAnalyzer';
 import { enqueueEnginePendingHit } from '../../../test/helpers/pendingHits';
 import { createEmptyStats } from '../../../types/equipmentStats';
 import { parseInventoryFromSetup } from '../../../types/inventory';
@@ -51,6 +56,9 @@ import {
   ZULRAH_CAPTURE_EXTRA_PHASE,
   ZULRAH_CAPTURE_FIRST_ATTACKABLE,
   ZULRAH_CAPTURE_OPENING,
+  ZULRAH_CAPTURE_SIGHT,
+  ZULRAH_CAPTURE_SIGHT_GIVE_UP,
+  ZULRAH_CAPTURE_SIGHT_RESUME,
   ZULRAH_CAPTURE_TAIL_STUN,
 } from './fixtures/zulrahCapture';
 
@@ -1059,5 +1067,212 @@ describe('Zulrah opening and first attackable tick, against private gameplay cap
     }
     for (const tick of refused) expect(isNpcTargetable(zulrah, emerged + (tick - emerge))).toBe(false);
     expect(firstAttack).toBe(emerged + (attack - emerge));
+  });
+});
+
+describe('Zulrah line of sight, against private gameplay captures', () => {
+  /** The island's projectile blockers in the pinned cache: one pillar tile each side of the base. */
+  const PILLARS: readonly Coordinate[] = [
+    [25, 63],
+    [31, 63],
+  ];
+
+  const originalArena = getArenaConfig();
+  const originalFallback = getArenaAllowUnboundedFallback();
+  afterEach(() => {
+    clearResolvedArenaConfigs();
+    setArenaConfig(originalArena, originalFallback);
+  });
+
+  function installPillars(run: Run): void {
+    const collisionMap = createCollisionMap(64, 128);
+    const walkableTiles = zulrahIslandTiles();
+    for (const [x, y] of PILLARS) {
+      collisionMap.flag(x, y, CollisionFlag.OBJECT | CollisionFlag.OBJECT_PROJECTILE_BLOCKER);
+      walkableTiles.delete(`${x},${y}`);
+    }
+    setResolvedArenaConfig('zulrah', { bounds: getBoundsFromRegion(walkableTiles), walkableTiles, collisionMap });
+    run.engine.reapplyArenaConfig();
+  }
+
+  /** Phases that open on their ranged or magic attacks at each spot, by pinned rotation and index. */
+  const ATTACK_PHASE = {
+    middle: { rotation: '1', index: 2 }, // Blue middle, 4 attacks.
+    south: { rotation: '1', index: 3 }, // Green south, 5 attacks, then S S C C S S.
+    east: { rotation: '2', index: 6 }, // Green east, 5 attacks, nothing after.
+  } as const;
+
+  /** A run at the emerge of `spot`'s attack phase, the pillars in place and the player on `tile`. */
+  function emergeAt(spot: keyof typeof ATTACK_PHASE, tile: Coordinate) {
+    const { rotation, index } = ATTACK_PHASE[spot];
+    const run = startRun(3, { zulrahRotation: rotation, zulrahClouds: false, zulrahSnakelings: false });
+    installPillars(run);
+    runToPhase(run, index);
+    const zulrah = run.zulrah();
+    if (!zulrah) throw new Error('No Zulrah');
+    expect(zulrah.position).toEqual(ZULRAH_SPOTS[spot]);
+    standOn(run, tile);
+    return { run, zulrah, emerged: zulrah.spawnTick ?? 0 };
+  }
+
+  function standOn(run: Run, tile: Coordinate): void {
+    const player = run.world.getPlayer();
+    if (!player) throw new Error('No player');
+    player.position = [tile[0], tile[1]];
+    player.previousPosition = [tile[0], tile[1]];
+  }
+
+  /** Ticks on `tile` (it stays there) until `tick`, returning the ticks Zulrah attacked on. */
+  function holdUntil(run: Run, zulrah: NpcActor, tile: Coordinate, tick: number): number[] {
+    const attacks: number[] = [];
+    while (run.world.tick < tick) {
+      run.engine.advanceTick([tile[0], tile[1]]);
+      expect(run.world.getPlayer()?.position).toEqual(tile);
+      if (zulrah.combat.lastAttackTick === run.world.tick) attacks.push(run.world.tick);
+    }
+    return attacks;
+  }
+
+  const firstTurn = (emerged: number) => emerged + ZULRAH_SURFACE_PAUSE_TICKS;
+
+  it.each(
+    ZULRAH_CAPTURE_SIGHT.map((c) => [c.spot, `${c.tile}`, c.visible ? 'sees' : 'cannot see', c] as const),
+  )('at the %s spot, from (%s), %s the player', (_spot, _tile, _sees, { spot, tile, visible }) => {
+    const { run, zulrah, emerged } = emergeAt(spot, tile);
+    const attacks = holdUntil(run, zulrah, tile, firstTurn(emerged));
+    expect(attacks).toEqual(visible ? [firstTurn(emerged)] : []);
+    if (!visible) {
+      // It turns to the player while it waits.
+      expect(zulrah.actionFacing).toBeUndefined();
+      expect(zulrah.combat.targetId).toBe('player');
+    }
+  });
+
+  it('attacks on the first tick it sees the player, off its 3-tick grid, then keeps 3 ticks from there', () => {
+    const { attack, hidden, hiddenThrough, seenFrom, resumed, next } = ZULRAH_CAPTURE_SIGHT_RESUME;
+    const { run, zulrah, emerged } = emergeAt('south', [24, 64]);
+    const start = firstTurn(emerged);
+    const at = (tick: number) => start + (tick - attack);
+    expect(holdUntil(run, zulrah, [24, 64], start)).toEqual([start]);
+    standOn(run, [...hidden]);
+    expect(holdUntil(run, zulrah, [...hidden], at(hiddenThrough))).toEqual([]);
+    standOn(run, [...seenFrom]);
+    const attacks = holdUntil(run, zulrah, [...seenFrom], at(next) + 3 * 2);
+    expect(attacks).toEqual([at(resumed), at(next), at(next) + 3, at(next) + 6]);
+    // All 5 attacks made.
+    expect(getZulrahState(zulrah)?.attacksMade).toBe(5);
+  });
+
+  it('gives up its attacks after the policy count of blocked ticks and dives on the captured tick', () => {
+    const { lastAttack, blockedFrom, dive } = ZULRAH_CAPTURE_SIGHT_GIVE_UP;
+    expect(dive - blockedFrom).toBe(ZULRAH_LOS_GIVE_UP_TICKS);
+    const { run, zulrah, emerged } = emergeAt('east', [24, 64]);
+    const third = firstTurn(emerged) + 2 * ZULRAH_ATTACK_SPEED_TICKS;
+    expect(holdUntil(run, zulrah, [24, 64], third)).toHaveLength(3);
+    standOn(run, [24, 63]);
+    const at = (tick: number) => third + (tick - lastAttack);
+    let dived: number | null = null;
+    while (dived === null && run.world.tick < at(dive) + 5) {
+      run.engine.advanceTick([24, 63]);
+      expect(zulrah.combat.lastAttackTick).toBe(third);
+      if (stateOf(run).stage === 'diving') dived = run.world.tick;
+    }
+    expect(dived).toBe(at(dive));
+  });
+
+  /**
+   * Rotation 2 from the start, the pillars in place, the player put on `tileFor`'s tile before every
+   * tick: each sink, emerge and attack turn (with its style), and each phase's attack count at its dive.
+   */
+  function recordTimeline(attacks: boolean, tileFor: (zulrah: NpcActor) => Coordinate, ticks = 700) {
+    const run = startRun(7, { zulrahRotation: '2', zulrahAttacks: attacks, zulrahClouds: false });
+    installPillars(run);
+    const zulrah = run.zulrah();
+    if (!zulrah) throw new Error('No Zulrah');
+    const sinks: number[] = [];
+    const emerges: number[] = [];
+    const turns: string[] = [];
+    const attacksAtDive: number[] = [];
+    let gaveUp = 0;
+    let blocked = 0;
+    let wasDiving = false;
+    for (let i = 0; i < ticks; i++) {
+      const tile = tileFor(zulrah);
+      standOn(run, tile);
+      const blockedBefore = getZulrahState(zulrah)?.blockedTicks ?? 0;
+      run.engine.advanceTick([tile[0], tile[1]]);
+      const tick = run.world.tick;
+      const state = getZulrahState(zulrah);
+      const attacked = zulrah.combat.lastAttackTick === tick;
+      if (blockedBefore === ZULRAH_LOS_GIVE_UP_TICKS - 1 && state?.blockedTicks === 0 && !attacked) gaveUp += 1;
+      if ((state?.blockedTicks ?? 0) > 0) blocked += 1;
+      if (attacked) turns.push(`${tick}:${zulrah.combat.attackStyle}`);
+      if (zulrah.spawnTick === tick && tick > 1) emerges.push(tick);
+      const diving = stateOf(run).stage === 'diving';
+      if (diving && !wasDiving) {
+        sinks.push(tick);
+        attacksAtDive.push(state?.attacksMade ?? -1);
+      }
+      wasDiving = diving;
+    }
+    return { sinks, emerges, turns, attacksAtDive, gaveUp, blocked };
+  }
+
+  it('keeps every sink, emerge and attack turn with attacks off, the player in sight throughout', () => {
+    const seen: Coordinate = [28, 61];
+    const on = recordTimeline(true, () => seen);
+    const off = recordTimeline(false, () => seen);
+    expect(on.blocked).toBe(0);
+    expect(on.sinks.length).toBeGreaterThanOrEqual(ZULRAH_ROTATIONS[2].length);
+    expect(off).toEqual(on);
+  });
+
+  it('draws the same rolls with attacks off, so turning them back on continues an all-on run', () => {
+    const styles = (offUntil: number) => {
+      const run = startRun(7, { zulrahRotation: '2', zulrahAttacks: offUntil === 0 });
+      const zulrah = run.zulrah();
+      if (!zulrah) throw new Error('No Zulrah');
+      const made: string[] = [];
+      for (let i = 0; i < 520; i++) {
+        if (run.world.tick === offUntil)
+          run.engine.setMechanicsConfig({ infiniteHealth: true, zulrahRotation: '2', zulrahAttacks: true });
+        run.tick();
+        const projectile = run.engine
+          .getLastTickEvents()
+          .filter(isInfernoVisualEvent)
+          .flatMap((v) => v.projectiles)
+          .find((p) => p.spotAnimId === ZULRAH_RANGED_SPOTANIM_ID || p.spotAnimId === ZULRAH_MAGIC_SPOTANIM_ID);
+        if (projectile && run.world.tick > offUntil) made.push(`${run.world.tick}:${projectile.spotAnimId}`);
+      }
+      return made;
+    };
+    // Off through rotation 2's first blue phases (indexes 2 and 4), on from its second blue south.
+    const resumed = styles(300);
+    expect(resumed.length).toBeGreaterThan(10);
+    expect(styles(0).filter((made) => Number(made.split(':')[0]) > 300)).toEqual(resumed);
+  });
+
+  it('spits its clouds and snakeling orbs without sight, once it gives up its attacks', () => {
+    const run = startRun(3, { zulrahRotation: '1' });
+    installPillars(run);
+    runToPhase(run, ATTACK_PHASE.south.index);
+    const zulrah = run.zulrah();
+    if (!zulrah) throw new Error('No Zulrah');
+    const hidden: Coordinate = [24, 66];
+    standOn(run, hidden);
+    const blockedFrom = firstTurn(zulrah.spawnTick ?? 0);
+    const specials: number[] = [];
+    for (let i = 0; i < 100 && phaseIndexOf(run) === ATTACK_PHASE.south.index; i++) {
+      run.engine.advanceTick([hidden[0], hidden[1]]);
+      const spat = run.engine
+        .getLastTickEvents()
+        .filter(isInfernoVisualEvent)
+        .some((v) => v.animations.some((a) => a.actorId === ZULRAH_ACTOR_ID && a.clipId === 'attack'));
+      if (spat) specials.push(run.world.tick);
+    }
+    expect(zulrah.combat.lastAttackTick).toBeNull();
+    // S S C C S S, the first on the tick after the last blocked one, then every 3 ticks.
+    const first = blockedFrom + ZULRAH_LOS_GIVE_UP_TICKS;
+    expect(specials).toEqual([0, 1, 2, 3, 4, 5].map((i) => first + i * ZULRAH_ATTACK_SPEED_TICKS));
   });
 });

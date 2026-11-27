@@ -16,6 +16,15 @@ export const ZULRAH_SIZE = 5;
 /** Attack speed 3 ticks: wiki infobox. */
 export const ZULRAH_ATTACK_SPEED_TICKS = 3;
 
+/**
+ * Consecutive ticks a due ranged or magic attack waits for line of sight before Zulrah gives up the
+ * phase's remaining attacks (`waitForSight` in zulrah.ts). Simulator policy, approved by the project
+ * owner and unverified: it reproduces private gameplay capture zulrah-packet-data-2.txt's east phase
+ * (blocked from t3137, dive t3145) but not two in zulrah-packet-data-1.txt (blocked from t301, dive
+ * t307; blocked from t363, first special t373).
+ */
+export const ZULRAH_LOS_GIVE_UP_TICKS = 8;
+
 /** Ranged and magic max hit 41: wiki infobox. */
 export const ZULRAH_MAX_HIT = 41;
 
