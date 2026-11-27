@@ -143,9 +143,15 @@ export const SNAKELING_MAGIC_SPOTANIM_ID = 1230;
  * same commit; the wiki infobox lists them in that order, https://oldschool.runescape.wiki/w/Snakeling). Each "attacks
  * with either magic or melee, but never both"; 1 HP, size 1, attack speed 3, max hit 15 melee (stab)
  * and 13 magic; protection prayers block them; they die with Zulrah or after "more than 40 seconds"
- * (Zulrah/Strategies, Special attacks). Simulator policy: the orb lands 3 ticks after it is spat, 1-3
- * tiles from the player; the style is a 50/50 draw; the first attack comes 3 ticks after landing; magic
- * reaches 7 tiles.
+ * (Zulrah/Strategies, Special attacks). The orb flies 40-120 cycles and the snakeling appears on its
+ * target tile as it lands, 4 ticks after the spit (private gameplay capture zulrah-packet-data-1.txt,
+ * 13/13 orbs that landed before a dive, e.g. t232 to t236). One left alone dies 51 ticks after it
+ * appears, well short of the wiki's 40 seconds (zulrah-packet-data-2.txt, SNAKEBOSS_PET_DEATH t3096 to
+ * t3147, t3105 to t3156, t3181 to t3232, t3193 to t3244; zulrah-packet-data-1.txt has two at 50, t435
+ * to t485 and t438 to t488; zulrah-packet-data-3.txt one at 52, t929 to t981, and one at 53, t935 to
+ * t988). The orb lands on one of nine fixed sites (`encounters/zulrah/snakelingOrbs.ts`). Simulator
+ * policy: the style is a 50/50 draw; the first attack comes 3 ticks after landing; magic reaches 7
+ * tiles.
  */
 export const SNAKELING_MELEE_NPC_ID = 2045;
 export const SNAKELING_MAGIC_NPC_ID = 2046;
@@ -153,8 +159,8 @@ export const SNAKELING = {
   orbStartCycles: 40,
   orbEndCycles: 120,
   orbFlightTicks: 4,
-  /** 40 seconds at 0.6 s a tick, rounded up. */
-  lifetimeTicks: 67,
+  /** Ticks from appearing to dying off. */
+  lifetimeTicks: 51,
   firstAttackDelayTicks: 3,
   attackSpeedTicks: 3,
   magicRange: 7,

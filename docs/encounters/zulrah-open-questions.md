@@ -66,7 +66,9 @@ Paths: **N/** = `src/npcs/zulrah/`, **E/** = `src/encounters/zulrah/`.
 | First attack | 3 ticks after landing | UNVERIFIED | Video |
 | Magic range; bolt timing | 7 tiles; lands the next tick | UNVERIFIED | Video |
 | Venom chance | 25% per attack (`SNAKELING_VENOM_CHANCE`) | POLICY | Many hits on an un-envenomed player |
-| Lifetime | 67 ticks | INFERENCE ("more than 40 seconds") | Spawn to die-off of an idle snakeling |
+| Lifetime | Dies off 51 ticks after appearing (`SNAKELING.lifetimeTicks`): the engine's scripted death, the death animation on that tick, as a kill without a hit | Measured (facts spec); 51 is the most common | 8 captured: 50 twice (Z1 t435 → t485, t438 → t488), 51 four times (Z2), 52 (Z3 t929 → t981), 53 (Z3 t935 → t988); probably random. All disagree with the wiki's "more than 40 seconds" (67+ ticks) |
+| Removal after a snakeling's death | The engine's corpse retention prunes it 10 ticks after death (`DEAD_ACTOR_PRUNE_GRACE_TICKS`), kill or expiry alike | Gap | Z2 removes it 2 ticks after the death animation, after a kill (t3198 → t3200) and an expiry (t3147 → t3149). The retention is engine-wide, not changed here |
+| A killed snakeling's death animation | On the hit tick (the snakeling's death is immediate) | Gap | Z2: a recoil hit on t3197, the death animation on t3198 |
 | Dying NPC 2047 | Unused; 2045/2046 play 2408 | UNVERIFIED | A snakeling dying |
 
 ## Venom

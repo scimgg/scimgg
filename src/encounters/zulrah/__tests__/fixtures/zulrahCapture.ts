@@ -294,6 +294,29 @@ export const ZULRAH_CAPTURE_OPENING = {
  */
 export const ZULRAH_CAPTURE_FIRST_ATTACKABLE = { emerge: 3239, refused: [3241, 3242], attack: 3243 } as const;
 
+/**
+ * Snakelings left alone, never hit, die off (SNAKEBOSS_PET_DEATH 2408) 50-53 ticks after appearing, 51
+ * in 4 of 8, and are removed 2 ticks later.
+ */
+export const ZULRAH_CAPTURE_SNAKELING_DEATHS: readonly {
+  readonly capture: 1 | 2 | 3;
+  readonly appears: number;
+  readonly death: number;
+  readonly removed: number;
+}[] = [
+  { capture: 1, appears: 435, death: 485, removed: 487 },
+  { capture: 1, appears: 438, death: 488, removed: 490 },
+  { capture: 2, appears: 3096, death: 3147, removed: 3149 },
+  { capture: 2, appears: 3105, death: 3156, removed: 3158 },
+  { capture: 2, appears: 3181, death: 3232, removed: 3234 },
+  { capture: 2, appears: 3193, death: 3244, removed: 3246 },
+  { capture: 3, appears: 929, death: 981, removed: 983 },
+  { capture: 3, appears: 935, death: 988, removed: 990 },
+];
+
+/** A snakeling killed by recoil (capture 2): the hit on t3197, the death animation t3198, removed t3200. */
+export const ZULRAH_CAPTURE_SNAKELING_KILL = { hit: 3197, death: 3198, removed: 3200 } as const;
+
 export type ZulrahCaptureSightTile = {
   readonly spot: 'middle' | 'east' | 'south';
   /** The player's tile at the start of the tick (where it ended the previous one). */

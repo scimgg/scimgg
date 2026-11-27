@@ -11,6 +11,7 @@ import {
   setDefaultArenaConfig,
   setResolvedArenaConfig,
 } from '../../../core/constants';
+import { canReceiveNewAttack } from '../../../core/npcDeath';
 import { VENOM_THRESHOLD } from '../../../core/poison';
 import { mulberry32 } from '../../../core/rng';
 import { SimulationEngine } from '../../../core/SimulationEngine';
@@ -21,6 +22,7 @@ import {
   SNAKELING,
   SNAKELING_MAGIC_NPC_ID,
   SNAKELING_MELEE_NPC_ID,
+  SNAKELING_SEQS,
   ZULRAH_ATTACK_SPEED_TICKS,
   ZULRAH_CLOUD,
   ZULRAH_CLOUD_LOC_ID,
@@ -73,6 +75,7 @@ import {
   ZULRAH_CAPTURE_SIGHT,
   ZULRAH_CAPTURE_SIGHT_GIVE_UP,
   ZULRAH_CAPTURE_SIGHT_RESUME,
+  ZULRAH_CAPTURE_SNAKELING_DEATHS,
   ZULRAH_CAPTURE_SNAKELING_SEQUENCES,
   ZULRAH_CAPTURE_TAIL_STUN,
 } from './fixtures/zulrahCapture';
@@ -1003,12 +1006,82 @@ describe('Zulrah snakelings', () => {
     expect(snakelings(run).some((s) => s.combat.lastAttackTick !== null)).toBe(true);
   });
 
-  it(`dies off ${SNAKELING.lifetimeTicks} ticks after landing`, () => {
+  const diedThisTick = (run: Run, id: string) =>
+    run.engine.getLastTickEvents().some((event) => event.type === 'actor_died' && event.actorId === id);
+
+  /** Ticks until `npc` leaves the world, returning the tick it went. */
+  function tickUntilRemoved(run: Run, id: string, limit = 40): number {
+    for (let i = 0; i < limit && run.world.getNpc(id); i++) run.tick();
+    if (run.world.getNpc(id)) throw new Error(`${id} was never removed`);
+    return run.world.tick;
+  }
+
+  it('dies off the most common captured lifetime after it appears, as a death, not a vanish', () => {
+    const lifetimes = ZULRAH_CAPTURE_SNAKELING_DEATHS.map((d) => d.death - d.appears);
+    expect(Math.min(...lifetimes)).toBe(50);
+    expect(Math.max(...lifetimes)).toBe(53);
+    expect(lifetimes.filter((l) => l === SNAKELING.lifetimeTicks)).toHaveLength(lifetimes.length / 2);
+    for (const d of ZULRAH_CAPTURE_SNAKELING_DEATHS) expect(d.removed - d.death).toBe(2);
     const run = runToFirstSnakelings(8);
     const first = snakelings(run)[0];
     if (!first?.spawnTick) throw new Error('No snakeling');
-    while (run.world.tick < first.spawnTick + SNAKELING.lifetimeTicks + 1) run.tick();
-    expect(run.world.getNpc(first.id)).toBeNull();
+    const deathTick = first.spawnTick + SNAKELING.lifetimeTicks;
+    while (run.world.tick < deathTick - 1) run.tick();
+    expect(first.alive).toBe(true);
+    run.tick();
+    expect(run.world.getNpc(first.id)).toBe(first);
+    expect(first.alive).toBe(false);
+    expect(first.death?.status).toBe('started');
+    expect(diedThisTick(run, first.id)).toBe(true);
+    expect(first.combat.animations.death).toBe(SNAKELING_SEQS.death);
+  });
+
+  it('is removed after dying off just as a killed snakeling is', () => {
+    const lifetime = SNAKELING.lifetimeTicks;
+    const expiry = runToFirstSnakelings(8);
+    const expiring = snakelings(expiry)[0];
+    if (!expiring?.spawnTick) throw new Error('No snakeling');
+    const expiryDeath = expiring.spawnTick + lifetime;
+    while (expiry.world.tick < expiryDeath) expiry.tick();
+    expect(diedThisTick(expiry, expiring.id)).toBe(true);
+    const expiryRemoval = tickUntilRemoved(expiry, expiring.id) - expiryDeath;
+
+    const kill = runToFirstSnakelings(8);
+    const killed = snakelings(kill)[0];
+    if (!killed) throw new Error('No snakeling');
+    enqueueEnginePendingHit(kill.engine, {
+      sourceId: 'player',
+      targetId: killed.id,
+      style: 'range',
+      attackKind: 'range_arrow',
+      launchTick: kill.world.tick,
+      impactTick: kill.world.tick + 1,
+      rolledDamage: 1,
+      accuracySucceeded: true,
+    });
+    kill.tick();
+    expect(diedThisTick(kill, killed.id)).toBe(true);
+    const killTick = kill.world.tick;
+    const killRemoval = tickUntilRemoved(kill, killed.id) - killTick;
+    expect(expiryRemoval).toBe(killRemoval);
+  });
+
+  it('neither attacks nor can be attacked while it dies off', () => {
+    const run = runToFirstSnakelings(8);
+    const first = snakelings(run)[0];
+    if (!first?.spawnTick) throw new Error('No snakeling');
+    while (run.world.tick < first.spawnTick + SNAKELING.lifetimeTicks) run.tick();
+    expect(first.alive).toBe(false);
+    const lastAttack = first.combat.lastAttackTick;
+    expect(canReceiveNewAttack(first)).toBe(false);
+    for (let i = 0; i < 5 && run.world.getNpc(first.id); i++) {
+      run.engine.setAttackTarget(first.id);
+      run.tick();
+      expect(first.combat.lastAttackTick).toBe(lastAttack);
+      expect(
+        run.engine.getLastTickEvents().some((event) => event.type === 'attack_started' && event.targetId === first.id),
+      ).toBe(false);
+    }
   });
 
   describe('recoil', () => {

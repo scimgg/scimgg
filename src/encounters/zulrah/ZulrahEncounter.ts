@@ -11,6 +11,7 @@ import type {
   EncounterTickResult,
   EnvironmentalDamage,
 } from '../../core/encounters/types';
+import { markNpcDead } from '../../core/npcDeath';
 import { NpcDefinitionCollection, type NpcDefinitionContext } from '../../core/npcs';
 import { mulberry32 } from '../../core/rng';
 import { getMonsterHp } from '../../data/monsterData';
@@ -273,10 +274,19 @@ export class ZulrahEncounter implements Encounter {
     return this.npcDefinitions.tick(actor, this.toDefinitionContext(ctx));
   }
 
-  /** A snakeling that has lingered `SNAKELING.lifetimeTicks` dies off. */
+  /**
+   * A snakeling that has lingered `SNAKELING.lifetimeTicks` dies off as a killed one dies, without a
+   * hit: SNAKEBOSS_PET_DEATH on its expiry tick, then removal (private gameplay capture
+   * zulrah-packet-data-2.txt, death 51 ticks after appearing, e.g. t3096 to t3147). Dying, it neither
+   * acts nor can be attacked. The engine's scripted death, as for Zuk's minions.
+   */
   removeNpcIfDue(actor: NpcActor, ctx: EncounterContext): void {
     const expireTick = snakelingExpireTick(actor);
-    if (expireTick !== null && ctx.tick >= expireTick) ctx.despawnNpc(actor.id);
+    if (expireTick === null || ctx.tick < expireTick || !actor.alive) return;
+    actor.vitals.hp = 0;
+    markNpcDead(actor, ctx.tick);
+    this.npcDefinitions.notifyDeathStarted(actor, this.toDefinitionContext(ctx));
+    ctx.tickEvents.emit({ type: 'actor_died', actorId: actor.id });
   }
 
   /** Advances the phase machine once the tick's attacks are out. */
