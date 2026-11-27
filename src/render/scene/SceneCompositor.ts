@@ -1306,14 +1306,14 @@ export class SceneCompositor {
   }
 
   /**
-   * After a replay frame rebuilt its cues: the corpses still on display whose
-   * NPCs the simulation already pruned, from history. Before the models are drawn, so the frame shows
-   * them.
+   * After a 3D replay frame rebuilt its cues: the corpses still on display whose NPCs the simulation
+   * already pruned, from history, at their age at the destination. After the NPC clock reaches it
+   * and before the models are queued, so the frame draws them as posed.
    */
-  private reconstructPrunedCorpses(npcs: readonly NpcSnapshot[], is2D: boolean): void {
+  private reconstructPrunedCorpses(npcs: readonly NpcSnapshot[]): void {
     const index = this.replayEffectIndex;
     const throughFrameIndex = this.replayThroughFrameIndex;
-    if (!this.rebuiltReplayCues || is2D || !index || throughFrameIndex === undefined) return;
+    if (!this.rebuiltReplayCues || !index || throughFrameIndex === undefined) return;
     const liveActorIds = new Set<string>();
     for (const npc of npcs) if (npc.alive) liveActorIds.add(this.npcRenderIdOf(npc));
     for (const presentation of index.deathPresentations(
@@ -2330,7 +2330,6 @@ export class SceneCompositor {
     frameProfiler.beginPhase('syncNpcs');
     this.npcInterpFraction = Math.max(0, Math.min(1, (interpolatedTick ?? currentTick) - currentTick));
     this.syncNpcInstances(simulationState.npcs, is2D, simulationState, paused);
-    this.reconstructPrunedCorpses(simulationState.npcs, is2D);
     frameProfiler.endPhase('syncNpcs');
 
     this.groundItemRenderer.setLoaders(
@@ -2338,6 +2337,61 @@ export class SceneCompositor {
       this.groundItemLoaderSource?.getModelLoader() ?? null,
     );
     this.groundItemRenderer.sync(simulationState.groundItems, this.terrainHeights);
+
+    const { playerPreviousPosition, playerMovementPath, playerIsRunning, playerFacingAngle } = simulationState;
+    let visualPosition: [number, number];
+    let isVisuallyMoving: boolean;
+    let simIsMoving: boolean;
+    let stepFacingAngle: number;
+    let stepTargetAngle: number;
+    let visualIsRunning: boolean;
+    let isTurning: boolean;
+    let locomotionState: 'walk' | 'turnLeft' | 'turnRight' | 'walkBack' | null;
+
+    if (ctx.playerVisual) {
+      visualPosition = ctx.playerVisual.position;
+      isVisuallyMoving = ctx.playerVisual.isVisuallyMoving;
+      simIsMoving = ctx.playerVisual.simIsMoving;
+      stepFacingAngle = ctx.playerVisual.facingAngle;
+      stepTargetAngle = ctx.playerVisual.targetAngle;
+      visualIsRunning = ctx.playerVisual.isRunning;
+      isTurning = ctx.playerVisual.isTurning;
+      locomotionState = ctx.playerVisual.locomotionState;
+    } else {
+      const tickProgress = (interpolatedTick ?? currentTick) - currentTick;
+      const result = calculateVisualPlayerPosition(
+        playerPreviousPosition,
+        playerMovementPath,
+        playerPosition,
+        tickProgress,
+        playerFacingAngle,
+      );
+      const simPathActive = playerMovementPath.length > 0;
+      visualPosition = result.position;
+      isVisuallyMoving = result.isVisuallyMoving;
+      simIsMoving = simPathActive;
+      stepFacingAngle = result.facingAngle;
+      stepTargetAngle = playerFacingAngle;
+      visualIsRunning = (simPathActive || isVisuallyMoving) && playerIsRunning;
+      isTurning = simPathActive && stepFacingAngle !== stepTargetAngle;
+      locomotionState = null;
+    }
+
+    this.lastPlayerVisualCenter = [visualPosition[0] + 0.5, visualPosition[1] + 0.5];
+
+    // Every NPC pose and corpse is final before any model is queued: facing on the clock as it stood,
+    // then the clock to the destination, then corpses at their absolute age, so a frame never draws
+    // a model its own clock step has since posed differently or expired.
+    const encounterNpcFacingAngle = this.updateEncounterNpcFacing(visualPosition, scaledNpcDeltaMs);
+
+    if (!is2D) {
+      frameProfiler.beginPhase('npcAnims');
+      const restoredPrimary = history && this.restoreEncounterPrimaries(ctx);
+      const attackTriggers = restoredPrimary ? [] : this.getEncounterAttackTriggers(simulationState, interpolatedTick);
+      this.npcInstanceManager.updateAnimations(npcDeltaMs, this.speedMultiplier, attackTriggers);
+      this.reconstructPrunedCorpses(simulationState.npcs);
+      frameProfiler.endPhase('npcAnims');
+    }
 
     if (!is2D) {
       queue.commands.push(...this.cachedTerrainMeshes);
@@ -2428,57 +2482,6 @@ export class SceneCompositor {
     }
     this.renderEncounterNpc2D(queue, projection, simulationState);
     frameProfiler.endPhase('gridOverlays');
-
-    const { playerPreviousPosition, playerMovementPath, playerIsRunning, playerFacingAngle } = simulationState;
-    let visualPosition: [number, number];
-    let isVisuallyMoving: boolean;
-    let simIsMoving: boolean;
-    let stepFacingAngle: number;
-    let stepTargetAngle: number;
-    let visualIsRunning: boolean;
-    let isTurning: boolean;
-    let locomotionState: 'walk' | 'turnLeft' | 'turnRight' | 'walkBack' | null;
-
-    if (ctx.playerVisual) {
-      visualPosition = ctx.playerVisual.position;
-      isVisuallyMoving = ctx.playerVisual.isVisuallyMoving;
-      simIsMoving = ctx.playerVisual.simIsMoving;
-      stepFacingAngle = ctx.playerVisual.facingAngle;
-      stepTargetAngle = ctx.playerVisual.targetAngle;
-      visualIsRunning = ctx.playerVisual.isRunning;
-      isTurning = ctx.playerVisual.isTurning;
-      locomotionState = ctx.playerVisual.locomotionState;
-    } else {
-      const tickProgress = (interpolatedTick ?? currentTick) - currentTick;
-      const result = calculateVisualPlayerPosition(
-        playerPreviousPosition,
-        playerMovementPath,
-        playerPosition,
-        tickProgress,
-        playerFacingAngle,
-      );
-      const simPathActive = playerMovementPath.length > 0;
-      visualPosition = result.position;
-      isVisuallyMoving = result.isVisuallyMoving;
-      simIsMoving = simPathActive;
-      stepFacingAngle = result.facingAngle;
-      stepTargetAngle = playerFacingAngle;
-      visualIsRunning = (simPathActive || isVisuallyMoving) && playerIsRunning;
-      isTurning = simPathActive && stepFacingAngle !== stepTargetAngle;
-      locomotionState = null;
-    }
-
-    this.lastPlayerVisualCenter = [visualPosition[0] + 0.5, visualPosition[1] + 0.5];
-
-    const encounterNpcFacingAngle = this.updateEncounterNpcFacing(visualPosition, scaledNpcDeltaMs);
-
-    if (!is2D) {
-      frameProfiler.beginPhase('npcAnims');
-      const restoredPrimary = history && this.restoreEncounterPrimaries(ctx);
-      const attackTriggers = restoredPrimary ? [] : this.getEncounterAttackTriggers(simulationState, interpolatedTick);
-      this.npcInstanceManager.updateAnimations(npcDeltaMs, this.speedMultiplier, attackTriggers);
-      frameProfiler.endPhase('npcAnims');
-    }
 
     // Built AFTER updateAnimations (not in the gridOverlays phase above) so the
     // clickbox overlay snapshots the SAME posed vertices the NPC model renders this

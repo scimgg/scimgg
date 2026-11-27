@@ -2774,6 +2774,26 @@ describe('legacy inferno_visual recording: continuous playback versus direct see
     ]);
     const { at } = await legacyScene();
     expect(activeWindows((cycle) => at(cycle), 0, 270, idleSeqIds).clips['healer-2:2638']).toEqual([180, 239]);
+
+    // A frame draws the pose it ends on: `healer`'s corpse is posed and drawn together until its clip
+    // ends at 180, mid-cycle included, played, sought or drawn again on a held frame.
+    const healer = ({ poses, drawnNpcs }: SceneObservation) => ({
+      seqId: poses.healer?.seqId ?? null,
+      drawn: drawnNpcs.includes('healer'),
+    });
+    const held = async (cycle: number) => {
+      const scene = await legacyScene();
+      scene.at(cycle, true);
+      return scene.at(cycle, true);
+    };
+    for (const [cycle, expected] of [
+      [179.75, { seqId: 2638, drawn: true }],
+      [180, { seqId: null, drawn: false }],
+    ] as const) {
+      expect(healer(await continuous(cycle)), `played to ${cycle}`).toEqual(expected);
+      expect(healer(await seek(cycle)), `sought to ${cycle}`).toEqual(expected);
+      expect(healer(await held(cycle)), `held at ${cycle}`).toEqual(expected);
+    }
   });
 
   // A baseline failure on 49ef532: played one cycle per frame, the corpse ended at 178, a frame
