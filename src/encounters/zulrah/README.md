@@ -14,6 +14,9 @@ cap. Practice controls pin a rotation (Random or 1–4) and toggle each mechanic
 
 Not simulated: the random out-of-pattern phases the wiki describes after the first rotation.
 
+Known gap: the simulator does not apply elemental weaknesses yet, so the fire-spell presets miss
+Zulrah's 50% fire weakness and deal less than they would in game.
+
 ## Code map
 
 | File | Role |

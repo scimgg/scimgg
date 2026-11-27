@@ -5,6 +5,7 @@ import {
   isNpcTargetable,
   type NpcActor,
 } from '../../../core/actors/NpcActor';
+import { isImmuneToBurn } from '../../../core/combat/burnStacks';
 import { npcHitDelayFromEndTime } from '../../../core/combat/hitDelay';
 import {
   type FirstPartyPlayerAttackInput,
@@ -51,8 +52,15 @@ import {
   ZULRAH_TAIL,
   zulrahCloudOrbLandTicks,
 } from '../../../npcs/zulrah/constants';
-import { snakelingDefinition } from '../../../npcs/zulrah/snakeling';
-import { getZulrahState, isInTailArea, isTailSafeTile, zulrahDefinition, zulrahTailSide } from '../../../npcs/zulrah/zulrah';
+import { createSnakeling, snakelingDefinition } from '../../../npcs/zulrah/snakeling';
+import {
+  getZulrahState,
+  isInTailArea,
+  isTailSafeTile,
+  transformZulrah,
+  zulrahDefinition,
+  zulrahTailSide,
+} from '../../../npcs/zulrah/zulrah';
 import { CollisionFlag } from '../../../rs/collision/CollisionFlag';
 import { createCollisionMap, getBoundsFromRegion } from '../../../rs/collision/WalkabilityAnalyzer';
 import { enqueueEnginePendingHit } from '../../../test/helpers/pendingHits';
@@ -426,6 +434,30 @@ describe('ZulrahEncounter', () => {
       encounter.reset();
       expect(encounter.getSeeds()).toEqual({ encounterSeed: 0x40000000 });
     });
+  });
+});
+
+describe('Zulrah stats from the Wiki rows', () => {
+  it('can be burned in every form, as can both snakelings: the Wiki lists no burn immunity', () => {
+    const run = startRun(1);
+    const zulrah = run.zulrah();
+    if (!zulrah) throw new Error('No Zulrah');
+    for (const form of ['serpentine', 'magma', 'tanzanite'] as const) {
+      transformZulrah(zulrah, {
+        form,
+        mode: 'idle',
+        actions: [],
+        position: [...ZULRAH_SPOTS.middle],
+        spawnTick: 1,
+        emergeTicks: 4,
+      });
+      expect(zulrah.formulaStats?.burnImmunity, form).toBeNull();
+      expect(isImmuneToBurn(zulrah, 'weak'), form).toBe(false);
+    }
+    for (const style of ['melee', 'magic'] as const) {
+      const snakeling = createSnakeling({ id: style, style, position: [23, 68], spawnTick: 1 });
+      expect(isImmuneToBurn(snakeling, 'normal'), style).toBe(false);
+    }
   });
 });
 

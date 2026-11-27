@@ -30,7 +30,8 @@ evidence: [policy](./zulrah-policy.md).
 | Size | 5 | C NpcType; W |
 | Hitpoints, Defence/Magic/Ranged | 500; 300/300/300 | W infobox; WS |
 | Attack speed, max hit | 3 ticks; 41 | W infobox |
-| Defensive bonuses | Green: magic −45, ranged +50; red: magic 0, ranged +300; blue: magic +300, ranged 0; melee 0 in every form | WS per-form figures (W's infobox row differs) |
+| Defensive bonuses | Green: magic −45, ranged +50; red: magic 0, ranged +300; blue: magic +300, ranged 0; melee 0 in every form | W infobox, per version; WS |
+| Weakness and immunities | 50% fire weakness in every form (not read by the simulator); no burn immunity listed, so the forms and snakelings can be burned | W infobox; WSn infobox |
 | Damage cap | "capped at 50, with hits dealing more than that randomly hitting it for 45-50" | WS; W |
 | Melee | "no melee defence in any form … can only be reached with a halberd-type weapon" | WS |
 | Snakelings | 2045 SNAKEBOSS_MINION_MELEE, 2046 SNAKEBOSS_MINION_MAGIC (2047 SNAKEBOSS_MINION_DYING); 1 HP, size 1, combat 90, attack speed 3, max hit 15 (stab) / 13 (magic) | G NpcID; WSn infobox |
