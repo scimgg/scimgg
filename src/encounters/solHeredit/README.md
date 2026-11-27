@@ -68,7 +68,7 @@ These are practice aids, not modeled game behavior.
 | [`../colosseum/modifiers/`](../colosseum/modifiers/) | the shared Colosseum modifiers: rules (Doom, Blasphemy, Frailty, Myopia), Bees, Totemic, Solarflare and its route runner, Volatility |
 | `src/core` | shared behavior: `pursuePlayer` routing, `npcStickyPursuit.ts` (warband), `combat/npcRegeneration.ts` |
 | `src/audio/solHereditAudioRules.ts` | sand, beam warning and beam impact sounds |
-| `src/render/scene/ColosseumSceneCompositor.ts` | Sol's clips, ground-effect cues and the telegraph aid |
+| `src/render/scene/ColosseumSceneCompositor.ts` | Sol-specific graphic styles, batching and tile overlays; shared cue playback is in `EncounterCuePlayer` |
 
 Telegraph geometry, asset identities and sampled timings are capture-backed. Per-tile variants, pool
 rotations and sub-tick presentation are modeled; the register's

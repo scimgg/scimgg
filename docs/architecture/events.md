@@ -1,7 +1,8 @@
 # Events
 
 Events are the semantic bridge from simulation to render/audio: the simulation says *what*
-happened (`attackKind: 'magic_fire'`), never a cache or asset id; the renderer decides how it looks.
+happened (`attackKind: 'magic_fire'`), never a cache or asset id, outside the
+[visual batches](#visual-batches) below; the renderer decides how it looks.
 
 - `GameEvent = CoreGameEvent | EncounterGameEvent`
   ([`src/core/events/types.ts`](../../src/core/events/types.ts)). `CoreGameEvent` is a closed
@@ -52,10 +53,11 @@ installed.
 
 ## Consumption
 
-`SceneCompositor.build()` filters events through `getUnprocessedEvents()` (by
-`lastProcessedEventId`) and forwards the new ones to controllers, `onEncounterEvents()` and
-`EventAudioPlayer`. The cursor makes a one-shot effect fire once however many frames render the
-same tick. A replay discontinuity rewinds the cursor so the landed frame's own events are consumed
+Live visuals consume events through `lastProcessedEventId`: `SceneCompositor.build()` filters
+them with `getUnprocessedEvents()` and hands the new ones to the cue player, controllers and
+`onEncounterEvents()`, so a one-shot effect fires once however many frames render the same tick.
+History-backed cues come from the replay index instead. Event audio consumes the displayed frame
+through its own `lastPlayedAudioEventId` while unpaused. A replay discontinuity rewinds the cursor so the landed frame's own events are consumed
 again ([Replay timeline discontinuity](replay-timeline-discontinuity.md)).
 
 The tick an event is *delivered* on can matter beyond its `tick` field: `EventAudioPlayer` measures

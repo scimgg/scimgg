@@ -57,14 +57,14 @@ mesh readiness (a missing projectile asset cannot delay an impact); new attacks 
 flight or impact; simulation damage timing is unaffected.
 
 Animation: player flights loop the whole sequence (flight duration for an unanimated entry), with
-sequence height offset and zIndex 68. Inferno loops the cache `frameStep` tail after the initial
-sequence (zero progress without animation), with actor height mode.
+sequence height offset and zIndex 68. Encounter cue projectiles loop the cache `frameStep` tail after
+the initial sequence (zero progress without animation), with actor height mode.
 
 ## Scene surface references
 
 `SceneCompositor` owns a [`SceneSurfaceHeightResolver`](../../src/render/scene/SceneSurfaceHeightResolver.ts)
-and a stable `(worldX, worldY) => number` callback shared by player flights and Inferno live/replay
-reconstruction. Both endpoints sample their resolved XY point; actor size picks the visual center and
+and a stable `(worldX, worldY) => number` callback shared by player flights and encounter cue
+projectiles, live and in replay reconstruction. Both endpoints sample their resolved XY point; actor size picks the visual center and
 does not average terrain under the footprint. Moving targets resample at their current visual center
 without changing the homing integration.
 

@@ -1,7 +1,7 @@
 /**
  * The presentation-side encounter manifest: what the renderer and UI need beyond an encounter's
  * render config. A row is optional: an encounter without one gets the common scene, the default
- * camera and no encounter sounds.
+ * camera and no encounter-specific event rules (core events and frame-embedded sounds need no row).
  *
  * Sibling of {@link ./modules}, which carries the simulation side. The split exists because
  * the core manifest reaches node-environment consumers through the composition root

@@ -4,7 +4,7 @@ Task-specific guidance supporting [`AGENTS.md`](../AGENTS.md). Read the sections
 
 ## Coordinates and Rendering
 
-Each encounter's opening camera is its `defaultCamera` in [`presentationModules.ts`](../src/encounters/presentationModules.ts) (fallback yaw 180, looking from north towards south).
+An encounter's opening camera is its presentation row's matching `setupCameras` entry or `defaultCamera` in [`presentationModules.ts`](../src/encounters/presentationModules.ts); without a row or camera it is the fallback, yaw 180, looking from north towards south.
 
 An NPC's position is the southwest tile of its square footprint, not its center (OSRS convention, used by movement collision and projectile aim). Start positions, landing areas, and fallback arena bounds are owned by each encounter under `src/encounters/<encounter>/` (usually `constants.ts`); runtime cache analysis supplies real arena bounds where available. Example (Yama P3): `YAMA_START_POS = [29, 28]` is the southwest corner of the 5×5 footprint, and the player lands facing south on a random tile from `randomLandingPosition()` — production never uses a fixed start.
 

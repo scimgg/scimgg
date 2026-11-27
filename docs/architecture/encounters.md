@@ -272,36 +272,23 @@ spawn command (reset instead); reviving before the defeat is adjudicated is supp
 
 ### Presenting it
 
-A new encounter needs no scene code of its own to animate, fly, place and replay its effects. The
-default encounter cue player, and the cue index in `ReplayEffectIndex` it restores from, consume
-`encounter_visual` batches; `actor_presentations_removed` is a lifecycle instruction that drops
-presentations, not a cue. An encounter's semantic events still reach their existing consumers
-(audio rules, controllers), but nothing maps an arbitrary boss event to a default cue, and there is
-no mapper to register: a boss that emits only its own `attack_started`-like event plays no clip in
-the default scene. Build the batch at the decision point instead, with a pure local function if
-that helps. The protocol is in [Visual batches](events.md#visual-batches).
+The protocol is in [Visual batches](events.md#visual-batches).
 
-1. **Emit** each visual transition that is a set of scheduled instructions as one `encounter_visual`
-   batch (`emitEncounterVisual`) where the mechanic decides it, with every per-occurrence fact it
-   needs (delays, targets, heights) recorded there, never recovered later from a landed frame. A
-   practice command that replaces a set of NPC types emits `actor_presentations_removed`.
-2. **Declare** the assets in its `renderConfig.ts`, registered in `ENCOUNTER_RENDER_CONFIGS`: each
-   NPC type with keyed `attackClips` (the batch's `clipId`s) and every spot animation. The same
-   declarations drive loading, replay readiness, cache trimming and frame-sound extraction
-   (`npx tsx scripts/extract-frame-sounds.ts` for new clips; name new sound ids in
-   `audio/soundNames.ts`).
-3. **Use the default scene**: no presentation row, or one without a `sceneBuilder`. The common
-   `SceneCompositor` gets the kind's resolved render config and plays the batches on one NPC clock,
-   live and after any seek.
-4. **Override only real presentation differences** in a scene subclass, which the row's
-   `sceneBuilder` constructs and configures (`configureEncounterScene`) from the options it is
-   given, render config already resolved: an opening camera or cutscene, overlays, a graphic's draw
-   style (`encounterGraphicStyle`). Persistent LOC hazards are a snapshot plus a scene-object
-   controller ([scene objects](scene-objects.md)); explicit event sounds are a local
-   `audioRules.ts`, the row's `audioRules`. No history reader, seek hook, boss-name branch or import
-   from another encounter. A scene presenting from its snapshot rather
-   than from batches (Yama) adds only its own `createEncounterReplayReader`, `encounterNpcTriggers`
-   and `restoreEncounterTimelines`.
+1. **Emit** `encounter_visual` where the mechanic decides it, with `emitEncounterVisual`, or
+   `encounterVisual` when returning an unstamped event. Record delays, targets and heights there.
+   Don't also translate a semantic event into the same effect.
+2. **Declare** the NPC types, keyed `attackClips` and `spotAnimIds` in the encounter's
+   `renderConfig.ts`. Register it once under the base kind in `ENCOUNTER_RENDER_CONFIGS`; the
+   descriptor supplies the map squares. Rerun `npx tsx scripts/extract-frame-sounds.ts` for new clips
+   or spot animations. Add newly playable sound ids to `ALL_SOUND_IDS` in
+   [`soundNames.ts`](../../src/audio/soundNames.ts); `SOUND_NAMES` is only for display.
+3. **Stop here for an ordinary encounter.** The default scene plays and seeks those cues. If needed,
+   add a base-kind presentation row for picker art, `defaultCamera`/`setupCameras`, or explicit
+   `audioRules`. None of these needs a scene subclass, and variants inherit the row.
+4. **Use `sceneBuilder`** only for custom drawing or a scripted cutscene, and pass the supplied
+   options to `configureEncounterScene`. Persistent LOCs are [scene objects](scene-objects.md); for
+   behavior replayed from the snapshot rather than from batches, see
+   [`YamaSceneCompositor`](../../src/render/scene/YamaSceneCompositor.ts).
 
 ## Adding or reusing an NPC
 

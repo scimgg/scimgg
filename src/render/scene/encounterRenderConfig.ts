@@ -75,9 +75,8 @@ export interface EncounterRenderConfig {
   primaryNpc?: NpcRenderConfig;
   preloadNpcTypes?: EncounterNpcTypeRenderConfig[];
   /**
-   * Spot animations (projectiles and graphics) the encounter's events draw, preloaded with the
-   * scene and required before a replay frame counts as presented. Read by the base compositor's
-   * spot-anim hooks; compositors that override those hooks with their own list ignore it.
+   * Declare the projectile and graphic spot animations here. The base scene preloads them and waits
+   * for them to settle before presenting a 3D replay frame.
    */
   spotAnimIds?: readonly number[];
   /**
