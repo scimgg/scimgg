@@ -29,22 +29,31 @@ export function eventAudioLayersFor(encounterKind: string): string[] {
 }
 
 /**
- * Scopes the event-audio player to the displayed encounter. Pass the kind that chooses the displayed
- * scene builder, so the scene and its sounds always agree. Applied before paint, so no frame of the new
- * scene dispatches through the old scope; a scene change also drops the old scene's queued replay sounds.
+ * Scopes event audio to the displayed scene, identified as Grid identifies it: the kind that chooses
+ * its scene builder plus its load id, which a fresh entry into the same kind also advances. Applied
+ * before paint, so no frame of the new scene dispatches through the old scope.
+ *
+ * Replacing the scene silences the old one: its queued replay sounds and every voice the engine already
+ * owns, including delayed live sounds and ones still loading. A pause stays with whoever owns it.
  *
  * Separate from {@link useAudioManager} because the player must exist before the cache bootstrap, which
- * comes before the encounter state that names the displayed kind.
+ * comes before the encounter state that names the displayed scene.
  */
 export function useEventAudioScope(
   eventAudioPlayerRef: MutableRefObject<EventAudioPlayer>,
+  audioEngine: AudioEngine,
   displayedEncounterKind: string,
+  sceneLoadId: number,
 ): void {
+  // biome-ignore lint/correctness/useExhaustiveDependencies: sceneLoadId is half of the scene's identity; a new load replaces the scene.
   useLayoutEffect(() => {
     const player = eventAudioPlayerRef.current;
     player.setDispatchLayers(eventAudioLayersFor(displayedEncounterKind));
-    return () => player.reset();
-  }, [eventAudioPlayerRef, displayedEncounterKind]);
+    return () => {
+      player.reset();
+      audioEngine.discardSounds();
+    };
+  }, [eventAudioPlayerRef, audioEngine, displayedEncounterKind, sceneLoadId]);
 }
 
 let audioEngineSingleton: AudioEngine | null = null;

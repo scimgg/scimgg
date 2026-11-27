@@ -563,10 +563,12 @@ describe('AudioEngine', () => {
       expect(sources[2].start).toHaveBeenCalledOnce();
     });
 
-    // A mute does not own the pause: playback stays paused under it until its owner resumes it.
+    // A mute or scene replacement does not own the pause: playback stays paused under it until its
+    // owner resumes it.
     it.each([
       { name: 'master mute', mute: (audio: AudioEngine) => audio.setMasterVolume(0) },
       { name: 'focus mute', mute: (audio: AudioEngine) => audio.setFocusSuspended(true) },
+      { name: 'discardSounds', mute: (audio: AudioEngine) => audio.discardSounds() },
     ])('cancels paused voices on $name but keeps the pause until it is resumed', ({ mute }) => {
       engine.play(100);
       engine.play(100, { delayMs: 2000 });
@@ -921,6 +923,7 @@ describe('AudioEngine', () => {
       { name: 'stopAll', cancel: (audio: AudioEngine) => audio.stopAll() },
       { name: 'master mute', cancel: (audio: AudioEngine) => audio.setMasterVolume(0) },
       { name: 'focus mute', cancel: (audio: AudioEngine) => audio.setFocusSuspended(true) },
+      { name: 'discardSounds', cancel: (audio: AudioEngine) => audio.discardSounds() },
       { name: 'dispose', cancel: (audio: AudioEngine) => audio.dispose() },
     ])('rejects pending decode completion after $name', async ({ cancel }) => {
       const resolveDecode = vi.fn<(value: AudioBuffer) => void>();

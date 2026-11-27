@@ -470,9 +470,10 @@ export class AudioEngine {
   /**
    * Stop and forget every sound: playing, held by a pause, or still loading. A pause stays in force,
    * because the mutes that discard sounds do not own it: whoever paused playback (replay transport,
-   * a live hold) resumes it, and nothing may play under it before then.
+   * a live hold) resumes it, and nothing may play under it before then. Replacing the displayed scene
+   * discards its sounds for the same reason.
    */
-  private discardSounds(): void {
+  discardSounds(): void {
     this.playGeneration++;
     this.pausedVoices.length = 0;
     for (const [source, voice] of this.activeSources) {

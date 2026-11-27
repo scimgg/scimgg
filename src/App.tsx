@@ -577,8 +577,8 @@ function AppShell({ devHarness }: { devHarness?: DevHarnessBoot } = {}) {
     updateStartingHpPerEncounter,
     devHarness: harnessMode,
   });
-  // The kind Grid builds the displayed scene for, so its sounds come from the same encounter.
-  useEventAudioScope(eventAudioPlayerRef, activeEncounterKind);
+  // The scene Grid builds, so its sounds come from the same encounter and end with it.
+  useEventAudioScope(eventAudioPlayerRef, audioEngine, activeEncounterKind, sceneLoadId);
   const settledEncounterKind =
     sceneState.kind === 'encounter' ? sceneState.encounterKind : sceneState.kind === 'lobby' ? 'lobby' : null;
   const activeTzhaarHpTracker = encounterPluginOptions(
