@@ -34,10 +34,11 @@ included: an encounter emits the batch and declares the clips and effects it nam
 config, and needs no scene code to play it ([presenting an encounter](encounters.md#presenting-it)).
 A clip or an `attached` graphic belongs to the life of its actor it was emitted for, or, for an
 actor not yet present, to the actor's next life
-([`actorCueLife.ts`](../../src/render/core/actorCueLife.ts)). The actor's `actor_despawned`, taken
-in event order with the batches, or a new spawn under its id drops it, live and in replay, so a
-successor never plays it, whatever clip keys its type declares. Projectiles and every other graphic
-play on.
+([`actorCueLife.ts`](../../src/render/core/actorCueLife.ts)). The life ends at an explicit
+`actor_despawned`, taken in event order with the batches, or when the actor shows a changed
+`spawnTick`; the cue is then dropped, live and in replay, whatever clip keys a successor's type
+declares. A successor under the same id with the same (or no) `spawnTick` and no removal is not told
+apart. Projectiles and every other graphic play on.
 
 `actor_presentations_removed` drops every drawn presentation of the listed NPC types, corpses
 included, before the frame's actors are synced (a practice command replacing a set). Plain

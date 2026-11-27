@@ -138,19 +138,17 @@ committing it, so coarse and fine presentation share one trajectory. Historical 
 `NpcInstanceManager` (exact tick boundary uses current position; positive fractions interpolate
 previous to current); player positions follow the snapshot's previous position and path.
 
-Every scene presents its NPCs on one clock, the displayed client cycle; each actor's
-`ReplayDeferredPrimaryIndex` checkpoints accepted state plus a bounded pending tail at
-source-frame boundaries. Delayed cues may start out of emission order, so sorting all cues and
-taking the newest eligible would let future source frames reject earlier delayed cues; checkpoints
-keep source eligibility and same-time chronological order. `restoreDeferredReplayAnimation`
+Every scene presents its NPCs on one clock, the displayed client cycle. Each actor's
+`ReplayDeferredPrimaryIndex` admits cues through the displayed frame and cycle, processes due cues
+in start order, and rebuilds its sweep when seeking backward. A queued cue is checked again when it
+becomes due. `restoreDeferredReplayAnimation`
 restores primary and canonical base phase without updating historical meshes, excludes cues before
 spawn, holds destination movement constant, and starts a walking clip at the earlier of the first
-due cue or 50 client cycles after spawn. Every replay frame poses each snapshot corpse at its exact
-age from its local `despawnTick`, without stepping death animations, so continuous playback ends a
-corpse on the cycle a seek would; a frame that rebuilds the cues also restores, from history, the
-corpses still on display whose NPCs the simulation already pruned. Both come after the NPC clock
-reaches the destination and before any NPC model is queued, so a frame draws each corpse as posed
-and none its own clock step expired. In 3D, every encounter's replay presentation waits until each
+due cue or 50 client cycles after spawn. On a 3D replay frame, snapshot corpses are posed at the
+destination, at their exact age from their local `despawnTick`, so continuous playback ends a corpse
+on the cycle a seek would. After a rebuild or a history-backed 2D display, the still-visible pruned
+corpses are restored on the first 3D frame whose cues are synced, before NPC meshes are queued. In
+3D, every encounter's replay presentation waits until each
 NPC type its render config declares and each effect (its `spotAnimIds` and the primary NPC's death
 effect) has settled (`SceneCompositor.encounterAssetState`: loaded or failed, which is not proof of
 usable geometry), retrying without latching; a 2D view never
