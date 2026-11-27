@@ -1,6 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
+import { AudioEngine, EventAudioPlayer, FrameSoundTracker } from '../../audio';
+import type { CacheManager } from '../../cache/CacheManager';
+import { resolveEncounterMapFootprint } from '../../core/encounters/mapFootprint';
 import { SimulationEngine } from '../../core/SimulationEngine';
 import { LobbyEncounter } from '../../encounters/lobby/LobbyEncounter';
+import { encounterRegistry } from '../../encounters/registry';
+import { YAMA_ENCOUNTER_RENDER_CONFIG } from '../../encounters/yamaP3/renderConfig';
 import type { OverlayType } from '../../rs/config/flotype/FloType';
 import type { OverlayTypeLoader, UnderlayTypeLoader } from '../../rs/config/flotype/FloTypeLoader';
 import type { MapLoader, MapSquareData } from '../../rs/map/MapLoader';
@@ -8,8 +13,16 @@ import { collectGarbage, collectGarbageUntilCleared } from '../../test/helpers/c
 import { expectSameBytes } from '../../test/helpers/sameBytes';
 import type { Projection2D } from '../core/camera';
 import type { MeshUploadAttribute } from '../core/meshSource';
+import type { SceneBuilderOptions } from './sceneBuilderFactory';
 import type { RenderContext } from './types';
-import { YamaSceneBuilder } from './yamaSceneBuilder';
+import { YamaSceneCompositor } from './YamaSceneCompositor';
+import { createYamaSceneBuilder } from './yamaSceneBuilder';
+
+function yamaScene(options?: Partial<SceneBuilderOptions>): YamaSceneCompositor {
+  const scene = createYamaSceneBuilder(options);
+  if (!(scene instanceof YamaSceneCompositor)) throw new Error('Expected the Yama compositor');
+  return scene;
+}
 
 function createMockOverlayLoader(textureMap: Map<number, number>): OverlayTypeLoader {
   return {
@@ -83,32 +96,55 @@ function createMockMapData(width: number, height: number): MapSquareData {
   };
 }
 
-describe('YamaSceneBuilder', () => {
-  it('reports the intro animation time left at the playback speed, only while the intro plays', () => {
-    const builder = new YamaSceneBuilder();
-    const compositor = Reflect.get(builder, 'compositor') as object;
-    expect(builder.getIntroAnimationRemainingMs(1)).toBeNull();
-    Reflect.set(compositor, 'playerAnimController', { getIntroRemainingAnimMs: () => 1200 });
-    expect(builder.getIntroAnimationRemainingMs(1)).toBeNull();
+describe('createYamaSceneBuilder', () => {
+  it("is the Yama compositor itself, with Yama's render config and descriptor map block unless the options give one", () => {
+    const descriptor = encounterRegistry.getDescriptorForKind('yama_p3');
+    if (!descriptor) throw new Error('yama_p3 has no descriptor');
+    const footprint = resolveEncounterMapFootprint(descriptor);
+    const scene = yamaScene();
+    expect(scene['encounterRenderConfig']).toEqual({
+      ...YAMA_ENCOUNTER_RENDER_CONFIG,
+      terrainMapSquare: footprint.origin,
+      mapSquareOffsets: footprint.sceneOffsets,
+      arenaMapSquareOffsets: footprint.arenaOffsets,
+    });
+    scene.dispose();
 
-    Reflect.set(compositor, '_introAnimPlaying', true);
-    expect(builder.getIntroAnimationRemainingMs(1)).toBe(1200);
-    expect(builder.getIntroAnimationRemainingMs(2)).toBeNull();
-    Reflect.set(compositor, 'speedMultiplier', 2);
-    expect(builder.getIntroAnimationRemainingMs(2)).toBe(600);
-    expect(builder.getIntroAnimationRemainingMs(1)).toBeNull();
-    builder.dispose();
+    const encounterRenderConfig = { terrainMapSquare: { x: 1, y: 2 } };
+    const eventAudioPlayer = new EventAudioPlayer(new AudioEngine());
+    const frameSoundTracker = new FrameSoundTracker(new AudioEngine());
+    const cacheManager = {} as CacheManager;
+    const passed = yamaScene({ encounterRenderConfig, eventAudioPlayer, frameSoundTracker, cacheManager });
+    expect(passed['encounterRenderConfig']).toBe(encounterRenderConfig);
+    expect(passed['eventAudioPlayer']).toBe(eventAudioPlayer);
+    expect(passed['frameSoundTracker']).toBe(frameSoundTracker);
+    expect(passed['groundItemLoaderSource']).toBe(cacheManager);
+    passed.dispose();
+  });
+
+  it('reports the intro animation time left at the playback speed, only while the intro plays', () => {
+    const scene = yamaScene();
+    expect(scene.getIntroAnimationRemainingMs(1)).toBeNull();
+    Reflect.set(scene, 'playerAnimController', { getIntroRemainingAnimMs: () => 1200 });
+    expect(scene.getIntroAnimationRemainingMs(1)).toBeNull();
+
+    Reflect.set(scene, '_introAnimPlaying', true);
+    expect(scene.getIntroAnimationRemainingMs(1)).toBe(1200);
+    expect(scene.getIntroAnimationRemainingMs(2)).toBeNull();
+    Reflect.set(scene, 'speedMultiplier', 2);
+    expect(scene.getIntroAnimationRemainingMs(2)).toBe(600);
+    expect(scene.getIntroAnimationRemainingMs(1)).toBeNull();
+    scene.dispose();
   });
 
   it('rejects the old renderer tempo across skipped frames until a real build updates the compositor', () => {
-    const builder = new YamaSceneBuilder();
-    const compositor = Reflect.get(builder, 'compositor') as object;
+    const scene = yamaScene();
     const controller = { getIntroRemainingAnimMs: () => 3500 };
-    Reflect.set(compositor, 'playerAnimController', controller);
-    Reflect.set(compositor, '_introAnimPlaying', true);
-    expect(builder.getIntroAnimationRemainingMs(1)).toBe(3500);
+    Reflect.set(scene, 'playerAnimController', controller);
+    Reflect.set(scene, '_introAnimPlaying', true);
+    expect(scene.getIntroAnimationRemainingMs(1)).toBe(3500);
     // Calling the timing getter for skipped RAFs must not acknowledge a speed change.
-    for (let skipped = 0; skipped < 3; skipped++) expect(builder.getIntroAnimationRemainingMs(2)).toBeNull();
+    for (let skipped = 0; skipped < 3; skipped++) expect(scene.getIntroAnimationRemainingMs(2)).toBeNull();
 
     const context: RenderContext = {
       simulationState: new SimulationEngine({ encounter: new LobbyEncounter() }).getState(),
@@ -138,12 +174,12 @@ describe('YamaSceneBuilder', () => {
       tilePolygonScreen: () => [],
     };
     // Only the timing source is stubbed; the renderer build's tempo assignment is real.
-    Reflect.set(compositor, 'playerAnimController', null);
-    builder.build(context, projection, { width: 800, height: 600, dpr: 1 });
-    Reflect.set(compositor, 'playerAnimController', controller);
-    expect(builder.getIntroAnimationRemainingMs(2)).toBe(1750);
-    expect(builder.getIntroAnimationRemainingMs(1)).toBeNull();
-    builder.dispose();
+    Reflect.set(scene, 'playerAnimController', null);
+    scene.build(context, projection, { width: 800, height: 600, dpr: 1 });
+    Reflect.set(scene, 'playerAnimController', controller);
+    expect(scene.getIntroAnimationRemainingMs(2)).toBe(1750);
+    expect(scene.getIntroAnimationRemainingMs(1)).toBeNull();
+    scene.dispose();
   });
 
   it('builds mesh3d command with terrain buffers', async () => {
@@ -157,11 +193,8 @@ describe('YamaSceneBuilder', () => {
 
     const overlayLoader = createMockOverlayLoader(new Map([[4, 5]]));
 
-    // Direct construction bypasses encounterRegistry's auto-derive of
-    // terrainMapSquare from descriptor.mapSquare, so pass it explicitly.
-    const builder = new YamaSceneBuilder({
-      encounterRenderConfig: { terrainMapSquare: { x: 23, y: 157 } },
-    });
+    // The mock square sits at 23,157, so name it rather than take the descriptor's origin.
+    const builder = yamaScene({ encounterRenderConfig: { terrainMapSquare: { x: 23, y: 157 } } });
     const underlayLoader = createMockUnderlayLoader();
     const command = await builder.buildTerrainMesh3D(mapLoader, underlayLoader, overlayLoader);
 
@@ -200,7 +233,7 @@ describe('YamaSceneBuilder', () => {
 
   it.skipIf(!collectGarbage)('keeps no CPU copy of a terrain mesh once the renderer has taken it', async () => {
     const mapData = createMockMapData(64, 64);
-    const builder = new YamaSceneBuilder({ encounterRenderConfig: { terrainMapSquare: { x: 23, y: 157 } } });
+    const builder = yamaScene({ encounterRenderConfig: { terrainMapSquare: { x: 23, y: 157 } } });
     const command = await builder.buildTerrainMesh3D(
       { loadMapSquare: vi.fn().mockResolvedValue(mapData) } as unknown as MapLoader,
       createMockUnderlayLoader(),

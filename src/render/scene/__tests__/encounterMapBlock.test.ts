@@ -11,7 +11,7 @@ import { SceneCompositor } from '../SceneCompositor';
 import { sceneBuilderFactoryFor } from '../sceneBuilderFactory';
 import { createSolHereditSceneBuilder } from '../solHereditSceneBuilder';
 import type { SceneBuilder } from '../types';
-import { YamaSceneBuilder } from '../yamaSceneBuilder';
+import { createYamaSceneBuilder } from '../yamaSceneBuilder';
 import { createZukSceneBuilder } from '../zukSceneBuilder';
 
 function openSquare(mapX: number, mapY: number): MapSquareData {
@@ -59,8 +59,7 @@ describe('the default scene builder factory', () => {
 describe.each<[string, string, () => SceneBuilder]>([
   ['sol_heredit scene builder', 'sol_heredit', () => createSolHereditSceneBuilder()],
   ['inferno scene builder', 'inferno', () => createZukSceneBuilder()],
-  // The Yama builder wraps its compositor; the config and terrain live there.
-  ['yama_p3 scene builder', 'yama_p3', () => new YamaSceneBuilder()['compositor']],
+  ['yama_p3 scene builder', 'yama_p3', () => createYamaSceneBuilder()],
   // A module without a scene builder of its own gets the common scene from its authored config.
   ['common scene', 'sol_heredit', () => createEncounterSceneBuilder('sol_heredit', SOL_HEREDIT_RENDER_CONFIG)],
 ])('the %s made without options', (_builder, kind, create) => {
