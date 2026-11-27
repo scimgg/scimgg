@@ -210,8 +210,8 @@ describe('legacy Yama recording: continuous playback versus direct seek', () => 
   });
 
   async function legacyScene() {
-    // The compositor `createYamaSceneBuilder` returns, with Yama's authored config: these frames load
-    // no terrain, so the descriptor's map squares it adds would change nothing.
+    // The yama_p3 scene's compositor, with Yama's authored config: these frames load no terrain, so
+    // the descriptor's map squares the resolved config adds would change nothing.
     const scene = new YamaSceneCompositor();
     scene.setEncounterRenderConfig(YAMA_ENCOUNTER_RENDER_CONFIG);
     built.push(scene);

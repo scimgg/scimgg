@@ -10,19 +10,15 @@ import type { OverlayType } from '../../rs/config/flotype/FloType';
 import type { OverlayTypeLoader, UnderlayTypeLoader } from '../../rs/config/flotype/FloTypeLoader';
 import type { MapLoader, MapSquareData } from '../../rs/map/MapLoader';
 import { collectGarbage, collectGarbageUntilCleared } from '../../test/helpers/collectGarbage';
+import { encounterScene } from '../../test/helpers/encounterScene';
 import { expectSameBytes } from '../../test/helpers/sameBytes';
 import type { Projection2D } from '../core/camera';
 import type { MeshUploadAttribute } from '../core/meshSource';
 import type { SceneBuilderOptions } from './sceneBuilderFactory';
 import type { RenderContext } from './types';
 import { YamaSceneCompositor } from './YamaSceneCompositor';
-import { createYamaSceneBuilder } from './yamaSceneBuilder';
 
-function yamaScene(options?: Partial<SceneBuilderOptions>): YamaSceneCompositor {
-  const scene = createYamaSceneBuilder(options);
-  if (!(scene instanceof YamaSceneCompositor)) throw new Error('Expected the Yama compositor');
-  return scene;
-}
+const yamaScene = (options?: Partial<SceneBuilderOptions>) => encounterScene('yama_p3', YamaSceneCompositor, options);
 
 function createMockOverlayLoader(textureMap: Map<number, number>): OverlayTypeLoader {
   return {
@@ -96,7 +92,7 @@ function createMockMapData(width: number, height: number): MapSquareData {
   };
 }
 
-describe('createYamaSceneBuilder', () => {
+describe('the yama_p3 scene', () => {
   it("is the Yama compositor itself, with Yama's render config and descriptor map block unless the options give one", () => {
     const descriptor = encounterRegistry.getDescriptorForKind('yama_p3');
     if (!descriptor) throw new Error('yama_p3 has no descriptor');

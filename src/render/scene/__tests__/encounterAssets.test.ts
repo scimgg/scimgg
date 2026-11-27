@@ -2,12 +2,15 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AudioEngine, EventAudioPlayer, FrameSoundTracker } from '../../../audio';
 import type { CacheManager } from '../../../cache/CacheManager';
 import { getArenaAllowUnboundedFallback, getArenaConfig, setArenaConfig } from '../../../core/constants';
+import type { GameEvent } from '../../../core/events/types';
 import type { ReplayDisplayFrame } from '../../../core/ReplayRecorder';
 import { SimulationEngine } from '../../../core/SimulationEngine';
+import { RETIRED_ENCOUNTER_KINDS } from '../../../encounters/catalog';
 import { LobbyEncounter } from '../../../encounters/lobby/LobbyEncounter';
 import { YAMA_ENCOUNTER_RENDER_CONFIG } from '../../../encounters/yamaP3/renderConfig';
 import { FIREBALL_PRELOAD_IDS, WAVE_PRELOAD_IDS } from '../../../encounters/yamaP3/spotAnims';
 import { YAMA_NPC_ID } from '../../../rs/model/NpcModelLoader';
+import { UNBOOTSTRAPPED_CACHE_MANAGER } from '../../../test/helpers/encounterScene';
 import {
   IDENTITY_PROJECTION,
   installSyntheticSpotAnims,
@@ -18,9 +21,9 @@ import {
 } from '../../../test/helpers/sceneObservation';
 import { OSRS_TICK_MS } from '../../../types/simulation';
 import type { EncounterRenderConfig } from '../encounterRenderConfig';
-import { configureEncounterScene, createEncounterSceneBuilder } from '../encounterSceneBuilder';
+import { configureEncounterScene } from '../encounterSceneBuilder';
 import { SceneCompositor } from '../SceneCompositor';
-import { SceneBuilderRegistry, sceneBuilderFactoryFor } from '../sceneBuilderFactory';
+import { createSceneBuilderForKind } from '../sceneBuilderFactory';
 import type { RenderContext } from '../types';
 import { YamaSceneCompositor } from '../YamaSceneCompositor';
 
@@ -286,59 +289,78 @@ describe('encounter replay readiness', () => {
   });
 });
 
-describe('the common encounter scene', () => {
-  it('is what a presentation module without a scene builder gets, configured from its options', () => {
-    const eventAudioPlayer = new EventAudioPlayer(new AudioEngine());
-    const frameSoundTracker = new FrameSoundTracker(new AudioEngine());
-    const cacheManager = {} as CacheManager;
+const PRESENTATION_MODULES = '../../../encounters/presentationModules';
 
-    const scene = sceneBuilderFactoryFor({ kind: 'common' })({
-      cacheManager,
+describe('the common encounter scene', () => {
+  afterEach(() => {
+    vi.doUnmock(PRESENTATION_MODULES);
+    vi.resetModules();
+  });
+
+  it('is what a registered kind without a presentation row gets, and loads and sounds from its options', async () => {
+    // A fresh module graph whose presentation manifest has no Sol Heredit row.
+    vi.resetModules();
+    vi.doMock(PRESENTATION_MODULES, async (importOriginal) => {
+      const actual = await importOriginal<typeof import('../../../encounters/presentationModules')>();
+      return {
+        ...actual,
+        ENCOUNTER_PRESENTATION_MODULES: actual.ENCOUNTER_PRESENTATION_MODULES.filter(
+          (row) => row.kind !== 'sol_heredit',
+        ),
+        encounterPresentationModuleForKind: (kind: string) =>
+          kind === 'sol_heredit' ? undefined : actual.encounterPresentationModuleForKind(kind),
+      };
+    });
+    const fresh = await import('../sceneBuilderFactory');
+    const eventAudioPlayer = new EventAudioPlayer(new AudioEngine());
+    const onEvents = vi.spyOn(eventAudioPlayer, 'onEvents');
+    const frameSoundTracker = new FrameSoundTracker(new AudioEngine());
+    const update = vi.spyOn(frameSoundTracker, 'update');
+
+    // The app's render config wins over the kind's own.
+    const scene = fresh.createSceneBuilderForKind('sol_heredit', {
+      cacheManager: UNBOOTSTRAPPED_CACHE_MANAGER,
       eventAudioPlayer,
       frameSoundTracker,
       encounterRenderConfig: WITH_PRIMARY,
-    });
-    if (!(scene instanceof SceneCompositor)) expect.fail('Expected the common scene');
+    }) as SceneCompositor;
     scenes.push(scene);
+    const load = vi.spyOn(scene, 'loadNpcType');
+    const { loader, animation } = syntheticNpcAssets();
+    await scene.loadNpc(loader, animation);
+    expect(load.mock.calls.map(([npcTypeId]) => npcTypeId)).toEqual([BOSS, MINION, HAZARD]);
 
-    expect(Object.getPrototypeOf(scene)).toBe(SceneCompositor.prototype);
-    expect(scene['encounterRenderConfig']).toBe(WITH_PRIMARY);
-    expect(scene['eventAudioPlayer']).toBe(eventAudioPlayer);
-    expect(scene['frameSoundTracker']).toBe(frameSoundTracker);
-    expect(scene['groundItemLoaderSource']).toBe(cacheManager);
+    const event = { eventId: 1, tick: 0, type: 'actor_despawned', actorId: 'nobody' } as GameEvent;
+    const live: RenderContext = {
+      simulationState: new SimulationEngine({ encounter: new LobbyEncounter() }).getState(),
+      events: [event],
+      interpolatedTick: 0,
+      speedMultiplier: 1,
+      interaction: { hoveredTile: null, targetTile: null },
+      options: SCENE_OPTIONS,
+    };
+    scene.build(live, IDENTITY_PROJECTION, VIEWPORT);
+    scene.build({ ...live, interpolatedTick: 0.5 }, IDENTITY_PROJECTION, VIEWPORT);
+    expect(onEvents).toHaveBeenCalledExactlyOnceWith([event], expect.anything());
+    expect(update).toHaveBeenCalled();
   });
 
-  it('takes its authored config, unless the app passes one', () => {
-    const cacheManager = {} as CacheManager;
-    // A kind with no core descriptor keeps its authored config as it is.
-    const authored = createEncounterSceneBuilder('common', WITH_PRIMARY, { cacheManager });
-    const passed = createEncounterSceneBuilder('common', WITH_PRIMARY, {
-      cacheManager,
-      encounterRenderConfig: PRIMARYLESS,
-    });
-    if (!(authored instanceof SceneCompositor) || !(passed instanceof SceneCompositor))
-      expect.fail('Expected the common scene');
-    scenes.push(authored, passed);
-    expect(authored['encounterRenderConfig']).toBe(WITH_PRIMARY);
-    expect(passed['encounterRenderConfig']).toBe(PRIMARYLESS);
-  });
-
-  it("keeps a module's own scene builder, and still fails on a kind nothing registered", () => {
-    const own = vi.fn();
-    expect(sceneBuilderFactoryFor({ kind: 'common', sceneBuilder: own })).toBe(own);
-
-    const registry = new SceneBuilderRegistry();
-    registry.register('common', sceneBuilderFactoryFor({ kind: 'common' }));
-    expect(() => registry.create('unknown', { cacheManager: {} as CacheManager })).toThrow(
-      'Unknown scene builder kind: "unknown"',
-    );
+  it('is never made for a kind the registry does not run', () => {
+    for (const kind of ['unknown', ...RETIRED_ENCOUNTER_KINDS.map(({ retired }) => retired.kind)]) {
+      expect(() => createSceneBuilderForKind(kind, { cacheManager: {} as CacheManager })).toThrow(
+        `Unknown encounter kind: "${kind}"`,
+      );
+    }
   });
 
   it('plays frame sounds after the final pose, and only syncs them on a paused or rebuilt frame', async () => {
     const tracker = new FrameSoundTracker(new AudioEngine());
     const update = vi.spyOn(tracker, 'update');
     const silentSync = vi.spyOn(tracker, 'silentSync');
-    const scene = configureEncounterScene(new SceneCompositor(), { frameSoundTracker: tracker }, PRIMARYLESS);
+    const scene = configureEncounterScene(new SceneCompositor(), {
+      frameSoundTracker: tracker,
+      encounterRenderConfig: PRIMARYLESS,
+    });
     scenes.push(scene);
     const { loader, animation } = syntheticNpcAssets();
     await scene.loadNpc(loader, animation);

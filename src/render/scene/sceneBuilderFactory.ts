@@ -1,10 +1,11 @@
 import type { EventAudioPlayer, FrameSoundTracker } from '../../audio';
 import type { CacheManager } from '../../cache/CacheManager';
-import { ENCOUNTER_CORE_MODULES, encounterKindsOf } from '../../encounters/modules';
-import { ENCOUNTER_PRESENTATION_MODULES, type EncounterPresentationModule } from '../../encounters/presentationModules';
-import { ENCOUNTER_RENDER_CONFIGS } from '../../encounters/renderConfigs';
-import type { EncounterRenderConfig } from './encounterRenderConfig';
-import { createEncounterSceneBuilder } from './encounterSceneBuilder';
+import { baseEncounterKind } from '../../encounters/catalog';
+import { encounterPresentationModuleForKind } from '../../encounters/presentationModules';
+import { encounterRegistry } from '../../encounters/registry';
+import { type EncounterRenderConfig, getEncounterRenderConfig } from './encounterRenderConfig';
+import { configureEncounterScene } from './encounterSceneBuilder';
+import { SceneCompositor } from './SceneCompositor';
 import type { SceneBuilderLike } from './types';
 
 export interface SceneBuilderOptions {
@@ -14,51 +15,24 @@ export interface SceneBuilderOptions {
   encounterRenderConfig?: EncounterRenderConfig;
 }
 
+/**
+ * A presentation module's own scene: it chooses the compositor and configures it from `options`,
+ * whose render config {@link createSceneBuilderForKind} has already resolved.
+ */
 export type SceneBuilderFactory = (options: SceneBuilderOptions) => SceneBuilderLike;
 
-export class SceneBuilderRegistry {
-  private factories = new Map<string, SceneBuilderFactory>();
-
-  register(kind: string, factory: SceneBuilderFactory): void {
-    this.factories.set(kind, factory);
-  }
-
-  create(kind: string, options: SceneBuilderOptions): SceneBuilderLike {
-    const factory = this.factories.get(kind);
-    if (!factory) {
-      throw new Error(`Unknown scene builder kind: "${kind}". Registered: [${[...this.factories.keys()].join(', ')}]`);
-    }
-    return factory(options);
-  }
-
-  hasKind(kind: string): boolean {
-    return this.factories.has(kind);
-  }
-}
-
-export const sceneBuilderRegistry = new SceneBuilderRegistry();
-
 /**
- * Register a scene builder for every encounter kind in the presentation manifest, expanding
- * variant kinds from the core manifest so Yama's contracts reuse the base builder without
- * being listed again.
+ * The scene for a kind the encounter registry runs: its base kind's presentation module's own scene
+ * builder, else the common `SceneCompositor`, configured with the caller's render config or else
+ * the kind's resolved one. Throws for any other name (unknown, withheld or retired), which has no
+ * encounter to present.
  */
-for (const module of ENCOUNTER_PRESENTATION_MODULES) {
-  const core = ENCOUNTER_CORE_MODULES.find((entry) => entry.kind === module.kind);
-  for (const kind of core ? encounterKindsOf(core) : [module.kind]) {
-    sceneBuilderRegistry.register(kind, sceneBuilderFactoryFor(module));
-  }
-}
-
-/**
- * The module's own scene builder, else the common scene with the render config registered for the
- * module's kind, resolved when a scene is built rather than while the manifests load.
- */
-export function sceneBuilderFactoryFor(
-  module: Pick<EncounterPresentationModule, 'kind' | 'sceneBuilder'>,
-): SceneBuilderFactory {
-  return (
-    module.sceneBuilder ??
-    ((options) => createEncounterSceneBuilder(module.kind, ENCOUNTER_RENDER_CONFIGS.get(module.kind), options))
-  );
+export function createSceneBuilderForKind(kind: string, options: SceneBuilderOptions): SceneBuilderLike {
+  if (!encounterRegistry.hasKind(kind)) throw new Error(`Unknown encounter kind: "${kind}"`);
+  const resolved: SceneBuilderOptions = {
+    ...options,
+    encounterRenderConfig: options.encounterRenderConfig ?? getEncounterRenderConfig(kind),
+  };
+  const own = encounterPresentationModuleForKind(baseEncounterKind(kind))?.sceneBuilder;
+  return own ? own(resolved) : configureEncounterScene(new SceneCompositor(), resolved);
 }

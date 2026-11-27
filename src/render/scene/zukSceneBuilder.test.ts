@@ -29,6 +29,7 @@ import { SeqType } from '../../rs/config/seqtype/SeqType';
 import { ModelData } from '../../rs/model/ModelData';
 import { NpcModelLoader } from '../../rs/model/NpcModelLoader';
 import { rgbToHsl } from '../../rs/util/ColorUtil';
+import { encounterScene } from '../../test/helpers/encounterScene';
 import { zukSnapshot } from '../../test/helpers/encounterSnapshot';
 import { LEGACY_INFERNO, legacyInfernoRecording } from '../../test/helpers/legacyEncounterRecordings';
 import {
@@ -1839,7 +1840,7 @@ describe('Zuk scene builder', () => {
     const setEventAudioPlayer = vi.spyOn(InfernoSceneCompositor.prototype, 'setEventAudioPlayer');
     const setFrameSoundTracker = vi.spyOn(InfernoSceneCompositor.prototype, 'setFrameSoundTracker');
 
-    createZukSceneBuilder(options);
+    encounterScene('inferno', InfernoSceneCompositor, options);
 
     expect(setEventAudioPlayer).toHaveBeenCalledExactlyOnceWith(null);
     expect(setFrameSoundTracker).toHaveBeenCalledExactlyOnceWith(null);
@@ -1925,7 +1926,7 @@ describe('Zuk scene builder', () => {
   });
 
   it('returns the compositor with the complete scene interface before assets load', () => {
-    const builder = createZukSceneBuilder();
+    const builder = encounterScene('inferno', InfernoSceneCompositor);
 
     expect(builder).toBeInstanceOf(InfernoSceneCompositor);
     expect(builder.isNpcLoaded()).toBe(false);

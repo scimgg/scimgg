@@ -21,7 +21,7 @@ import {
 import type { RestoredPresentation } from '../../../types/restoredPresentation';
 import type { Coordinate, NpcState, SimulationState } from '../../../types/simulation';
 import type { EncounterRenderConfig } from '../encounterRenderConfig';
-import { createEncounterSceneBuilder } from '../encounterSceneBuilder';
+import { configureEncounterScene } from '../encounterSceneBuilder';
 import { SceneCompositor } from '../SceneCompositor';
 
 /**
@@ -116,10 +116,8 @@ describe('a new encounter on the default scene builder', () => {
   });
 
   async function bruteScene(frames: readonly ReplayDisplayFrame[]) {
-    // A kind with no core descriptor keeps its authored config.
-    const scene = createEncounterSceneBuilder('brute', RENDER_CONFIG);
-    if (!(scene instanceof SceneCompositor) || scene.constructor !== SceneCompositor)
-      throw new Error('Expected the common scene');
+    // The common scene as the default builder configures it, with the brute's config.
+    const scene = configureEncounterScene(new SceneCompositor(), { encounterRenderConfig: RENDER_CONFIG });
     built.push(scene);
     const { loader, animation } = syntheticNpcAssets((id) => (id === BRUTE.npcTypeId ? BRUTE.size : 1));
     await scene.loadNpc(loader, animation);
@@ -296,8 +294,7 @@ describe("an actor's cues on a new life under its id", () => {
     ].sort();
 
   async function scene(frames: readonly ReplayDisplayFrame[]) {
-    const built = createEncounterSceneBuilder('brute', RENDER_CONFIG);
-    if (!(built instanceof SceneCompositor)) throw new Error('Expected the common scene');
+    const built = configureEncounterScene(new SceneCompositor(), { encounterRenderConfig: RENDER_CONFIG });
     const { loader, animation } = syntheticNpcAssets((id) =>
       id === SUCCESSOR.npcTypeId || id === BRUTE.npcTypeId ? BRUTE.size : 1,
     );

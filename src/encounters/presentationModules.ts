@@ -1,5 +1,7 @@
 /**
- * The presentation-side encounter manifest: everything the RENDERER and UI need per encounter.
+ * The presentation-side encounter manifest: what the renderer and UI need beyond an encounter's
+ * render config. A row is optional: an encounter without one gets the common scene, the default
+ * camera and no encounter sounds.
  *
  * Sibling of {@link ./modules}, which carries the simulation side. The split exists because
  * the core manifest reaches node-environment consumers through the composition root
@@ -7,8 +9,8 @@
  * instead.
  *
  * Variant kinds are expanded from the core manifest, so Yama's contracts inherit this
- * entry's scene builder, camera, and audio without being listed again, and its kind's render config
- * (`ENCOUNTER_RENDER_CONFIGS`, the one place a kind's render config is registered).
+ * entry's scene builder, camera, and audio without being listed again. Render configs are
+ * registered in `ENCOUNTER_RENDER_CONFIGS`, not here.
  *
  */
 import type { SoundRule } from '../audio/EventAudioPlayer';
@@ -83,7 +85,7 @@ export interface EncounterSetupCamera {
 
 export interface EncounterPresentationModule {
   readonly kind: string;
-  /** Omit for the common scene (`SceneCompositor`) with the kind's resolved render config. */
+  /** A scene of its own, for presentation the common `SceneCompositor` lacks. Omit for that scene. */
   readonly sceneBuilder?: SceneBuilderFactory;
   readonly defaultCamera?: EncounterCameraConfig;
   /**

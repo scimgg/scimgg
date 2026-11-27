@@ -4,9 +4,7 @@ import type { AuthoredEncounterRenderConfig, EncounterRenderConfig } from './enc
 
 /**
  * `config` with the map squares of `encounterKind`'s core descriptor (a variant kind's parent's), or
- * `config` unchanged for a kind with no descriptor. Kept out of `encounterRenderConfig.ts`, which
- * reads the presentation manifest, so a scene builder in that manifest can resolve its own default
- * config without an import cycle.
+ * `config` unchanged for a kind with no descriptor.
  */
 export function withDescriptorMapBlock(
   config: AuthoredEncounterRenderConfig,

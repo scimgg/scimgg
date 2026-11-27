@@ -9,6 +9,7 @@ import { IndexModelLoader } from '../../../rs/model/ModelLoader';
 import { SpotAnimModelLoader } from '../../../rs/model/SpotAnimModelLoader';
 import { readCacheZipFiles } from '../../../test/helpers/cacheZipFiles';
 import { collectGarbage, collectGarbageUntilCleared } from '../../../test/helpers/collectGarbage';
+import { encounterScene } from '../../../test/helpers/encounterScene';
 import {
   findProjectCacheZip,
   REAL_CACHE_TEST_TIMEOUT_MS,
@@ -23,11 +24,11 @@ import { isResidentMesh3DCommand, type NpcMesh3DCommand, type RenderCommand } fr
 import type { ImmutableMeshSource } from '../../core/meshSource';
 import type { SpotAnimRenderer } from '../../effects/SpotAnimRenderer';
 import type { SpotAnimEmbeddedPart, SpotAnimMeshPart } from '../../effects/spotAnimMeshParts';
+import { ColosseumSceneCompositor } from '../ColosseumSceneCompositor';
+import { InfernoSceneCompositor } from '../InfernoSceneCompositor';
 import { LobbySceneCompositor } from '../lobby/LobbySceneCompositor';
 import type { SceneCompositor } from '../SceneCompositor';
-import { createSolHereditSceneBuilder } from '../solHereditSceneBuilder';
 import { YamaSceneCompositor } from '../YamaSceneCompositor';
-import { createZukSceneBuilder } from '../zukSceneBuilder';
 import goldenFile from './encounterSpotAnimDrawGoldens.json';
 import {
   digestSpotAnimRenderer,
@@ -56,8 +57,8 @@ const info: CacheInfo = {
 const goldens = goldenFile as SpotAnimDrawGoldenFile;
 
 const ENCOUNTERS: ReadonlyArray<readonly [SpotAnimDigestEncounter, () => SceneCompositor]> = [
-  ['sol_heredit', () => createSolHereditSceneBuilder() as SceneCompositor],
-  ['inferno', () => createZukSceneBuilder() as SceneCompositor],
+  ['sol_heredit', () => encounterScene('sol_heredit', ColosseumSceneCompositor)],
+  ['inferno', () => encounterScene('inferno', InfernoSceneCompositor)],
   [
     'yama_p3',
     () => {

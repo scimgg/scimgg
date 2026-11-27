@@ -49,7 +49,7 @@ import type { PlayerAnimationSet, PlayerPoseSet } from '../src/render/player/pla
 import { createProjection3D, type Projection3D } from '../src/render/projections/Projection3D';
 import { getEncounterRenderConfig } from '../src/render/scene/encounterRenderConfig';
 import { SceneCompositor } from '../src/render/scene/SceneCompositor';
-import { sceneBuilderRegistry } from '../src/render/scene/sceneBuilderFactory';
+import { createSceneBuilderForKind } from '../src/render/scene/sceneBuilderFactory';
 import type { RenderContext, SceneBuilderLike } from '../src/render/scene/types';
 import type { LocTypeInfo } from '../src/rs/map/MapLoader';
 import type { ModelData } from '../src/rs/model/ModelData';
@@ -239,7 +239,7 @@ async function openEncounter(
   }
 
   const renderConfig = getEncounterRenderConfig(kind);
-  const scene = sceneBuilderRegistry.create(kind, { cacheManager, encounterRenderConfig: renderConfig });
+  const scene = createSceneBuilderForKind(kind, { cacheManager, encounterRenderConfig: renderConfig });
   const compositor = compositorOf(scene);
   const animationSystem = need(cacheManager.getAnimationSystem(), 'animation system');
   const npcModelLoader = need(cacheManager.getNpcModelLoader(), 'npc model loader');

@@ -7,7 +7,9 @@ import { SimulationEngine } from '../../core/SimulationEngine';
 import { HEALING_TOTEM_NPC_ID } from '../../npcs/colosseum/constants';
 import { ZUK_HEALER_NPC_ID, ZUK_SEQS } from '../../npcs/inferno/constants';
 import { getEncounterRenderConfig } from '../../render/scene/encounterRenderConfig';
-import { sceneBuilderRegistry } from '../../render/scene/sceneBuilderFactory';
+import { createSceneBuilderForKind } from '../../render/scene/sceneBuilderFactory';
+import { YamaSceneCompositor } from '../../render/scene/YamaSceneCompositor';
+import { encounterScene, UNBOOTSTRAPPED_CACHE_MANAGER } from '../../test/helpers/encounterScene';
 import { BOOLEAN_MECHANICS_KEY_SET, type MechanicsConfig, mergeMechanicsConfig } from '../../types/simulation';
 import {
   baseEncounterKind,
@@ -262,9 +264,11 @@ describe('encounter registration invariants', () => {
     }
   });
 
-  it('gives every registered encounter kind scene-builder coverage', () => {
+  it('creates a scene for every registered encounter kind', () => {
     for (const kind of encounterRegistry.getRegisteredKinds()) {
-      expect(sceneBuilderRegistry.hasKind(kind), `no scene builder registered for '${kind}'`).toBe(true);
+      const scene = createSceneBuilderForKind(kind, { cacheManager: UNBOOTSTRAPPED_CACHE_MANAGER });
+      expect(scene.isTerrainLoaded(), kind).toBe(false);
+      scene.dispose?.();
     }
   });
 
@@ -296,6 +300,7 @@ describe('encounter registration invariants', () => {
       expect(encounterDefaultCamera(kind)).toEqual(encounterDefaultCamera('yama_p3'));
       expect(encounterEnablesIntro(kind), `variant '${kind}' lost the intro`).toBe(true);
       expect(getEncounterRenderConfig(kind)).toEqual(getEncounterRenderConfig('yama_p3'));
+      encounterScene(kind, YamaSceneCompositor).dispose();
     }
   });
 
@@ -503,14 +508,14 @@ describe('encounter catalog invariants', () => {
     }
   });
 
-  it("resolves every registered kind's render config from the one its presentation entry's kind registers", () => {
+  it("resolves every registered kind's render config from the one its base kind registers", () => {
     // A config registered under any other key would never be drawn.
+    const registeredBases = ENCOUNTER_CATALOG.filter((entry) => entry.registered).map((entry) => entry.kind);
     for (const kind of ENCOUNTER_RENDER_CONFIGS.keys()) {
-      expect(encounterPresentationModuleForKind(kind)?.kind, `render config for unpresented kind '${kind}'`).toBe(kind);
+      expect(registeredBases, `render config for unregistered base kind '${kind}'`).toContain(kind);
     }
     for (const kind of encounterRegistry.getRegisteredKinds()) {
-      const presentedKind = encounterPresentationModuleForKind(kind)?.kind;
-      const authored = presentedKind === undefined ? undefined : ENCOUNTER_RENDER_CONFIGS.get(presentedKind);
+      const authored = ENCOUNTER_RENDER_CONFIGS.get(baseEncounterKind(kind));
       const resolved = getEncounterRenderConfig(kind);
       if (!authored) {
         expect(resolved, kind).toBeUndefined();

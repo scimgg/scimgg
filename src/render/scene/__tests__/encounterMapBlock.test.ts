@@ -1,18 +1,13 @@
-import { describe, expect, it } from 'vitest';
-import type { CacheManager } from '../../../cache/CacheManager';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { resolveEncounterMapFootprint } from '../../../core/encounters/mapFootprint';
-import { encounterRegistry } from '../../../encounters/registry';
-import { SOL_HEREDIT_RENDER_CONFIG } from '../../../encounters/solHeredit/renderConfig';
 import type { MapSquareData } from '../../../rs/map/MapLoader';
+import { encounterScene, UNBOOTSTRAPPED_CACHE_MANAGER } from '../../../test/helpers/encounterScene';
+import { ColosseumSceneCompositor } from '../ColosseumSceneCompositor';
 import { withDescriptorMapBlock } from '../encounterMapBlock';
 import { getEncounterRenderConfig } from '../encounterRenderConfig';
-import { createEncounterSceneBuilder } from '../encounterSceneBuilder';
-import { SceneCompositor } from '../SceneCompositor';
-import { sceneBuilderFactoryFor } from '../sceneBuilderFactory';
-import { createSolHereditSceneBuilder } from '../solHereditSceneBuilder';
-import type { SceneBuilder } from '../types';
-import { createYamaSceneBuilder } from '../yamaSceneBuilder';
-import { createZukSceneBuilder } from '../zukSceneBuilder';
+import { InfernoSceneCompositor } from '../InfernoSceneCompositor';
+import type { SceneCompositor } from '../SceneCompositor';
+import { YamaSceneCompositor } from '../YamaSceneCompositor';
 
 function openSquare(mapX: number, mapY: number): MapSquareData {
   // Three planes, for Sol's all-levels scene.
@@ -37,50 +32,78 @@ describe('withDescriptorMapBlock', () => {
   });
 });
 
-describe('the default scene builder factory', () => {
-  it("gives a presentation entry with no config or builder its kind's authored assets and descriptor footprint", () => {
-    const scene = sceneBuilderFactoryFor({ kind: 'sol_heredit' })({ cacheManager: {} as CacheManager });
-    if (!(scene instanceof SceneCompositor)) expect.fail('Expected the common scene');
-    expect(Object.getPrototypeOf(scene)).toBe(SceneCompositor.prototype);
+/** Loads `scene`'s 3D terrain, returning each square it read as `dx,dy` from `origin`. */
+async function loadedTerrainSquares(scene: SceneCompositor, origin: { x: number; y: number }): Promise<Set<string>> {
+  const loaded = new Set<string>();
+  const meshes = await scene.buildTerrainMeshes3D({
+    loadMapSquare: async (mapX: number, mapY: number) => {
+      loaded.add(`${mapX - origin.x},${mapY - origin.y}`);
+      return openSquare(mapX, mapY);
+    },
+  });
+  expect(meshes.length).toBeGreaterThan(0);
+  return loaded;
+}
+
+const PRESENTATION_MODULES = '../../../encounters/presentationModules';
+
+describe('a registered encounter with a render config and no presentation row', () => {
+  afterEach(() => {
+    vi.doUnmock(PRESENTATION_MODULES);
+    vi.resetModules();
+  });
+
+  it("gets the common scene on its descriptor's terrain squares from the production entry point", async () => {
+    // A fresh module graph whose presentation manifest has no Sol Heredit row.
+    vi.resetModules();
+    vi.doMock(PRESENTATION_MODULES, async (importOriginal) => {
+      const actual = await importOriginal<typeof import('../../../encounters/presentationModules')>();
+      return {
+        ...actual,
+        ENCOUNTER_PRESENTATION_MODULES: actual.ENCOUNTER_PRESENTATION_MODULES.filter(
+          (row) => row.kind !== 'sol_heredit',
+        ),
+        encounterPresentationModuleForKind: (kind: string) =>
+          kind === 'sol_heredit' ? undefined : actual.encounterPresentationModuleForKind(kind),
+      };
+    });
+    const { createSceneBuilderForKind } = await import('../sceneBuilderFactory');
+    const { SceneCompositor: FreshSceneCompositor } = await import('../SceneCompositor');
+    const { ColosseumSceneCompositor: FreshColosseum } = await import('../ColosseumSceneCompositor');
+    const { encounterRegistry } = await import('../../../encounters/registry');
+    const { ENCOUNTER_RENDER_CONFIGS } = await import('../../../encounters/renderConfigs');
+
+    const scene = createSceneBuilderForKind('sol_heredit', { cacheManager: UNBOOTSTRAPPED_CACHE_MANAGER });
+    if (!(scene instanceof FreshSceneCompositor) || scene instanceof FreshColosseum)
+      expect.fail('Expected the common scene');
+    expect(scene['encounterRenderConfig']?.preloadNpcTypes).toBe(
+      ENCOUNTER_RENDER_CONFIGS.get('sol_heredit')?.preloadNpcTypes,
+    );
     const descriptor = encounterRegistry.getDescriptorForKind('sol_heredit');
     if (!descriptor) expect.fail('sol_heredit has no descriptor');
     const footprint = resolveEncounterMapFootprint(descriptor);
-    const config = scene['encounterRenderConfig'];
-    expect(config?.primaryNpc).toBe(SOL_HEREDIT_RENDER_CONFIG.primaryNpc);
-    expect(config?.preloadNpcTypes).toBe(SOL_HEREDIT_RENDER_CONFIG.preloadNpcTypes);
-    expect(config?.spotAnimIds).toBe(SOL_HEREDIT_RENDER_CONFIG.spotAnimIds);
-    expect(config?.terrainMapSquare).toBe(footprint.origin);
-    expect(config?.mapSquareOffsets).toBe(footprint.sceneOffsets);
-    expect(config?.arenaMapSquareOffsets).toBe(footprint.arenaOffsets);
+    const loaded = await loadedTerrainSquares(scene, footprint.origin);
+    for (const { dx, dy } of footprint.sceneOffsets) expect(loaded, `${dx},${dy}`).toContain(`${dx},${dy}`);
     scene.dispose();
   });
 });
 
-describe.each<[string, string, () => SceneBuilder]>([
-  ['sol_heredit scene builder', 'sol_heredit', () => createSolHereditSceneBuilder()],
-  ['inferno scene builder', 'inferno', () => createZukSceneBuilder()],
-  ['yama_p3 scene builder', 'yama_p3', () => createYamaSceneBuilder()],
-  // A module without a scene builder of its own gets the common scene from its authored config.
-  ['common scene', 'sol_heredit', () => createEncounterSceneBuilder('sol_heredit', SOL_HEREDIT_RENDER_CONFIG)],
-])('the %s made without options', (_builder, kind, create) => {
+describe.each<[string, abstract new () => SceneCompositor]>([
+  ['sol_heredit', ColosseumSceneCompositor],
+  ['inferno', InfernoSceneCompositor],
+  ['yama_p3', YamaSceneCompositor],
+])('the %s scene made without a render config', (kind, compositor) => {
   it("uses the app's resolved render config, the descriptor's map squares included", () => {
-    const scene = create() as SceneCompositor;
-    expect(scene['encounterRenderConfig']).toEqual(getEncounterRenderConfig(kind));
+    const scene = encounterScene(kind, compositor);
+    expect(scene['encounterRenderConfig']).toBe(getEncounterRenderConfig(kind));
+    scene.dispose();
   });
 
   it("loads its terrain from the descriptor's squares", async () => {
-    const scene = create() as SceneCompositor;
+    const scene = encounterScene(kind, compositor);
     const resolved = getEncounterRenderConfig(kind);
     if (!resolved?.terrainMapSquare || !resolved.mapSquareOffsets) throw new Error(`${kind}: no resolved map block`);
-    const origin = resolved.terrainMapSquare;
-    const loaded = new Set<string>();
-    const meshes = await scene.buildTerrainMeshes3D({
-      loadMapSquare: async (mapX: number, mapY: number) => {
-        loaded.add(`${mapX - origin.x},${mapY - origin.y}`);
-        return openSquare(mapX, mapY);
-      },
-    });
-    expect(meshes.length).toBeGreaterThan(0);
+    const loaded = await loadedTerrainSquares(scene, resolved.terrainMapSquare);
     for (const { dx, dy } of resolved.mapSquareOffsets) expect(loaded, `${kind} ${dx},${dy}`).toContain(`${dx},${dy}`);
     scene.dispose();
   });

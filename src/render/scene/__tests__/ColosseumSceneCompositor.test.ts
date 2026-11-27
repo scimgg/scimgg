@@ -17,6 +17,7 @@ import {
 import { COLOSSEUM_SPOT_ANIM_IDS, colosseumBeamGraphics } from '../../../npcs/colosseum/visualEvents';
 import { ReplayPresentationStateSchema } from '../../../replay/format/presentationFormat';
 import { SeqType } from '../../../rs/config/seqtype/SeqType';
+import { encounterScene } from '../../../test/helpers/encounterScene';
 import { LEGACY_SOL, legacySolRecording } from '../../../test/helpers/legacyEncounterRecordings';
 import { validPresentationSample } from '../../../test/helpers/replayFixtures';
 import {
@@ -41,8 +42,7 @@ import type { FrameClipRef, NpcAnimationSet } from '../../npc/animationTypes';
 import { NpcAnimationController } from '../../npc/NpcAnimationController';
 import { PRIMARY_NPC_ACTOR_ID } from '../../npc/NpcInstanceManager';
 import { ColosseumSceneCompositor, type ColosseumSceneOptions } from '../ColosseumSceneCompositor';
-import { SceneCompositor } from '../SceneCompositor';
-import { createSolHereditSceneBuilder } from '../solHereditSceneBuilder';
+import type { SceneCompositor } from '../SceneCompositor';
 import type { RenderContext } from '../types';
 
 const projection: Projection2D = {
@@ -771,8 +771,7 @@ describe('Colosseum presentation lifecycle', () => {
   it('wires frame sounds and silently synchronizes them during seeks and pauses', () => {
     const engine = new AudioEngine();
     const tracker = new FrameSoundTracker(engine);
-    const scene = createSolHereditSceneBuilder({ frameSoundTracker: tracker });
-    if (!(scene instanceof ColosseumSceneCompositor)) throw new Error('wrong scene builder');
+    const scene = encounterScene('sol_heredit', ColosseumSceneCompositor, { frameSoundTracker: tracker });
     scenes.push(scene);
     const update = vi.spyOn(tracker, 'update');
     const silent = vi.spyOn(tracker, 'silentSync');
@@ -1323,7 +1322,7 @@ describe('Sol melee view rejection', () => {
     ],
   ] as const)('is set by the Sol scene builder only on Apple touch devices: %s', (_, userAgent, maxTouchPoints, enabled) => {
     vi.stubGlobal('navigator', { userAgent, maxTouchPoints });
-    const scene = createSolHereditSceneBuilder() as ColosseumSceneCompositor;
+    const scene = encounterScene('sol_heredit', ColosseumSceneCompositor);
     scenes.push(scene);
     expect(scene['cullSolMeleeOutsideView']).toBe(enabled);
     // Batching Sol's effects and skipping the beams' zero-area parts go with it: the same policy,
@@ -1360,8 +1359,7 @@ describe('legacy colosseum_visual recording: continuous playback versus direct s
   });
 
   async function legacyScene() {
-    const scene = createSolHereditSceneBuilder();
-    if (!(scene instanceof SceneCompositor)) throw new Error('Expected a scene compositor');
+    const scene = encounterScene('sol_heredit', ColosseumSceneCompositor);
     built.push(scene);
     const { loader, animation } = syntheticNpcAssets((id) => (id === SOL_NPC_ID ? 5 : 1));
     await scene.loadNpc(loader, animation);
