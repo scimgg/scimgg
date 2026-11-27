@@ -1,5 +1,5 @@
 import { isSolHereditSnapshot } from '../../core/encounters/snapshot';
-import { type GameEvent, isCoreEvent } from '../../core/events/types';
+import type { EncounterGraphicCue } from '../../core/events/encounterVisual';
 import { COLOSSEUM_SPOTANIMS } from '../../npcs/colosseum/constants';
 import { rgbToHsl } from '../../rs/util/ColorUtil';
 import type { Coordinate, SimulationState } from '../../types/simulation';
@@ -7,17 +7,17 @@ import { DEFAULT_TILE_MARKER_WIDTH } from '../../types/tileMarkers';
 import type { Camera3D, Projection2D, Viewport } from '../core/camera';
 import type { RenderQueue } from '../core/commands';
 import { rgbaFromHex } from '../core/types';
-import { ColosseumVisualController } from '../effects/controllers/ColosseumVisualController';
-import type { SpotAnimTransform } from '../effects/spotAnimTypes';
-import { isNpcStandingAt } from '../npc/npcStanding';
-import { getTerrainHeightInterpolated } from '../shared/renderUtils';
-import { PLAYER_ACTOR_ID, SceneCompositor, Z_LAYERS } from './SceneCompositor';
+import { FLOOR_EFFECT_DEPTH_BIAS } from '../effects/spotAnimRenderPolicy';
+import type { SpotAnimStyle } from '../effects/spotAnimTypes';
+import { SceneCompositor, Z_LAYERS } from './SceneCompositor';
 import type { RenderContext } from './types';
 
 /**
  * Sol Heredit's scene: his telegraph animations and the cache ground effects those telegraphs
- * paint, plus the warband's projectiles. Sol's attacks ARE their telegraphs, so the real cache
- * effects are the warning.
+ * paint, plus the warband's projectiles, all played by the shared cue player from Sol's
+ * `encounter_visual` batches. Sol's attacks ARE their telegraphs, so the real cache effects are the
+ * warning. Local to Sol: the floor and culling styles of his effects, his effect batching and
+ * zero-area beam-part skipping, and the overlays below.
  *
  * Tile overlays: sand and beam tiles are painted only in the 2D view, which has no pool LOCs or beam
  * spotanims to show them. The pending-attack outline is the `solHereditTelegraph` practice aid.
@@ -63,6 +63,25 @@ export interface ColosseumSceneOptions {
   readonly skipZeroAreaBeamParts?: boolean;
 }
 
+/** Tile effects (attack ripples, sand strikes) sit on the floor; actor effects ride their actor. */
+const FLOOR_STYLE: SpotAnimStyle = { depthBias: FLOOR_EFFECT_DEPTH_BIAS };
+/**
+ * Sol's melee puffs (Spear and Shield) may be left out of frames whose view excludes them; the
+ * compositor decides whether a view is set at all. Their timelines go on regardless.
+ */
+const SOL_MELEE_FLOOR_STYLE: SpotAnimStyle = { ...FLOOR_STYLE, cullOutsideView: true };
+const SOL_MELEE_SPOT_ANIM_IDS: ReadonlySet<number> = new Set(COLOSSEUM_SPOTANIMS.solMelee);
+
+/**
+ * How Sol's scene draws a cue graphic: tile effects (attack ripples, sand strikes, beams) sit on the
+ * floor, and Sol's melee puffs may be left out of frames whose view excludes them; effects riding an
+ * actor draw as the actor does.
+ */
+export function colosseumGraphicStyle(cue: EncounterGraphicCue): SpotAnimStyle | undefined {
+  if (cue.target.kind !== 'tile') return undefined;
+  return SOL_MELEE_SPOT_ANIM_IDS.has(cue.spotAnimId) ? SOL_MELEE_FLOOR_STYLE : FLOOR_STYLE;
+}
+
 /** Sol's crystal beams: the charge and fire lines and their impact, one batchable family. */
 const SOL_BEAM_SPOTANIMS: readonly number[] = [
   ...COLOSSEUM_SPOTANIMS.crystalCharge,
@@ -77,20 +96,15 @@ function isCamera3D(projection: Projection2D): projection is Projection2D & Came
 }
 
 export class ColosseumSceneCompositor extends SceneCompositor {
-  private readonly visuals = new ColosseumVisualController(this.spotAnimRenderer);
-  /** The player's rendered tile, for effects on the player; spotanim transforms resolve after it is set. */
-  private playerVisualPosition: Readonly<Coordinate> | null = null;
-
   private readonly cullSolMeleeOutsideView: boolean;
 
   constructor(options: ColosseumSceneOptions = {}) {
-    super();
+    super({ npcPresentation: 'cues' });
     this.cullSolMeleeOutsideView = options.cullSolMeleeOutsideView === true;
     // Melee first: the families are admitted in this order against one allowance.
     if (options.batchSolEffects === true)
       this.spotAnimRenderer.setBatchableSpotAnimFamilies([COLOSSEUM_SPOTANIMS.solMelee, SOL_BEAM_SPOTANIMS]);
     if (options.skipZeroAreaBeamParts === true) this.spotAnimRenderer.setZeroAreaPartSkip(SOL_BEAM_SPOTANIMS);
-    this.registerTransientReset('colosseum-visuals', () => this.visuals.clear());
   }
 
   override build(ctx: RenderContext, projection: Projection2D, viewport: Viewport): RenderQueue {
@@ -105,143 +119,8 @@ export class ColosseumSceneCompositor extends SceneCompositor {
     }
   }
 
-  protected override getNpcVisualDeltaMs(): number {
-    return 0;
-  }
-
-  protected override updateEncounterNpcFacing(playerPosition: Coordinate): number {
-    const elapsed = Math.max(0, this.primaryCycle - (this.npcAnimationCycle ?? this.primaryCycle));
-    return this.npcInstanceManager.updateNpcVisualFacing(playerPosition, elapsed * 20) ?? 0;
-  }
-
-  protected override onEncounterEvents(events: GameEvent[], context: RenderContext): void {
-    if (!context.replayHistory) this.visuals.consume(events);
-    for (const event of events) {
-      if (isCoreEvent(event, 'actor_despawned')) {
-        this.visuals.removeActor(event.actorId);
-        this.npcInstanceManager.removePresentation(this.actorRenderIdOf(event.actorId));
-      }
-    }
-  }
-
-  protected override reconstructEncounterVisuals(context: RenderContext): void {
-    if (!context.replayHistory) return;
-    this.visuals.syncReplay(context.replayHistory, this.primaryCycle);
-    this.visuals.render(this.primaryCycle, this.terrainHeights, (actorId) =>
-      this.resolveGraphicActor(actorId, context.simulationState),
-    );
-  }
-
-  protected override restoreEncounterPrimaries(context: RenderContext): boolean {
-    const history = context.replayHistory;
-    if (!history) return false;
-    const timelines = this.visuals.syncReplay(history, this.primaryCycle);
-    this.advanceNpcAnimationClock(this.primaryCycle);
-    for (const npc of context.simulationState.npcs) {
-      const actorId = this.npcRenderIdOf(npc);
-      if (!isNpcStandingAt(npc, this.primaryCycle)) {
-        if (npc.despawnTick !== undefined)
-          this.npcInstanceManager.reconstructDyingInstance(
-            { ...npc, id: actorId },
-            Math.max(0, this.primaryCycle / 30 - npc.despawnTick) * 600,
-          );
-        continue;
-      }
-      const timeline = timelines.get(npc.id);
-      if (!timeline) continue;
-      if (
-        this.npcInstanceManager.restoreDeferredReplayAnimation(actorId, timeline, {
-          cycle: this.primaryCycle,
-          throughFrameIndex: history.throughFrameIndex,
-          spawnTick: npc.spawnTick ?? 0,
-        })
-      )
-        this.reconstructedVisuals = true;
-    }
-    return true;
-  }
-
-  /**
-   * Plays each cue's clip at the cycle it was scheduled for, then burns the ground effects.
-   *
-   * The per-tile start cycles carry Sol's two-cycles-per-ring ripple, which is what makes the
-   * shape of an attack readable as it spreads outward.
-   */
-  protected override getEncounterAttackTriggers(
-    state: Pick<SimulationState, 'currentTick' | 'npcs'>,
-    interpolatedTick = state.currentTick,
-  ): [] {
-    const cycle = interpolatedTick * 30;
-    this.startNpcAnimationClock(state.currentTick * 30);
-    const primary = this.encounterRenderConfig?.primaryNpc;
-    for (const entry of this.visuals.takeAnimations(cycle)) {
-      // A member killed this tick may still swing (B:3356): it stands until its death animation.
-      if (!state.npcs.some((npc) => npc.id === entry.cue.actorId && isNpcStandingAt(npc, entry.cycle))) continue;
-      const npcTypeId =
-        entry.cue.actorId === primary?.actorId
-          ? primary.npcTypeId
-          : state.npcs.find((npc) => npc.id === entry.cue.actorId)?.npcTypeId;
-      const clips = this.encounterRenderConfig?.preloadNpcTypes?.find(
-        (type) => type.npcTypeId === npcTypeId,
-      )?.attackClips;
-      if (clips?.[entry.cue.clipId] === undefined) continue;
-      this.advanceNpcAnimationClock(entry.cycle);
-      this.npcInstanceManager.updateAnimations(0, 1, [
-        {
-          actorId: this.actorRenderIdOf(entry.cue.actorId),
-          trigger: 'attack',
-          clipId: entry.cue.clipId,
-          tick: entry.cycle / 30,
-        },
-      ]);
-    }
-    this.advanceNpcAnimationClock(cycle);
-    this.visuals.render(cycle, this.terrainHeights, (actorId) => this.resolveGraphicActor(actorId, state));
-    return [];
-  }
-
-  protected override renderEncounterAttackEffects(
-    _currentTick: number,
-    _interpolatedTick: number,
-    playerVisualPosition: [number, number],
-    _npcPosition: Coordinate,
-    _npcFacingAngle: number,
-    _playerFacingAngle: number,
-    _mechanicsConfig: SimulationState['mechanicsConfig'],
-    is2D: boolean,
-  ): void {
-    this.playerVisualPosition = [...playerVisualPosition];
-    if (is2D) return;
-    const throughFrameIndex = this.replayThroughFrameIndex;
-    this.visuals.updateProjectiles(
-      {
-        cycle: this.primaryCycle,
-        resolveActor: this.createActorVisualPositionResolver(playerVisualPosition),
-        terrainHeights: this.terrainHeights,
-        resolveSurfaceHeight: this.resolveSurfaceHeight,
-      },
-      throughFrameIndex === undefined
-        ? undefined
-        : this.replayEffectIndex?.actors.sampler({ cycle: this.primaryCycle, throughFrameIndex }, 'snapshot'),
-      this.replayProjectileWork,
-    );
-  }
-
-  private resolveGraphicActor(actorId: string, state: Pick<SimulationState, 'npcs'>): SpotAnimTransform | null {
-    if (actorId === PLAYER_ACTOR_ID) {
-      if (!this.playerVisualPosition) return null;
-      const x = this.playerVisualPosition[0] + 0.5;
-      const y = this.playerVisualPosition[1] + 0.5;
-      return { position: [x, y, -getTerrainHeightInterpolated(this.terrainHeights, x, y) / 128] };
-    }
-    if (!state.npcs.some((npc) => npc.id === actorId && isNpcStandingAt(npc, this.primaryCycle))) return null;
-    const matrix = this.npcInstanceManager.getModelMatrix(this.actorRenderIdOf(actorId));
-    return matrix
-      ? {
-          position: [matrix[12], matrix[13], matrix[14]],
-          yaw2048: (Math.atan2(matrix[8], matrix[0]) * 2048) / (2 * Math.PI),
-        }
-      : null;
+  protected override encounterGraphicStyle(cue: EncounterGraphicCue): SpotAnimStyle | undefined {
+    return colosseumGraphicStyle(cue);
   }
 
   protected override renderEncounterDebugOverlays(

@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AudioEngine, FrameSoundTracker } from '../../../audio';
 import { getArenaAllowUnboundedFallback, getArenaConfig, setArenaConfig } from '../../../core/constants';
+import type { EncounterVisualEvent } from '../../../core/events/encounterVisual';
 import type { GameEvent } from '../../../core/events/types';
 import { type ReplayDisplayFrame, ReplayRecorder, type ReplayRecorderData } from '../../../core/ReplayRecorder';
 import { SimulationEngine } from '../../../core/SimulationEngine';
@@ -13,14 +14,10 @@ import {
   SOL_NPC_ID,
   WARBAND_BERSERKER_NPC_ID,
 } from '../../../npcs/colosseum/constants';
-import {
-  COLOSSEUM_SPOT_ANIM_IDS,
-  type ColosseumVisualEvent,
-  colosseumBeamGraphics,
-} from '../../../npcs/colosseum/visualEvents';
+import { COLOSSEUM_SPOT_ANIM_IDS, colosseumBeamGraphics } from '../../../npcs/colosseum/visualEvents';
 import { ReplayPresentationStateSchema } from '../../../replay/format/presentationFormat';
 import { SeqType } from '../../../rs/config/seqtype/SeqType';
-import { legacySolRecording } from '../../../test/helpers/legacyEncounterRecordings';
+import { LEGACY_SOL, legacySolRecording } from '../../../test/helpers/legacyEncounterRecordings';
 import { validPresentationSample } from '../../../test/helpers/replayFixtures';
 import {
   activeWindows,
@@ -85,7 +82,12 @@ function clip(id: string, frameId: number): FrameClipRef {
   };
 }
 
-function fixture(options?: ColosseumSceneOptions) {
+/**
+ * Sol's scene with Sol seeded. `settled` (the default) settles every other declared asset as one the
+ * cache could not supply, as a replay needs before it reconstructs; `pending` leaves the other NPC
+ * types loading.
+ */
+function fixture(options?: ColosseumSceneOptions, assets: 'settled' | 'pending' = 'settled') {
   const scene = new ColosseumSceneCompositor(options);
   scenes.push(scene);
   scene.setEncounterRenderConfig(SOL_HEREDIT_RENDER_CONFIG);
@@ -118,6 +120,13 @@ function fixture(options?: ColosseumSceneOptions) {
   if (!instance || !type) throw new Error('missing seeded actor');
   instance.animController = controller;
   type.animationSet = animationSet;
+  if (assets === 'settled') {
+    settleNpcTypes(scene);
+    const effects = scene['spotAnimRenderer']['meshCache'];
+    for (const spotAnimId of SOL_HEREDIT_RENDER_CONFIG.spotAnimIds ?? [])
+      if (!effects.has(spotAnimId))
+        effects.set(spotAnimId, { static: [], frames: [], frameLengths: [], frameStep: -1, heightOffset: 0 });
+  }
   const engine = new SimulationEngine({ encounter: new SolHereditEncounter(7), combatSeed: 1 });
   const state = engine.getState();
   const context: RenderContext = {
@@ -162,8 +171,8 @@ function settleNpcTypes(scene: ColosseumSceneCompositor): void {
   }
 }
 
-function visual(overrides: Partial<ColosseumVisualEvent> = {}): ColosseumVisualEvent {
-  return { type: 'colosseum_visual', eventId: 1, tick: 0, animations: [], graphics: [], ...overrides };
+function visual(overrides: Partial<EncounterVisualEvent> = {}): EncounterVisualEvent {
+  return { type: 'encounter_visual', eventId: 1, tick: 0, animations: [], projectiles: [], graphics: [], ...overrides };
 }
 
 function recordSol(): ReplayRecorderData {
@@ -223,11 +232,12 @@ describe('Colosseum presentation lifecycle', () => {
     vi.spyOn(scene['spotAnimRenderer'], 'getFrameLengths').mockReturnValue([120]);
     const upsert = vi.spyOn(scene['spotAnimRenderer'], 'upsert');
     const event: GameEvent = {
-      type: 'colosseum_visual',
+      type: 'encounter_visual',
       eventId: 1,
       tick: 0,
       animations: [],
-      graphics: [{ spotAnimId: 2668, actorId: SOL_ACTOR_ID, delayCycles: 0 }],
+      projectiles: [],
+      graphics: [{ spotAnimId: 2668, target: { kind: 'attached', actorId: SOL_ACTOR_ID }, delayCycles: 0, height: 0 }],
     };
     const moving = {
       ...state,
@@ -260,20 +270,26 @@ describe('Colosseum presentation lifecycle', () => {
     vi.spyOn(scene['spotAnimRenderer'], 'getFrameLengths').mockReturnValue([120]);
     const upsert = vi.spyOn(scene['spotAnimRenderer'], 'upsert');
     const event: GameEvent = {
-      type: 'colosseum_visual',
+      type: 'encounter_visual',
       eventId: 1,
       tick: 0,
       animations: [],
+      projectiles: [],
       graphics: [
-        { spotAnimId: 2668, actorId: SOL_ACTOR_ID, delayCycles: 0 },
-        { spotAnimId: COLOSSEUM_SPOTANIMS.solMelee[0], position: [30, 30], delayCycles: 0 },
+        { spotAnimId: 2668, target: { kind: 'attached', actorId: SOL_ACTOR_ID }, delayCycles: 0, height: 0 },
+        {
+          spotAnimId: COLOSSEUM_SPOTANIMS.solMelee[0],
+          target: { kind: 'tile', position: [30, 30] },
+          delayCycles: 0,
+          height: 0,
+        },
       ],
     };
     draw(0, { events: [event] });
     const styles = new Map(upsert.mock.calls.map(([request]) => [request.instanceId, request.style]));
-    expect(styles.get('colosseum-1-0')).toBeUndefined();
+    expect(styles.get('cue-1-graphic-0')).toBeUndefined();
     // Sol's melee puffs may also be left out of views that cannot see them (an iOS-only view).
-    expect(styles.get('colosseum-1-1')).toEqual({ depthBias: FLOOR_EFFECT_DEPTH_BIAS, cullOutsideView: true });
+    expect(styles.get('cue-1-graphic-1')).toEqual({ depthBias: FLOOR_EFFECT_DEPTH_BIAS, cullOutsideView: true });
   });
 
   it('opts Sol into the floor depth bias his shield slam needs', () => {
@@ -291,7 +307,12 @@ describe('Colosseum presentation lifecycle', () => {
       COLOSSEUM_SPOTANIMS.crystalCharge[0],
       COLOSSEUM_SPOTANIMS.crystalFire[0],
       COLOSSEUM_SPOTANIMS.solMelee[0],
-    ].map((spotAnimId) => ({ spotAnimId, position: [30, 30] as [number, number], delayCycles: 3, height: 128 }));
+    ].map((spotAnimId) => ({
+      spotAnimId,
+      target: { kind: 'tile' as const, position: [30, 30] as [number, number] },
+      delayCycles: 3,
+      height: 128,
+    }));
     const parts = new Map<number, ReturnType<typeof createSpotAnimMeshParts>>(
       graphics.map(({ spotAnimId }) => {
         const meshParts = createSpotAnimMeshParts(`graphic-style-${spotAnimId}`, {
@@ -313,7 +334,10 @@ describe('Colosseum presentation lifecycle', () => {
     );
     const attachedId = COLOSSEUM_SPOTANIMS.crystalCharge[0];
     const event = visual({
-      graphics: [...graphics, { spotAnimId: attachedId, actorId: SOL_ACTOR_ID, delayCycles: 3 }],
+      graphics: [
+        ...graphics,
+        { spotAnimId: attachedId, target: { kind: 'attached', actorId: SOL_ACTOR_ID }, delayCycles: 3, height: 0 },
+      ],
     });
     const upsert = vi.spyOn(renderer, 'upsert');
     const replay =
@@ -329,9 +353,9 @@ describe('Colosseum presentation lifecycle', () => {
     );
     expect(meshes).toHaveLength(event.graphics.length * 2);
     for (const [index, cue] of event.graphics.entries()) {
-      const request = upsert.mock.calls.find(([value]) => value.instanceId === `colosseum-1-${index}`)?.[0];
+      const request = upsert.mock.calls.find(([value]) => value.instanceId === `cue-1-graphic-${index}`)?.[0];
       expect(request?.style).toEqual(
-        'actorId' in cue
+        cue.target.kind === 'attached'
           ? undefined
           : {
               depthBias: FLOOR_EFFECT_DEPTH_BIAS,
@@ -344,7 +368,7 @@ describe('Colosseum presentation lifecycle', () => {
         lifecycle: { kind: 'oneShot', startTick: 3 / 30, durationTicks: 120 / 30 },
         heightOffsetMode: 'actor',
       });
-      if ('position' in cue) {
+      if (cue.target.kind === 'tile') {
         expect(request?.transform.kind === 'dynamic' ? request.transform.resolve(0, 0.5, terrain) : null).toEqual({
           position: [30.5, 30.5, 3],
         });
@@ -359,7 +383,7 @@ describe('Colosseum presentation lifecycle', () => {
         expect(command.positions).toBe(source?.positions);
         expect(command.perVertexAlphas).toBe(source?.perVertexAlphas);
         expect(command.perVertexHslColors).toBe(source?.perVertexHslColors);
-        expect(command.depthBias).toBe('actorId' in cue ? undefined : FLOOR_EFFECT_DEPTH_BIAS);
+        expect(command.depthBias).toBe(cue.target.kind === 'attached' ? undefined : FLOOR_EFFECT_DEPTH_BIAS);
       }
     }
     expect(perfFlags.skipTransparentSort).toBe(true);
@@ -372,11 +396,12 @@ describe('Colosseum presentation lifecycle', () => {
     const upsert = vi.spyOn(scene['spotAnimRenderer'], 'upsert');
     const despawn = vi.spyOn(scene['spotAnimRenderer'], 'despawn');
     const event: GameEvent = {
-      type: 'colosseum_visual',
+      type: 'encounter_visual',
       eventId: 1,
       tick: 0,
       animations: [],
-      graphics: [{ spotAnimId: 2668, actorId: SOL_ACTOR_ID, delayCycles: 0 }],
+      projectiles: [],
+      graphics: [{ spotAnimId: 2668, target: { kind: 'attached', actorId: SOL_ACTOR_ID }, delayCycles: 0, height: 0 }],
     };
     draw(0, { events: [event] });
     expect(upsert).toHaveBeenCalled();
@@ -387,7 +412,7 @@ describe('Colosseum presentation lifecycle', () => {
       events: [{ type: 'actor_despawned', eventId: 2, tick: 0, actorId: SOL_ACTOR_ID }],
     });
 
-    expect(despawn).toHaveBeenCalledWith('colosseum-1-0');
+    expect(despawn).toHaveBeenCalledWith('cue-1-graphic-0');
     expect(upsert).not.toHaveBeenCalled();
     scene.resetIntroState();
     draw(0, { events: [event] });
@@ -399,7 +424,9 @@ describe('Colosseum presentation lifecycle', () => {
     vi.spyOn(scene['spotAnimRenderer'], 'isLoaded').mockReturnValue(true);
     vi.spyOn(scene['spotAnimRenderer'], 'getFrameLengths').mockReturnValue([120]);
     const upsert = vi.spyOn(scene['spotAnimRenderer'], 'upsert');
-    const event = visual({ graphics: [{ spotAnimId: 2668, actorId: SOL_ACTOR_ID, delayCycles: 0 }] });
+    const event = visual({
+      graphics: [{ spotAnimId: 2668, target: { kind: 'attached', actorId: SOL_ACTOR_ID }, delayCycles: 0, height: 0 }],
+    });
     const absent = { ...state, currentTick: 1, npcs: [] };
     const frames = [
       { state, events: [event] },
@@ -549,30 +576,6 @@ describe('Colosseum presentation lifecycle', () => {
     }
   });
 
-  it('rebuilds queued historical animations from the cutoff on every sync, including rewinds', () => {
-    const { scene, state } = fixture();
-    const visuals = scene['visuals'];
-    const grapple = visual({
-      eventId: 5,
-      tick: 2,
-      animations: [{ actorId: SOL_ACTOR_ID, clipId: 'grapple', delayCycles: 30 }],
-    });
-    const frames: ReplayDisplayFrame[] = [0, 1, 2].map((currentTick) => ({
-      state: { ...state, currentTick },
-      events: currentTick === 2 ? [grapple] : [],
-    }));
-    const queued = (throughFrameIndex: number, cycle: number) => {
-      visuals.syncReplay({ frames, throughFrameIndex }, cycle);
-      return visuals['pending'].map(({ cue, cycle: start }) => ({ clipId: cue.clipId, start }));
-    };
-    expect(queued(2, 67.5)).toEqual([{ clipId: 'grapple', start: 90 }]);
-    expect(queued(2, 67.5)).toHaveLength(1);
-    expect(queued(1, 67.5)).toEqual([]);
-    expect(queued(2, 59)).toEqual([]);
-    expect(queued(2, 90)).toEqual([]);
-    expect(queued(2, 89)).toEqual([{ clipId: 'grapple', start: 90 }]);
-  });
-
   it.each([
     'live',
     'replay',
@@ -606,6 +609,32 @@ describe('Colosseum presentation lifecycle', () => {
     expect(Number.isFinite(controller['baseTrack']?.elapsedTicks)).toBe(true);
   });
 
+  // Facing and clips share one NPC clock: the displayed cycle. A held snapshot's tick plus its clamped
+  // interpolation would stop turning one tick past the snapshot while the clips run on.
+  it.each([
+    'live',
+    'replay',
+  ])('turns Sol by exactly the cycles the NPC clock advances in %s, past a held snapshot too', (mode) => {
+    const { scene, manager, draw, state } = fixture();
+    const frames = [{ state, events: [] }];
+    const replay = (timeMs: number) =>
+      mode === 'replay'
+        ? {
+            replayHistory: { frames, throughFrameIndex: 0 },
+            timeline: { timelineKey: 'replay', paused: false, timeMs },
+          }
+        : {};
+    draw(0.5, { simulationState: state, ...replay(300) });
+    const start = scene['npcAnimationCycle'];
+    expect(start).toBe(15);
+    const facing = vi.spyOn(manager, 'updateNpcVisualFacing');
+    for (const timeMs of [600, 900, 1200, 1500]) draw(timeMs / 600, { simulationState: state, ...replay(timeMs) });
+
+    expect(scene['npcAnimationCycle']).toBe(75);
+    const turnedMs = facing.mock.calls.reduce((total, [, deltaMs]) => total + deltaMs, 0);
+    expect(turnedMs).toBe((75 - 15) * 20);
+  });
+
   it('accepts reused event IDs after reset instead of retaining the old cue', () => {
     const { scene, controller, draw } = fixture();
     draw(0, { events: [visual({ animations: [{ actorId: SOL_ACTOR_ID, clipId: 'spear', delayCycles: 20 }] })] });
@@ -615,25 +644,26 @@ describe('Colosseum presentation lifecycle', () => {
     expect(controller['primaryTrack']?.clip.id).toBe('shield');
   });
 
-  it.each([
-    undefined,
-    128,
-  ])('places graphics at world height with height offset %s and removes expired instances', (height) => {
+  it.each([0, 128])('places graphics at world height with height offset %s and removes expired instances', (height) => {
     const { scene, draw } = fixture();
     scene['terrainHeights'] = Array.from({ length: 65 }, () => new Int32Array(65).fill(-256));
     vi.spyOn(scene['spotAnimRenderer'], 'isLoaded').mockReturnValue(true);
     vi.spyOn(scene['spotAnimRenderer'], 'getFrameLengths').mockReturnValue([30]);
     const upsert = vi.spyOn(scene['spotAnimRenderer'], 'upsert');
     const despawn = vi.spyOn(scene['spotAnimRenderer'], 'despawn');
-    draw(0, { events: [visual({ graphics: [{ spotAnimId: 1, position: [30, 30], delayCycles: 0, height }] })] });
+    draw(0, {
+      events: [
+        visual({ graphics: [{ spotAnimId: 1, target: { kind: 'tile', position: [30, 30] }, delayCycles: 0, height }] }),
+      ],
+    });
     const transform = upsert.mock.calls[0]?.[0].transform;
     expect(transform?.kind === 'dynamic' ? transform.resolve(0, 0, null)?.position : undefined).toEqual([
       30.5,
       30.5,
-      2 + (height ?? 0) / 128,
+      2 + height / 128,
     ]);
     draw(1);
-    expect(despawn).toHaveBeenCalledWith('colosseum-1-0');
+    expect(despawn).toHaveBeenCalledWith('cue-1-graphic-0');
   });
 
   it.each([0.5, 2, 0.25])('restores a mid-telegraph pose at replay tick %s', (tick) => {
@@ -672,8 +702,8 @@ describe('Colosseum presentation lifecycle', () => {
     const event = visual({
       graphics: [
         attached
-          ? { spotAnimId: 2668, actorId: SOL_ACTOR_ID, delayCycles: 6 }
-          : { spotAnimId: 1, position: [30, 30], delayCycles: 6 },
+          ? { spotAnimId: 2668, target: { kind: 'attached', actorId: SOL_ACTOR_ID }, delayCycles: 6, height: 0 }
+          : { spotAnimId: 1, target: { kind: 'tile', position: [30, 30] }, delayCycles: 6, height: 0 },
       ],
     });
     const frames: ReplayDisplayFrame[] = [0, 1, 2, 3].map((currentTick) => ({
@@ -688,7 +718,7 @@ describe('Colosseum presentation lifecycle', () => {
     seek(1);
     expect(upsert.mock.lastCall?.[0].lifecycle).toEqual({ kind: 'oneShot', startTick: 0.2, durationTicks: 2 });
     seek(3);
-    expect(despawn).toHaveBeenCalledWith('colosseum-1-0');
+    expect(despawn).toHaveBeenCalledWith('cue-1-graphic-0');
     upsert.mockClear();
     seek(0.5);
     expect(upsert).toHaveBeenCalled();
@@ -719,7 +749,16 @@ describe('Colosseum presentation lifecycle', () => {
     const lengths = vi.spyOn(scene['spotAnimRenderer'], 'getFrameLengths').mockReturnValue(undefined);
     const upsert = vi.spyOn(scene['spotAnimRenderer'], 'upsert');
     const replayHistory = {
-      frames: [{ state, events: [visual({ graphics: [{ spotAnimId: 1, position: [30, 30], delayCycles: 3 }] })] }],
+      frames: [
+        {
+          state,
+          events: [
+            visual({
+              graphics: [{ spotAnimId: 1, target: { kind: 'tile', position: [30, 30] }, delayCycles: 3, height: 0 }],
+            }),
+          ],
+        },
+      ],
       throughFrameIndex: 0,
     };
     draw(0.5, { replayHistory });
@@ -932,12 +971,19 @@ describe('Colosseum projectiles', () => {
         endHeight: 124,
       },
     ],
-    graphics: [{ spotAnimId: COLOSSEUM_SPOTANIMS.fireblastImpact, actorId: 'player', delayCycles: 30, height: 124 }],
+    graphics: [
+      {
+        spotAnimId: COLOSSEUM_SPOTANIMS.fireblastImpact,
+        target: { kind: 'attached', actorId: 'player' },
+        delayCycles: 30,
+        height: 124,
+      },
+    ],
   });
-  const PROJECTILE = 'colosseum-1-projectile-0';
+  const PROJECTILE = 'cue-1-projectile-0';
 
-  function scene() {
-    const setup = fixture();
+  function scene(assets: 'settled' | 'pending' = 'settled') {
+    const setup = fixture(undefined, assets);
     const terrain = Array.from({ length: 65 }, () => new Int32Array(65).fill(-256));
     setup.scene['terrainHeights'] = terrain;
     vi.spyOn(setup.scene['spotAnimRenderer'], 'isLoaded').mockReturnValue(true);
@@ -979,7 +1025,7 @@ describe('Colosseum projectiles', () => {
     expect(despawn).toHaveBeenCalledWith(PROJECTILE);
     expect(upsert.mock.calls.some(([request]) => request.instanceId === PROJECTILE)).toBe(false);
     expect(upsert.mock.lastCall?.[0].spotAnimId).toBe(COLOSSEUM_SPOTANIMS.fireblastImpact);
-    expect(position('colosseum-1-0')).toEqual([20.5, 20.5, 2 + 124 / 128]);
+    expect(position('cue-1-graphic-0')).toEqual([20.5, 20.5, 2 + 124 / 128]);
   });
 
   it('reconstructs the same flight on replay seeks and drops it once landed', () => {
@@ -1026,7 +1072,7 @@ describe('Colosseum projectiles', () => {
         },
       ],
     });
-    const id = 'colosseum-10-projectile-0';
+    const id = 'cue-10-projectile-0';
     const replay = scene();
     const restored = scene();
     // The player runs east two tiles a tick from tick 3, while the six-tick flight is airborne.
@@ -1081,7 +1127,7 @@ describe('Colosseum projectiles', () => {
     const base = tick * 30;
     const tiles: Coordinate[] = Array.from({ length: 13 }, (_, index) => [30, 20 + index]);
     const beam = visual({ eventId: 7, tick, graphics: colosseumBeamGraphics('north', tiles, 'fire') });
-    const impact = `colosseum-7-${tiles.length}`;
+    const impact = `cue-7-graphic-${tiles.length}`;
     const live = scene();
     const restored = scene();
     settleNpcTypes(restored.scene);
@@ -1135,7 +1181,7 @@ describe('Colosseum projectiles', () => {
   });
 
   it('keeps restored history past GO until Colosseum NPC types settle, then hands off', () => {
-    const { scene: compositor, draw, state, engine } = scene();
+    const { scene: compositor, draw, state, engine } = scene('pending');
     const restoration: RestoredPresentation = {
       engine,
       tick: 0,
@@ -1406,7 +1452,7 @@ describe('legacy colosseum_visual recording: continuous playback versus direct s
         ...Object.entries(cued(observation)).map(([actorId, { seqId }]) => `${actorId}:${seqId}`),
       ];
     };
-    // 131, on the player, is left to the known baseline failure below.
+    // 131, on the player, is sought by the first-frame tests below.
     const { 131: _player, ...seekable } = effects;
     for (const [key, [first, last]] of Object.entries({ ...seekable, ...clips })) {
       expect(await sought(first - 1), `${key} before ${first}`).not.toContain(key);
@@ -1416,10 +1462,22 @@ describe('legacy colosseum_visual recording: continuous playback versus direct s
     }
   });
 
-  // Known baseline failure on 49ef532: the first frame after a seek resolves graphics attached to
-  // the player before the player's rendered tile is known that frame, so it hides them; the next
-  // frame shows them. The impact on the player (131, cycles 90-149) is missing from a seek's first frame.
-  it.fails('draws a graphic attached to the player on the first frame of a direct seek', async () => {
+  // A baseline failure on 49ef532: the first frame after a seek resolved graphics attached to the
+  // player before the player's rendered tile was known, so it hid the impact on the player (131,
+  // cycles 90-149). The cue player places graphics once the player's position is resolved.
+  it('draws a graphic attached to the player on the first frame of a direct seek', async () => {
     expect((await seek(95)).effects.map(({ spotAnimId }) => spotAnimId)).toContain(131);
+  });
+
+  it('starts and ends the graphic on the player on its played cycles when sought, on its tile', async () => {
+    const onPlayer = async (cycle: number) =>
+      (await seek(cycle)).effects.filter(({ spotAnimId }) => spotAnimId === 131).map(({ at }) => at);
+    const tile: [number, number, number] = [LEGACY_SOL.playerTile[0] + 0.5, LEGACY_SOL.playerTile[1] + 0.5, 0.9688];
+    expect([await onPlayer(89), await onPlayer(90), await onPlayer(149), await onPlayer(150)]).toEqual([
+      [],
+      [tile],
+      [tile],
+      [],
+    ]);
   });
 });

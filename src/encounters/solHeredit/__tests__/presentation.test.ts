@@ -1,8 +1,14 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { AudioEngine } from '../../../audio/AudioEngine';
+import { AudioEngine } from '../../../audio/AudioEngine';
+import { EventAudioPlayer } from '../../../audio/EventAudioPlayer';
 import { FrameSoundTracker } from '../../../audio/FrameSoundTracker';
 import { solHereditAudioRules } from '../../../audio/solHereditAudioRules';
 import type { EncounterContext } from '../../../core/encounters/types';
+import {
+  type EncounterGraphicCue,
+  type EncounterVisualEvent,
+  isEncounterVisualEvent,
+} from '../../../core/events/encounterVisual';
 import { CHAT_HIGHLIGHT_COLORS } from '../../../core/events/gameMessages';
 import { TickEvents } from '../../../core/events/TickEvents';
 import { type CoreGameEvent, isCoreEvent } from '../../../core/events/types';
@@ -15,7 +21,6 @@ import {
   SOLARFLARE_NPC_ID,
 } from '../../../npcs/colosseum/constants';
 import { GRAPPLE_TARGETS, grappleWarningMessage } from '../../../npcs/colosseum/grapple';
-import { type ColosseumVisualEvent, isColosseumVisualEvent } from '../../../npcs/colosseum/visualEvents';
 import { createQueue, type NpcMesh3DCommand } from '../../../render/core/commands';
 import { FLOOR_EFFECT_DEPTH_BIAS } from '../../../render/effects/spotAnimRenderPolicy';
 import { type SceneObjectLocModelLoader, SceneObjectRenderer } from '../../../render/graphics/SceneObjectRenderer';
@@ -52,7 +57,7 @@ interface RunResult {
 }
 
 function collectVisuals(events: readonly ReturnType<SimulationEngine['getLastTickEvents']>[number][]) {
-  return events.filter(isColosseumVisualEvent);
+  return events.filter(isEncounterVisualEvent);
 }
 
 /** Drives a real engine, damaging Sol so the phase transitions fire. */
@@ -221,6 +226,47 @@ describe('Sol Heredit visual cues', () => {
       event.graphics.some((cue) => cue.spotAnimId === COLOSSEUM_SPOTANIMS.sunfireLightning),
     );
     expect(lightning.length).toBeGreaterThan(0);
+  });
+
+  // Through the dispatcher, each emitted batch: one molten sand pair per burst however many tiles it
+  // lit, and one area sound per fired beam's terminal impact, played at once (K:4077), never per segment.
+  it('sounds each sand burst once and each terminal beam impact once, without delay', () => {
+    const audio = new AudioEngine();
+    const played = vi.spyOn(audio, 'play').mockImplementation(() => undefined);
+    const player = new EventAudioPlayer(audio, { name: 'solHeredit', rules: solHereditAudioRules });
+    const isSand = (cue: EncounterGraphicCue) => cue.spotAnimId === COLOSSEUM_SPOTANIMS.sunfireLightning;
+    const isImpact = (cue: EncounterGraphicCue) => cue.spotAnimId === COLOSSEUM_SPOTANIMS.crystalImpact;
+    let bursts = 0;
+    let impacts = 0;
+    for (const event of result.visualEvents) {
+      played.mockClear();
+      const ends = event.graphics.filter(isImpact).map(({ target }) => {
+        if (target.kind !== 'tile') throw new Error('Expected a beam impact on a tile');
+        return target.position;
+      });
+      // Heard from the impacts' midpoint, which every one of them is in range of.
+      const listener: [number, number] = ends.length
+        ? [ends.reduce((sum, [x]) => sum + x, 0) / ends.length, ends.reduce((sum, [, y]) => sum + y, 0) / ends.length]
+        : [30, 30];
+      for (const [x, y] of ends) expect(Math.abs(x - listener[0]) + Math.abs(y - listener[1])).toBeLessThan(20);
+
+      player.onEvents([event], listener);
+
+      const sand = event.graphics.some(isSand);
+      expect(played.mock.calls.map(([id, options]) => [id, options?.delayMs])).toEqual([
+        ...(sand
+          ? [
+              [8053, 30 * CLIENT_TICK_MS],
+              [10046, 90 * CLIENT_TICK_MS],
+            ]
+          : []),
+        ...ends.map(() => [8230, undefined]),
+      ]);
+      if (sand) bursts++;
+      impacts += ends.length;
+    }
+    expect(bursts).toBeGreaterThan(1);
+    expect(impacts).toBeGreaterThan(1);
   });
 
   it('warns only on ticks Sol starts an attack, so each beam charges as that attack lands', () => {
@@ -493,22 +539,24 @@ describe('molten sand pools', () => {
 });
 
 describe('Sol Heredit audio rules', () => {
-  const resolve = (event: ColosseumVisualEvent) => {
-    const rule = solHereditAudioRules.colosseum_visual;
+  const resolve = (event: EncounterVisualEvent) => {
+    const rule = solHereditAudioRules.encounter_visual;
     if (typeof rule.resolve !== 'function') throw new TypeError('expected a resolver');
     return rule.resolve(event);
   };
 
   it('plays the molten sand pair once per burst, however many tiles lit', () => {
     const result = resolve({
-      type: 'colosseum_visual',
+      type: 'encounter_visual',
       eventId: 1,
       tick: 10,
       animations: [],
+      projectiles: [],
       graphics: [30, 31, 32].map((x) => ({
         spotAnimId: COLOSSEUM_SPOTANIMS.sunfireLightning,
-        position: [x, 33] satisfies [number, number],
+        target: { kind: 'tile', position: [x, 33] },
         delayCycles: 0,
+        height: 0,
       })),
     });
     expect(result.kind).toBe('play');
@@ -517,10 +565,11 @@ describe('Sol Heredit audio rules', () => {
 
   it('stays silent for an event with no Sol-attributable effect', () => {
     const result = resolve({
-      type: 'colosseum_visual',
+      type: 'encounter_visual',
       eventId: 2,
       tick: 10,
       animations: [{ actorId: SOL_ACTOR_ID, clipId: 'spear', delayCycles: 0 }],
+      projectiles: [],
       graphics: [],
     });
     expect(result.kind).toBe('silent');

@@ -117,7 +117,9 @@ function replay(timeline: Timeline) {
   const compareGraphics = (tick: number, round: BeamRound, stage: 'charge' | 'fire') => {
     const model = round.lines
       .flatMap((line) => colosseumBeamGraphics(crystalBeamDirection(line.index), line.tiles, stage))
-      .map((cue) => ('position' in cue ? graphicKey(cue.spotAnimId, cue.position, cue.delayCycles) : 'actor'))
+      .map((cue) =>
+        cue.target.kind === 'tile' ? graphicKey(cue.spotAnimId, cue.target.position, cue.delayCycles) : 'actor',
+      )
       .sort();
     const capture = [...(timeline.beamGraphics.get(tick) ?? [])].sort();
     if (`${model}` !== `${capture}`) graphicMismatches.push(`${stage} at ${tick}`);

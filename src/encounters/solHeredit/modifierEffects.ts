@@ -1,9 +1,9 @@
 import type { NpcActor } from '../../core/actors/NpcActor';
 import type { EncounterModifierSelection } from '../../core/encounters/encounterFactory';
 import type { EncounterContext, EncounterNpcDefeat, EnvironmentalDamage } from '../../core/encounters/types';
+import { emitEncounterVisual } from '../../core/events/encounterVisual';
 import { isArenaFootprintWalkable } from '../../core/npcMovementCollision';
 import { COLOSSEUM_SPOTANIMS } from '../../npcs/colosseum/constants';
-import { emitColosseumVisual } from '../../npcs/colosseum/visualEvents';
 import {
   createWarbander,
   WARBAND_SLOT_OFFSETS,
@@ -176,8 +176,9 @@ export class SolModifierEffects {
         random,
       })) {
         ctx.spawnNpc(bee);
-        emitColosseumVisual(ctx.tickEvents, {
+        emitEncounterVisual(ctx.tickEvents, {
           animations: [{ actorId: bee.id, clipId: 'spawn', delayCycles: 0 }],
+          projectiles: [],
           graphics: [],
         });
       }
@@ -229,14 +230,21 @@ export class SolModifierEffects {
     if (!explosion || !volatility || ctx.tick < explosion.tick) return damages;
     this.explosion = null;
     const centre = volatilityExplosionCentre(explosion.position, explosion.size);
-    emitColosseumVisual(ctx.tickEvents, {
+    emitEncounterVisual(ctx.tickEvents, {
       animations: [],
+      projectiles: [],
       graphics: [
-        { spotAnimId: COLOSSEUM_SPOTANIMS.finalBossExplosion, position: centre, delayCycles: 0 },
+        {
+          spotAnimId: COLOSSEUM_SPOTANIMS.finalBossExplosion,
+          target: { kind: 'tile', position: centre },
+          delayCycles: 0,
+          height: 0,
+        },
         ...volatilityExplosionTiles(explosion.position, explosion.size, volatility).map((position) => ({
           spotAnimId: COLOSSEUM_SPOTANIMS.fireblastImpact,
-          position,
+          target: { kind: 'tile' as const, position },
           delayCycles: volatilityRingDelay(position, centre),
+          height: 0,
         })),
       ],
     });

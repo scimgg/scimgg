@@ -1,5 +1,6 @@
 import { isDeepStrictEqual } from 'node:util';
 import { describe, expect, it } from 'vitest';
+import { isEncounterVisualEvent } from '../../../../core/events/encounterVisual';
 import { TickEvents } from '../../../../core/events/TickEvents';
 import { isCoreEvent } from '../../../../core/events/types';
 import { WorldState } from '../../../../core/WorldState';
@@ -11,7 +12,6 @@ import {
   HEALING_TOTEM_NPC_ID,
   HEALING_TOTEM_PROJECTILE,
 } from '../../../../npcs/colosseum/constants';
-import { isColosseumVisualEvent } from '../../../../npcs/colosseum/visualEvents';
 import type { Coordinate } from '../../../../types/simulation';
 import {
   advanceHealingTotem,
@@ -90,7 +90,7 @@ describe('healing totem', () => {
     for (let tick = 1; tick <= 30; tick++) {
       for (const event of step(tick)) {
         if (isCoreEvent(event, 'hitsplat_spawned') && event.hitsplatType === 'heal') heals.push([tick, event.amount]);
-        if (isColosseumVisualEvent(event) && event.projectiles?.length) launches.push(tick);
+        if (isEncounterVisualEvent(event) && event.projectiles?.length) launches.push(tick);
       }
     }
     expect(TOTEM_FIRST_LAUNCH_TICKS).toBe(7);
@@ -108,7 +108,7 @@ describe('healing totem', () => {
   it('emits the captured clip, projectile and impact', () => {
     const { target, totem, step } = fixture();
     for (let tick = 1; tick < 7; tick++) expect(step(tick)).toEqual([]);
-    const [launch] = step(7).filter(isColosseumVisualEvent);
+    const [launch] = step(7).filter(isEncounterVisualEvent);
     expect(launch).toMatchObject({
       animations: [{ actorId: totem.id, clipId: 'attack', delayCycles: 0 }],
       graphics: [],
@@ -121,8 +121,14 @@ describe('healing totem', () => {
       ],
     });
     for (let tick = 8; tick < 13; tick++) step(tick);
-    expect(step(13).filter(isColosseumVisualEvent)[0]).toMatchObject({
-      graphics: [{ spotAnimId: COLOSSEUM_SPOTANIMS.totemImpact, actorId: target.id, delayCycles: 0 }],
+    expect(step(13).filter(isEncounterVisualEvent)[0]).toMatchObject({
+      graphics: [
+        {
+          spotAnimId: COLOSSEUM_SPOTANIMS.totemImpact,
+          target: { kind: 'attached', actorId: target.id },
+          delayCycles: 0,
+        },
+      ],
     });
   });
 
@@ -130,8 +136,8 @@ describe('healing totem', () => {
     const { target, step } = fixture(200);
     for (let tick = 1; tick <= 9; tick++) expect(step(tick)).toEqual([]);
     target.vitals.hp = 199;
-    expect(step(10).some(isColosseumVisualEvent)).toBe(true);
-    for (let tick = 11; tick < 16; tick++) expect(step(tick).some(isColosseumVisualEvent)).toBe(false);
+    expect(step(10).some(isEncounterVisualEvent)).toBe(true);
+    for (let tick = 11; tick < 16; tick++) expect(step(tick).some(isEncounterVisualEvent)).toBe(false);
   });
 
   it('heals nothing once destroyed or once its target is dead', () => {

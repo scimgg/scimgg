@@ -2769,10 +2769,10 @@ describe('legacy inferno_visual recording: continuous playback versus direct see
     expect(activeWindows((cycle) => at(cycle), 0, 270, idleSeqIds).clips['healer-2:2638']).toEqual([180, 239]);
   });
 
-  // Known baseline failure on 49ef532: played one cycle per frame, the pruned corpse ends at 178,
-  // one frame before a seek ends it (179), because the death timer is credited the frame's delta
-  // from before the death. Larger frame steps end it earlier still. Not caused by cue playback.
-  it.fails('ends a pruned corpse on the same cycle whether played or sought', async () => {
+  // A baseline failure on 49ef532: played one cycle per frame, the corpse ended at 178, a frame
+  // before a seek ended it (179), as the death timer was credited the frame's delta from before the
+  // death. Replay now poses each snapshot corpse at its exact age every frame, before it is pruned.
+  it('ends a pruned corpse on the same cycle whether played or sought', async () => {
     const { at } = await legacyScene();
     expect(activeWindows((cycle) => at(cycle), 0, 270, idleSeqIds).clips['healer:2638']).toEqual([90, 179]);
   });

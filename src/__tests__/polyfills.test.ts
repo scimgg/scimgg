@@ -3,7 +3,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { EncounterVisualCue } from '../core/events/encounterVisual';
 import { generateSparkVolley } from '../encounters/zuk/sparks';
 import { createColosseumActor } from '../npcs/colosseum/actors';
-import type { ColosseumVisualCue } from '../npcs/colosseum/visualEvents';
 import { createInfernoActor } from '../npcs/inferno/actors';
 import { installPolyfills } from '../polyfills';
 import type { Coordinate, SimulationState } from '../types/simulation';
@@ -147,9 +146,12 @@ describe('structuredClone DTO fallback', () => {
       projectiles: [],
       graphics: [{ spotAnimId: 659, target: { kind: 'tile', position: [30, 44] }, height: 0, delayCycles: 2 }],
     };
-    const colosseumCue: ColosseumVisualCue = {
+    const colosseumCue: EncounterVisualCue = {
       animations: [],
-      graphics: [{ spotAnimId: 1, position: [3, 4], delayCycles: 1 }],
+      graphics: [
+        { spotAnimId: 1, target: { kind: 'tile', position: [3, 4] }, delayCycles: 1, height: 0 },
+        { spotAnimId: 2, target: { kind: 'attached', actorId: 'crystal' }, delayCycles: 1, height: 0 },
+      ],
       projectiles: [],
     };
     const data = { stats: [inferno.formulaStats, colosseum.formulaStats], sparks, infernoCue, colosseumCue };

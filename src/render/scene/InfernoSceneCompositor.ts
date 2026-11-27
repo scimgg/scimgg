@@ -1,5 +1,4 @@
 import { zukWaveState } from '../../core/encounters/snapshot';
-import { type GameEvent, isCoreEvent } from '../../core/events/types';
 import { type ZukIntroCameraPoint, zukIntroAddTick, zukIntroCutsceneFrame } from '../../encounters/zuk/introCutscene';
 import { zukTargetsPlayer } from '../../encounters/zuk/targeting';
 import { ZUK_NPC_ID } from '../../npcs/inferno/constants';
@@ -116,13 +115,6 @@ export class InfernoSceneCompositor extends SceneCompositor {
         zIndex: Z_LAYERS.GRID + 2,
       }),
     );
-  }
-
-  /** A pruned actor's drawn presentation goes with it, corpse included. */
-  protected override onEncounterEvents(events: GameEvent[]): void {
-    for (const event of events)
-      if (isCoreEvent(event, 'actor_despawned'))
-        this.npcInstanceManager.removePresentation(this.actorRenderIdOf(event.actorId));
   }
 
   /**

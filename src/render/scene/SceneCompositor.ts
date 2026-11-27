@@ -3,7 +3,7 @@ import type { LocWithType } from '../../cache/CacheManager';
 import { getSpecialAttackDef } from '../../core/combat/player/specialAttacks/registry';
 import { GRID_SIZE, getArenaBounds, getWalkableTiles } from '../../core/constants';
 import { getArenaTileExtent } from '../../core/encounters/mapFootprint';
-import { isActorPresentationsRemovedEvent } from '../../core/events/encounterVisual';
+import { type EncounterGraphicCue, isActorPresentationsRemovedEvent } from '../../core/events/encounterVisual';
 import { type GameEvent, isCoreEvent } from '../../core/events/types';
 import type { ReplayDisplayFrame } from '../../core/ReplayRecorder';
 import { TileKeySetCache } from '../../core/tileKeySet';
@@ -88,7 +88,7 @@ import { describePlayerEffects } from '../effects/playerEffectDescriptors';
 import type { ActorVisualPositionResolver } from '../effects/projectileAim';
 import { ReplayProjectileWork } from '../effects/replayProjectileWork';
 import { SpotAnimRenderer } from '../effects/SpotAnimRenderer';
-import type { SpotAnimTransform } from '../effects/spotAnimTypes';
+import type { SpotAnimStyle, SpotAnimTransform } from '../effects/spotAnimTypes';
 import { createNpcCenterTransformSource } from '../effects/transforms/npcCenterTransform';
 import { LocRenderer, type LocRenderOptions } from '../environment/LocRenderer';
 import { resolveLocRenderFilter, resolveRenderLoc } from '../environment/locRenderFilter';
@@ -475,7 +475,7 @@ export class SceneCompositor {
   /** See {@link SceneCompositorOptions.npcPresentation}. */
   protected readonly npcPresentation: 'cues' | 'frame';
   /** The scene's `encounter_visual` clips, flights and graphics. */
-  protected readonly cues = new EncounterCuePlayer(this.spotAnimRenderer);
+  protected readonly cues = new EncounterCuePlayer(this.spotAnimRenderer, (cue) => this.encounterGraphicStyle(cue));
   /** The history the cue player last synced from; undefined live and while a replay waits for assets. */
   private cueHistory: readonly ReplayDisplayFrame[] | undefined;
   /** Whether this frame rebuilt the cues from history (a seek, a new history or a restore). */
@@ -1159,19 +1159,32 @@ export class SceneCompositor {
   protected onEncounterEvents(_events: GameEvent[], _context: RenderContext): void {}
 
   /**
-   * Applies this frame's presentation removals, then brings the cue player to the frame: live, it takes
-   * the new batches; in replay, what the history owes at the destination, rebuilt on a seek, a new
-   * history or a restore. Runs before actors are synced, so a removal never takes the actors that
-   * replace the removed ones.
+   * Brings the cue player to the frame, then applies this frame's removals: live, it takes the new
+   * batches; in replay, what the history owes at the destination, rebuilt on a seek, a new history or
+   * a restore. Runs before actors are synced, so a removal never takes the actors that replace the
+   * removed ones.
    *
+   * An actor the simulation removed outright (`actor_despawned`, an OSRS `del`) leaves nothing drawn:
+   * no model or corpse, no clip still to start and no graphic riding it. `actor_presentations_removed`
+   * drops every presentation of its NPC types, corpses the simulation already pruned included.
+   */
+  private syncEncounterCues(events: readonly GameEvent[], ctx: RenderContext): void {
+    this.syncEncounterCueSource(events, ctx);
+    for (const event of events) {
+      if (isCoreEvent(event, 'actor_despawned')) {
+        this.npcInstanceManager.removePresentation(this.actorRenderIdOf(event.actorId));
+        this.cues.removeActor(event.actorId);
+      } else if (isActorPresentationsRemovedEvent(event))
+        this.npcInstanceManager.removePresentationsByNpcType(event.npcTypeIds);
+    }
+  }
+
+  /**
    * A replay frame shown before the encounter's assets settle holds no cues; readiness retries it.
    * With cue presentation, such a frame, one that rebuilds the cues and one initializing a restored
    * presentation all advance nothing, so their frame sounds sync silently.
    */
-  private syncEncounterCues(events: readonly GameEvent[], ctx: RenderContext): void {
-    for (const event of events)
-      if (isActorPresentationsRemovedEvent(event))
-        this.npcInstanceManager.removePresentationsByNpcType(event.npcTypeIds);
+  private syncEncounterCueSource(events: readonly GameEvent[], ctx: RenderContext): void {
     const history = ctx.replayHistory;
     const index = this.replayEffectIndex;
     if (!history || !index) {
@@ -1195,6 +1208,11 @@ export class SceneCompositor {
     this.reconstructedVisuals = true;
     // Rebuilt actors restart the cycle clock at the destination; skipped history is not replayed.
     this.npcAnimationCycle = null;
+  }
+
+  /** How the scene draws a cue graphic (depth bias, view culling); the default style unless overridden. */
+  protected encounterGraphicStyle(_cue: EncounterGraphicCue): SpotAnimStyle | undefined {
+    return undefined;
   }
 
   /**
@@ -1241,8 +1259,10 @@ export class SceneCompositor {
 
   /**
    * Restores replayed NPC poses, returning whether it did (live triggers are then skipped). With cue
-   * presentation: each standing actor's cue clips from its timeline, within its presented life. A frame
-   * whose cues were not synced (assets pending) restores nothing and triggers nothing.
+   * presentation, at the displayed cycle and after the NPC clock reaches it: each standing actor's cue
+   * clips from its timeline, within its presented life, and every snapshot corpse at its exact age, so
+   * continuous replay shows the frame a seek would. A frame whose cues were not synced (assets pending)
+   * restores nothing and triggers nothing.
    */
   protected restoreEncounterPrimaries(ctx: RenderContext): boolean {
     const history = ctx.replayHistory;
@@ -1251,12 +1271,21 @@ export class SceneCompositor {
     if (history.frames !== this.cueHistory) return true;
     const cycle = this.primaryCycle;
     this.advanceNpcAnimationClock(cycle);
-    for (const npc of ctx.simulationState.npcs) {
-      if (!isNpcStandingAt(npc, cycle)) continue;
+    const { npcs } = ctx.simulationState;
+    for (const npc of npcs) {
+      const actorId = this.npcRenderIdOf(npc);
+      if (!isNpcStandingAt(npc, cycle)) {
+        if (npc.despawnTick !== undefined)
+          this.npcInstanceManager.reconstructDyingInstance(
+            actorId === npc.id ? npc : { ...npc, id: actorId },
+            Math.max(0, cycle / 30 - npc.despawnTick) * OSRS_TICK_MS,
+          );
+        continue;
+      }
       const timeline = index.cues.primaryTimeline(npc.id);
       if (!timeline) continue;
       if (
-        this.npcInstanceManager.restoreDeferredReplayAnimation(this.npcRenderIdOf(npc), timeline, {
+        this.npcInstanceManager.restoreDeferredReplayAnimation(actorId, timeline, {
           cycle,
           throughFrameIndex: history.throughFrameIndex,
           spawnTick: this.presentedFromTick(npc, ctx.simulationState),
@@ -1268,28 +1297,17 @@ export class SceneCompositor {
   }
 
   /**
-   * With cue presentation, after a replay frame rebuilt its cues: puts every corpse on display back on
-   * its frame, the snapshot's dead NPCs and those the simulation already pruned (from history), so a
-   * seek past a death neither restarts nor loses it.
+   * With cue presentation, after a replay frame rebuilt its cues: the corpses still on display whose
+   * NPCs the simulation already pruned, from history. Before the models are drawn, so the frame shows
+   * them.
    */
-  private reconstructCueCorpses(state: SimulationState, is2D: boolean): void {
-    if (this.npcPresentation !== 'cues' || !this.rebuiltReplayCues || is2D) return;
-    const liveActorIds = new Set<string>();
-    for (const npc of state.npcs) {
-      const id = this.npcRenderIdOf(npc);
-      if (npc.alive) {
-        liveActorIds.add(id);
-        continue;
-      }
-      if (npc.despawnTick === undefined) continue;
-      this.npcInstanceManager.reconstructDyingInstance(
-        id === npc.id ? npc : { ...npc, id },
-        Math.max(0, state.currentTick + this.npcInterpFraction - npc.despawnTick) * OSRS_TICK_MS,
-      );
-    }
+  private reconstructPrunedCorpses(npcs: readonly NpcSnapshot[], is2D: boolean): void {
     const index = this.replayEffectIndex;
     const throughFrameIndex = this.replayThroughFrameIndex;
-    if (!index || throughFrameIndex === undefined) return;
+    if (this.npcPresentation !== 'cues' || !this.rebuiltReplayCues || is2D || !index || throughFrameIndex === undefined)
+      return;
+    const liveActorIds = new Set<string>();
+    for (const npc of npcs) if (npc.alive) liveActorIds.add(this.npcRenderIdOf(npc));
     for (const presentation of index.deathPresentations(
       { cycle: this.primaryCycle, throughFrameIndex },
       this.npcInstanceManager.getMaximumLoadedDeathDurationMs(),
@@ -1466,9 +1484,9 @@ export class SceneCompositor {
   protected updateEncounterNpcFacing(playerVisualPosition: [number, number], scaledNpcDeltaMs: number): number {
     let deltaMs = scaledNpcDeltaMs;
     if (this.npcPresentation === 'cues') {
-      // Facing turns on the NPC clock too: by the cycles since it last advanced.
-      const cycle = ((this.latestSimulationState?.currentTick ?? 0) + this.npcInterpFraction) * 30;
-      deltaMs = this.npcAnimationCycle === null ? 0 : Math.max(0, cycle - this.npcAnimationCycle) * CLIENT_TICK_MS;
+      // Facing turns on the NPC clock too: by the displayed cycles since the clock last advanced.
+      const elapsed = this.npcAnimationCycle === null ? 0 : Math.max(0, this.primaryCycle - this.npcAnimationCycle);
+      deltaMs = elapsed * CLIENT_TICK_MS;
     }
     return this.npcInstanceManager.updateNpcVisualFacing(playerVisualPosition, deltaMs) ?? 0;
   }
@@ -1494,6 +1512,9 @@ export class SceneCompositor {
     this.startNpcAnimationClock(state.currentTick * 30);
     for (const { cue, cycle: start } of this.cues.takeAnimations(cycle)) {
       this.advanceNpcAnimationClock(start);
+      // Only on an actor still standing when it starts, as a replayed pose is: one killed on the cue's
+      // tick may still swing until its death animation (B:3356), a corpse never does.
+      if (!state.npcs.some((npc) => npc.id === cue.actorId && isNpcStandingAt(npc, start))) continue;
       if (this.attackClipsOf(cue.actorId, state)?.[cue.clipId] === undefined) continue;
       // A fresh trigger each time: the instance manager keeps one whose model has not loaded yet.
       this.npcInstanceManager.updateAnimations(0, 1, [
@@ -2302,7 +2323,7 @@ export class SceneCompositor {
     frameProfiler.beginPhase('syncNpcs');
     this.npcInterpFraction = Math.max(0, Math.min(1, (interpolatedTick ?? currentTick) - currentTick));
     this.syncNpcInstances(simulationState.npcs, is2D, simulationState, paused);
-    this.reconstructCueCorpses(simulationState, is2D);
+    this.reconstructPrunedCorpses(simulationState.npcs, is2D);
     frameProfiler.endPhase('syncNpcs');
 
     this.groundItemRenderer.setLoaders(

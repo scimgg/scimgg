@@ -5,8 +5,8 @@ no event adapters, actor-size heuristics, animation policy or projectile profile
 [`ProjectileFlight.ts`](../../src/render/effects/ProjectileFlight.ts) wraps it in one per-flight
 runtime shared by `ProjectileController` and
 [`NpcProjectileFlights`](../../src/render/effects/NpcProjectileFlights.ts), which flies the
-`NpcProjectileCue`s (`src/core/events/encounterVisual.ts`) that the encounter visual batch and
-Colosseum's visual events carry. It owns cycle scheduling,
+`NpcProjectileCue`s (`src/core/events/encounterVisual.ts`) that encounter visual batches carry.
+It owns cycle scheduling,
 incremental homing, model orientation, cache animation progress and render requests. `sample()`
 advances without drawing (replay reconstruction of encounter cues); `update()` uses the same sample and gates
 drawing on cache readiness. Motion starts at the first active sample, advances while the mesh is
@@ -82,8 +82,8 @@ without changing the homing integration.
   callback is rebound each 3D build. Before terrain contexts exist, and in standalone controllers,
   the point-based bilinear sampler over `terrainHeights` is used. A resolved zero is a valid height.
 
-Only flight references use this. Player impact graphics keep footprint/model-height anchors; Inferno
-graphics keep point-terrain anchors. Dynamic injected tile meshes and nested moving worldviews are
+Only flight references use this. Player impact graphics keep footprint/model-height anchors; encounter
+cue graphics keep point-terrain anchors. Dynamic injected tile meshes and nested moving worldviews are
 not modeled; flat terrain with zero raise yields the bare terrain height.
 
 ## Mathematical model

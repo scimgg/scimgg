@@ -34,9 +34,9 @@ normal per-frame update from snapshots, never inside a reset.
 
 Base participants clear encounter visuals (including `NpcInstanceManager` death fades,
 attack-trigger dedup and each instance's `NpcAnimationController`, plus `NpcVisualTracker.snap()`),
-event audio and the primary NPC's death spotanim. Yama registers `yama-effects` (wave, attack,
-fireball, void-flare instances), `yama-overlays` and `yama-frame-audio`; Inferno registers
-`inferno-visual-events` and `inferno-frame-audio`. The Yama overlay reset exists because replay
+event and frame audio, the encounter cues and NPC animation clock, and the primary NPC's death
+spotanim. Yama registers `yama-effects` (wave, attack, fireball, void-flare instances) and
+`yama-overlays`; the Inferno and Sol Heredit scenes need nothing beyond the base. The Yama overlay reset exists because replay
 frames share one cumulative damage log: a `DamageHistoryEntry` keeps object identity across frames,
 so a reference-keyed fade set would wrongly suppress an overlay that must reappear after seeking back.
 
@@ -136,15 +136,17 @@ committing it, so coarse and fine presentation share one trajectory. Historical 
 `NpcInstanceManager` (exact tick boundary uses current position; positive fractions interpolate
 previous to current); player positions follow the snapshot's previous position and path.
 
-In a scene with cue presentation (`npcPresentation: 'cues'`, the Inferno's), each actor's
+In a scene with cue presentation (`npcPresentation: 'cues'`, the Inferno's and Sol Heredit's), each actor's
 `ReplayDeferredPrimaryIndex` checkpoints accepted state plus a bounded pending tail at
 source-frame boundaries. Delayed cues may start out of emission order, so sorting all cues and
 taking the newest eligible would let future source frames reject earlier delayed cues; checkpoints
 keep source eligibility and same-time chronological order. `restoreDeferredReplayAnimation`
 restores primary and canonical base phase without updating historical meshes, excludes cues before
 spawn, holds destination movement constant, and starts a walking clip at the earlier of the first
-due cue or 50 client cycles after spawn. Corpses restore from their local `despawnTick` without
-stepping death animations. In 3D, every encounter's replay presentation waits until each spot
+due cue or 50 client cycles after spawn. Every replay frame poses each snapshot corpse at its exact
+age from its local `despawnTick`, without stepping death animations, so continuous playback ends a
+corpse on the cycle a seek would; a frame that rebuilds the cues also restores, from history, the
+corpses still on display whose NPCs the simulation already pruned. In 3D, every encounter's replay presentation waits until each spot
 animation and NPC type its render config declares has settled (`SceneCompositor.encounterAssetState`:
 loaded or failed, which is not proof of usable geometry), retrying without latching; a 2D view never
 waits.

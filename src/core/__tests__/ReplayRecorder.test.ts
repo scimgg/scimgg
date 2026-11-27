@@ -2771,11 +2771,50 @@ describe('ReplayRecorder reading older encounter event shapes', () => {
     ]);
   });
 
+  it('reads each colosseum_visual batch as an encounter_visual batch, anchoring each graphic as written', () => {
+    const { frames } = legacySolRecording();
+    const read = frames.flatMap(({ events }) => events);
+    const tile = (position: readonly [number, number]) => ({ kind: 'tile', position });
+    const attached = (actorId: string) => ({ kind: 'attached', actorId });
+
+    expect(read).toEqual([
+      {
+        ...LEGACY_SOL_EVENTS.telegraph,
+        type: 'encounter_visual',
+        projectiles: [],
+        graphics: [
+          { spotAnimId: 2698, target: tile([28, 30]), delayCycles: 0, height: 0 },
+          { spotAnimId: 2698, target: tile([29, 30]), delayCycles: 2, height: 0 },
+          { spotAnimId: 2698, target: tile([30, 30]), delayCycles: 4, height: 0 },
+        ],
+      },
+      {
+        ...LEGACY_SOL_EVENTS.attached,
+        type: 'encounter_visual',
+        graphics: [
+          { spotAnimId: 2668, target: attached('sol_heredit'), delayCycles: 6, height: 64 },
+          { spotAnimId: 2667, target: attached('absent'), delayCycles: 6, height: 0 },
+          { spotAnimId: 131, target: attached('player'), delayCycles: 30, height: 124 },
+        ],
+      },
+      {
+        ...LEGACY_SOL_EVENTS.beams,
+        type: 'encounter_visual',
+        projectiles: [],
+        graphics: LEGACY_SOL_EVENTS.beams.graphics.map(({ spotAnimId, position, delayCycles, height }) => ({
+          spotAnimId,
+          target: tile(position),
+          delayCycles,
+          height,
+        })),
+      },
+    ]);
+    expect(read.every(isEncounterVisualEvent)).toBe(true);
+  });
+
   it('passes events of every other shape through as written', () => {
-    for (const record of [legacySolRecording, legacyYamaRecording]) {
-      const { data, frames } = record();
-      expect(frames.map(({ events }) => events)).toEqual(data.frames.map(({ events }) => events));
-    }
+    const { data, frames } = legacyYamaRecording();
+    expect(frames.map(({ events }) => events)).toEqual(data.frames.map(({ events }) => events));
   });
 
   it.each([
@@ -2798,11 +2837,45 @@ describe('ReplayRecorder reading older encounter event shapes', () => {
       (event: GameEvent): GameEvent =>
         event.type === 'inferno_clear_minions' ? { ...event, npcTypeIds: [7701, '7702'] } : event,
     ],
-  ] as const)('refuses a recording with a malformed %s, installing none of it', (_, corrupt) => {
+    [
+      'colosseum_visual graphic with both a tile and an actor',
+      (event: GameEvent): GameEvent =>
+        event.type === 'colosseum_visual' &&
+        event.eventId === LEGACY_SOL_EVENTS.attached.eventId &&
+        Array.isArray(event.graphics)
+          ? { ...event, graphics: [{ ...event.graphics[0], position: [30, 30] }] }
+          : event,
+    ],
+    [
+      'colosseum_visual graphic with neither a tile nor an actor',
+      (event: GameEvent): GameEvent =>
+        event.type === 'colosseum_visual' && event.eventId === LEGACY_SOL_EVENTS.telegraph.eventId
+          ? { ...event, graphics: [{ spotAnimId: 2698, delayCycles: 0 }] }
+          : event,
+    ],
+    [
+      'colosseum_visual graphic attached to an empty actor id',
+      (event: GameEvent): GameEvent =>
+        event.type === 'colosseum_visual' &&
+        event.eventId === LEGACY_SOL_EVENTS.attached.eventId &&
+        Array.isArray(event.graphics)
+          ? { ...event, graphics: [{ spotAnimId: 2668, actorId: '', delayCycles: 6 }] }
+          : event,
+    ],
+    [
+      'colosseum_visual flight that lands before it launches',
+      (event: GameEvent): GameEvent =>
+        event.type === 'colosseum_visual' &&
+        event.eventId === LEGACY_SOL_EVENTS.attached.eventId &&
+        Array.isArray(event.graphics)
+          ? { ...event, projectiles: [{ ...LEGACY_SOL_EVENTS.attached.projectiles[0], startDelayCycles: 80 }] }
+          : event,
+    ],
+  ] as const)('refuses a recording with a malformed %s, installing none of it', (label, corrupt) => {
     const recorder = new ReplayRecorder();
     recorder.load(legacyYamaRecording().data);
     const installed = recorder.getDisplayFrames();
-    const { data } = legacyInfernoRecording();
+    const { data } = label.startsWith('colosseum_visual') ? legacySolRecording() : legacyInfernoRecording();
     const malformed = {
       ...data,
       frames: data.frames.map((frame) => ({

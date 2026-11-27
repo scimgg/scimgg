@@ -1,11 +1,11 @@
 import type { EncounterModifierTier } from '../../../core/encounters/encounterFactory';
 import type { EnvironmentalDamage } from '../../../core/encounters/types';
+import { emitEncounterVisual } from '../../../core/events/encounterVisual';
 import { reviveNpc } from '../../../core/npcDeath';
 import { isArenaFootprintWalkable } from '../../../core/npcMovementCollision';
 import { findNpcTileRoute, isCoordinateInsideFootprint } from '../../../core/npcRouteFinding';
 import { createNpcDefinition, type DefinedNpcActor } from '../../../core/npcs';
 import { createColosseumActor } from '../../../npcs/colosseum/actors';
-import { emitColosseumVisual } from '../../../npcs/colosseum/visualEvents';
 import type { Coordinate } from '../../../types/simulation';
 
 export const BEES_DAMAGE_SOURCE = 'Bees';
@@ -111,8 +111,9 @@ export const beesDefinition = createNpcDefinition<BeeState, undefined>({
     // B:3105/3125 enter only after movement, so must not sting on that tick.
     const footprint = actor.alive ? actor.previousPosition : actor.position;
     if (!isCoordinateInsideFootprint(footprint, actor.size, player.position)) return [];
-    emitColosseumVisual(context.tickEvents, {
+    emitEncounterVisual(context.tickEvents, {
       animations: [{ actorId: actor.id, clipId: 'attack', delayCycles: 0 }],
+      projectiles: [],
       graphics: [],
     });
     const protectedByAntipoison = player.poisonState.poisonVarp < 0;

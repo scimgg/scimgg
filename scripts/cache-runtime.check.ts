@@ -21,6 +21,7 @@ import {
 } from '../src/core/constants';
 import type { EncounterCommand } from '../src/core/encounters/commands';
 import type { EncounterModifierSelection, EncounterModifierTier } from '../src/core/encounters/encounterFactory';
+import { isEncounterVisualEvent } from '../src/core/events/encounterVisual';
 import { type GameEvent, isCoreEvent } from '../src/core/events/types';
 import { mulberry32 } from '../src/core/rng';
 import type { SimulationEngine } from '../src/core/SimulationEngine';
@@ -39,7 +40,6 @@ import { encounterDefaultCamera } from '../src/encounters/presentationModules';
 import { ALL_ENCOUNTER_KINDS, encounterRegistry } from '../src/encounters/registry';
 import { createSimulationEngineForNewRun } from '../src/encounters/simulationEngineFactory';
 import { COLOSSEUM_SPOTANIMS } from '../src/npcs/colosseum/constants';
-import { isColosseumVisualEvent } from '../src/npcs/colosseum/visualEvents';
 import type { AnimationSequence } from '../src/render/core/animation';
 import type { RenderQueue } from '../src/render/core/commands';
 import { sharedModelTextureIndex } from '../src/render/core/modelTextures';
@@ -1154,7 +1154,7 @@ const hasEvent = (session: EncounterSession, type: string) => session.events.som
 const colosseumCue = (session: EncounterSession, match: (clipIds: string[], spotAnimIds: number[]) => boolean) =>
   session.events.some(
     (event) =>
-      isColosseumVisualEvent(event) &&
+      isEncounterVisualEvent(event) &&
       match(
         event.animations.map((cue) => cue.clipId),
         event.graphics.map((cue) => cue.spotAnimId),

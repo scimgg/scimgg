@@ -12,7 +12,7 @@ import type { ProjectileFlightRenderer } from './ProjectileFlight';
 import { projectileEndpoint } from './projectileMotion';
 import { ReplayProjectileWork } from './replayProjectileWork';
 import { getOneShotDurationCycles, OneShotSpotAnim } from './spotAnimPlayback';
-import type { SpotAnimTransform } from './spotAnimTypes';
+import type { SpotAnimStyle, SpotAnimTransform } from './spotAnimTypes';
 
 /** One frame's view of the scene, once every actor's rendered position is known. */
 export type EncounterCueFrame = NpcProjectileFrame & {
@@ -44,7 +44,14 @@ export class EncounterCuePlayer {
   /** The frame the latest `update` was given; every graphic's transform resolves against it. */
   private frame: EncounterCueFrame | null = null;
 
-  constructor(private readonly renderer: ProjectileFlightRenderer) {
+  /**
+   * @param graphicStyle The scene's draw policy for each graphic (depth bias, view culling); fixed for
+   *   the graphic's life. Presentation, not cue data: the batch says only what plays where and when.
+   */
+  constructor(
+    private readonly renderer: ProjectileFlightRenderer,
+    private readonly graphicStyle: (cue: EncounterGraphicCue) => SpotAnimStyle | undefined = () => undefined,
+  ) {
     this.flights = new NpcProjectileFlights(renderer);
   }
 
@@ -86,6 +93,19 @@ export class EncounterCuePlayer {
         this.graphics.set(entry.id, this.createGraphic(entry.id, entry.cue, entry.tick * 30 + entry.cue.delayCycles));
     // Replay poses actors from their timelines; only live play after a restored handoff takes these.
     this.animations = index.cues.pendingAnimations(destination).sort((left, right) => left.cycle - right.cycle);
+  }
+
+  /**
+   * An actor the simulation removed outright (`actor_despawned`): its clips still to start and the
+   * graphics riding it go with it. Flights and graphics merely aimed at it play on.
+   */
+  removeActor(actorId: string): void {
+    this.animations = this.animations.filter(({ cue }) => cue.actorId !== actorId);
+    this.graphics.forEach(({ cue }, id) => {
+      if (cue.target.kind !== 'attached' || cue.target.actorId !== actorId) return;
+      this.renderer.despawn(id);
+      this.graphics.delete(id);
+    });
   }
 
   /** The clips due by `cycle`, in start order (emission order within a cycle), removed from the queue. */
@@ -175,6 +195,7 @@ export class EncounterCuePlayer {
       spotAnimId: cue.spotAnimId,
       startCycle: start,
       transformSource: { kind: 'dynamic', resolve },
+      style: this.graphicStyle(cue),
       heightOffsetMode: 'actor',
       fallbackDurationCycles: 0,
     });

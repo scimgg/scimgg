@@ -35,9 +35,11 @@ included, before the frame's actors are synced (a practice command replacing a s
 `actor_despawned` is not equivalent: a corpse the simulation already pruned may still be shown.
 
 Recordings from older builds are converted as `ReplayRecorder.load` reads them
-([`legacyReplayEvents.ts`](../../src/core/legacyReplayEvents.ts)): `inferno_visual` becomes
-`encounter_visual` and `inferno_clear_minions` becomes `actor_presentations_removed`, with ids,
-ticks, frames and parameters kept. A malformed recognized event fails the load before anything is
+([`legacyReplayEvents.ts`](../../src/core/legacyReplayEvents.ts)): `inferno_visual` and Sol
+Heredit's `colosseum_visual` become `encounter_visual` and `inferno_clear_minions` becomes
+`actor_presentations_removed`, with ids, ticks, frames and parameters kept. A `colosseum_visual`
+graphic's `position` is a tile target and its `actorId` an `attached` one; a missing height is 0 and
+missing projectiles are none. A malformed recognized event fails the load before anything is
 installed.
 
 ## Consumption

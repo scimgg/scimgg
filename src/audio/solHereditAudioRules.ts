@@ -1,6 +1,6 @@
+import { isEncounterVisualEvent } from '../core/events/encounterVisual';
 import { SOL_BEAM_PREPARED_EVENT } from '../encounters/solHeredit/constants';
 import { COLOSSEUM_SPOTANIMS } from '../npcs/colosseum/constants';
-import { isColosseumVisualEvent } from '../npcs/colosseum/visualEvents';
 import { play, type SoundRule, silent, type TimedSound } from './EventAudioPlayer';
 
 /**
@@ -54,9 +54,9 @@ export const solHereditAudioRules: Record<string, SoundRule> = {
     },
     preloadIds: [BEAM_WARNING_ID, BEAM_WARNING_FIRE_ID],
   },
-  colosseum_visual: {
+  encounter_visual: {
     resolve: (event) => {
-      if (!isColosseumVisualEvent(event)) return silent;
+      if (!isEncounterVisualEvent(event)) return silent;
       const sounds: TimedSound[] = [];
 
       // One sand burst plays one pair of sounds, however many tiles it lit.
@@ -67,10 +67,10 @@ export const solHereditAudioRules: Record<string, SoundRule> = {
       const impacts = event.graphics.filter((cue) => cue.spotAnimId === COLOSSEUM_SPOTANIMS.crystalImpact);
       // Each beam publishes one terminal impact. Intersecting beams remain distinct sounds.
       for (const cue of impacts) {
-        if (!('position' in cue)) continue;
+        if (cue.target.kind !== 'tile') continue;
         sounds.push({
           id: BEAM_FIRE_ID,
-          position: [...cue.position],
+          position: [...cue.target.position],
           range: BEAM_FIRE_RANGE,
           channel: 'area',
         });

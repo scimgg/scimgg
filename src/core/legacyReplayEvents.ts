@@ -17,6 +17,9 @@ import type { GameEvent } from './events/types';
  * - `inferno_visual` (49ef532 and before) is an `encounter_visual` batch: the same clips, projectiles
  *   and graphics, whose `actor` and `tile` targets mean what they mean in the batch.
  * - `inferno_clear_minions` is an `actor_presentations_removed` of the same NPC types.
+ * - `colosseum_visual` (Sol Heredit) is an `encounter_visual` batch too. A graphic with a `position`
+ *   stands on that tile; one with an `actorId` rode that actor, so it is `attached`. A height left out
+ *   was ground level, 0; projectiles left out were none.
  */
 
 const cycles = z.number().int().nonnegative();
@@ -30,6 +33,24 @@ const legacyInfernoVisualSchema = z.object({
   graphics: z.array(
     z.object({ spotAnimId: cycles, target: npcVisualTargetSchema, delayCycles: cycles, height: cycles }),
   ),
+});
+
+const coordinate = z.tuple([z.number(), z.number()]);
+
+const legacyColosseumVisualSchema = z.object({
+  type: z.literal('colosseum_visual'),
+  eventId: cycles,
+  tick: cycles,
+  animations: z.array(z.object({ actorId: z.string().min(1), clipId: z.string().min(1), delayCycles: cycles })),
+  graphics: z.array(
+    z.union([
+      z.object({ spotAnimId: cycles, position: coordinate, delayCycles: cycles, height: cycles.optional() }).strict(),
+      z
+        .object({ spotAnimId: cycles, actorId: z.string().min(1), delayCycles: cycles, height: cycles.optional() })
+        .strict(),
+    ]),
+  ),
+  projectiles: z.array(npcProjectileCueSchema).optional(),
 });
 
 const legacyClearMinionsSchema = z.object({
@@ -59,6 +80,24 @@ function decodeEvent(event: GameEvent, frameIndex: number): GameEvent {
       const parsed = legacyInfernoVisualSchema.safeParse(event);
       if (!parsed.success) throw new LegacyReplayEventError(frameIndex, event, parsed.error.message);
       return { ...event, type: ENCOUNTER_VISUAL_EVENT };
+    }
+    case 'colosseum_visual': {
+      const parsed = legacyColosseumVisualSchema.safeParse(event);
+      if (!parsed.success) throw new LegacyReplayEventError(frameIndex, event, parsed.error.message);
+      return {
+        ...event,
+        type: ENCOUNTER_VISUAL_EVENT,
+        projectiles: event.projectiles ?? [],
+        graphics: parsed.data.graphics.map(({ spotAnimId, delayCycles, height = 0, ...anchor }) => ({
+          spotAnimId,
+          target:
+            'position' in anchor
+              ? { kind: 'tile', position: [anchor.position[0], anchor.position[1]] }
+              : { kind: 'attached', actorId: anchor.actorId },
+          delayCycles,
+          height,
+        })),
+      };
     }
     case 'inferno_clear_minions': {
       const parsed = legacyClearMinionsSchema.safeParse(event);

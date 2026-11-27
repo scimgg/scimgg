@@ -132,7 +132,9 @@ export function encounterVisual(cue: EncounterVisualCue): UnstampedEncounterVisu
   return { type: ENCOUNTER_VISUAL_EVENT, ...structuredClone(cue) };
 }
 
+/** Emits the batch; an empty one carries nothing and is not emitted, so callers may build one unconditionally. */
 export function emitEncounterVisual(events: TickEvents, cue: EncounterVisualCue): void {
+  if (cue.animations.length === 0 && cue.projectiles.length === 0 && cue.graphics.length === 0) return;
   events.emit(encounterVisual(cue));
 }
 

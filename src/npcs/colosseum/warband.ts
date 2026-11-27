@@ -3,7 +3,7 @@ import type { PlayerActor } from '../../core/actors/PlayerActor';
 import type { DamageType } from '../../core/actors/types';
 import { npcHitDelayFromEndTime } from '../../core/combat/hitDelay';
 import { type AttackPlan, resolveAttackRequest } from '../../core/combat/npcAttackRequest';
-import type { NpcProjectileCue } from '../../core/events/encounterVisual';
+import { emitEncounterVisual, type NpcProjectileCue } from '../../core/events/encounterVisual';
 import { canNpcActThisTurn } from '../../core/npcDeath';
 import { isArenaFootprintWalkable } from '../../core/npcMovementCollision';
 import {
@@ -29,7 +29,6 @@ import {
   WARBAND_SEER_IMPACT_HEIGHT,
   WARBAND_SEER_NPC_ID,
 } from './constants';
-import { emitColosseumVisual } from './visualEvents';
 
 /**
  * Fortis Colosseum Fremennik warband. Capture facts and their status labels live in
@@ -258,25 +257,35 @@ export const warbanderDefinition = createNpcDefinition<WarbanderState, undefined
     if (attack === null) throw new TypeError(`Missing formula stats for ${actor.id}`);
     const { projectile } = profile;
     const impact = projectile?.impact;
-    emitColosseumVisual(context.tickEvents, {
+    emitEncounterVisual(context.tickEvents, {
       animations: [{ actorId: actor.id, clipId: 'attack', delayCycles: 0 }],
-      graphics: impact ? [{ ...impact, actorId: player.id, delayCycles: projectile.flight.endDelayCycles }] : [],
-      ...(projectile && {
-        projectiles: [
-          {
-            ...projectile.flight,
-            sourcePosition: npcProjectileSource({ size: actor.size, position: launch }),
-            target: actorVisualTarget(player),
-          },
-        ],
-      }),
+      graphics: impact
+        ? [
+            {
+              spotAnimId: impact.spotAnimId,
+              target: { kind: 'attached', actorId: player.id },
+              delayCycles: projectile.flight.endDelayCycles,
+              height: impact.height,
+            },
+          ]
+        : [],
+      projectiles: projectile
+        ? [
+            {
+              ...projectile.flight,
+              sourcePosition: npcProjectileSource({ size: actor.size, position: launch }),
+              target: actorVisualTarget(player),
+            },
+          ]
+        : [],
     });
     return { environmentalDamages: [], npcAttacks: [attack] };
   },
   onDamageResolved: ({ actor, damage, context }) => {
     if (damage.effectiveDamage < 0 || damage.hpAfter <= 0 || damage.hpAfter > damage.hpBefore) return;
-    emitColosseumVisual(context.tickEvents, {
+    emitEncounterVisual(context.tickEvents, {
       animations: [{ actorId: actor.id, clipId: 'defend', delayCycles: 0 }],
+      projectiles: [],
       graphics: [],
     });
   },

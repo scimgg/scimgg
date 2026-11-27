@@ -1,10 +1,10 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { getArenaAllowUnboundedFallback, getArenaConfig, setArenaConfig } from '../../../../core/constants';
+import { isEncounterVisualEvent } from '../../../../core/events/encounterVisual';
 import { TickEvents } from '../../../../core/events/TickEvents';
 import { markNpcDead } from '../../../../core/npcDeath';
 import { isCoordinateInsideFootprint } from '../../../../core/npcRouteFinding';
 import { SimulationEngine } from '../../../../core/SimulationEngine';
-import { isColosseumVisualEvent } from '../../../../npcs/colosseum/visualEvents';
 import { createEncounterActorOps } from '../../../../test/helpers/encounterActorOps';
 import type { Coordinate } from '../../../../types/simulation';
 import { LobbyEncounter } from '../../../lobby/LobbyEncounter';
@@ -232,7 +232,7 @@ describe('generic Bees!', () => {
     expect(
       events
         .flush()
-        .filter(isColosseumVisualEvent)
+        .filter(isEncounterVisualEvent)
         .flatMap((event) => event.animations),
     ).toEqual(bees.map((bee) => ({ actorId: bee.id, clipId: 'attack', delayCycles: 0 })));
   });
