@@ -16,6 +16,7 @@ evidence: [policy](./zulrah-policy.md).
 | **WSt** | [Stun (status)](https://oldschool.runescape.wiki/w/Stun_(status)) | 2026-11-27 |
 | **C** | Pinned cache, OpenRS2 2772 (`npm run setup`): NpcType, SeqType, SpotAnimType, LocType, map squares 35_47 and 35_48 | — |
 | **G** | RuneLite gameval tables (BSD-2-Clause), `runelite/runelite` at `9af7b54deaac35b3153af06195d66c1d68fbea5a`, `runelite-api/src/main/java/net/runelite/api/gameval/{NpcID,AnimationID,SpotanimID,ObjectID}.java` | 2026-11-27 |
+| **RL** | RuneLite (BSD-2-Clause) at the same commit, `runelite-client/src/main/java/net/runelite/client/plugins/timersandbuffs/TimersAndBuffsPlugin.java` (`VENOM_VALUE_CUTOFF`, `POISON_TICK_LENGTH`) | 2026-11-26 |
 
 ## Identity and stats
 
@@ -50,13 +51,16 @@ evidence: [policy](./zulrah-policy.md).
 | Venom clouds come from "a barrage of dark-green orbs"; a cloud covers a 3x3 area and deals "varying damage per tick"; clouds "do not envenom the player"; the opening fill leaves "the tips on the east and west sides clear" | WS |
 | Snakelings come from "white orbs"; "attacks with either magic or melee, but never both"; "Protection prayers block their attacks"; they die after "more than 40 seconds" and "die off with Zulrah when it is killed" | WS; WSn |
 | Venom: "The ranged and magic attacks will envenom the player unless they miss, even if blocked by a protection prayer"; snakelings "inflict venom with their attacks" | WS; W |
-| Venom damage: 6 per 18 s, +2 a hit, capped at 20; antipoison converts it to poison | WV Venom |
-| Anti-venom 12905/7/9/11: cures, venom immunity 36–54 s. Anti-venom+ 12913/5/7/9: 216 s (Venom table). Extended anti-venom+ 29824/27/30/33: 378 s per dose | WV |
+| Venom damage: 6 per 18 s, +2 a hit, capped at 20; an antipoison "will convert the venom to regular poison, which starts at the same damage the venom had", and a second dose cures it; anti-venom "will completely cure venom" | WV Venom |
+| Anti-venom 12905/7/9/11: cures; poison immunity 12 min, venom 36–54 s. Anti-venom+ 12913/5/7/9: 15 min, venom ~3.6 min. Extended anti-venom+ 29824/27/30/33: 17.7 min, venom ~6.3 min per dose | WV item pages |
+| Poison, venom and both immunities are one varp; immunity counts toward 0 one step per 30 ticks, and blocks venom only below -38 (`VENOM_VALUE_CUTOFF = -38; // Antivenom < -38 <= Antipoison < 0`) | RL |
 | Serpentine helm 12931 (charged) and its cosmetic recolours tanzanite 13197 and magma 13199: immunity to venom and poison while worn; does not cure | WV Serpentine helm; equipment data |
 | Zulrah "will appear as soon as the player continues the dialogue or performs an action"; it "will never attack directly at the start; rather, Zulrah will fill the area with venom clouds" | W Transportation; WS All rotations |
 | Zulrah is one NPC that "changes forms by diving into the swamp and resurfacing somewhere else" | W |
 | The dive plays the death animation "forwards and backwards at faster speeds" (Mod Ash, quoted) | W Trivia |
 
+| Poison counter: steps every 30 ticks on one clock (t2962, t2992, … t3172); envenoming at -37 on t3193 first stepped on t3202, and an extended anti-venom+ sip on t3222 (venom → -59) next stepped on t3232, both on that phase. Messages: stepping to -39, "Your venom resistance is about to wear off." (t3112); to -38, "Your venom resistance has worn off, but you are still resistant to poison." (t3142) | Z2 |
+| Re-drinking extended anti-venom+ while its immunity runs resets the counter to the full -59. Reported by the project owner from play; not yet captured (Z2's sip, above, shows the step clock keeping its phase across a drink) | Reported |
 ## Cache ids
 
 | Id | Gameval name | Used for | Source |

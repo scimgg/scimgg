@@ -26,6 +26,6 @@ registered, with what would settle it, in the [open questions](./zulrah-open-que
 | Blue | Magic 75% of the time |
 | Rotations | Equally likely |
 | Projectiles | 1045 ranged, 1044 cloud orb, 1046 magic; generic magic-spell flight |
-| Venom immunity | One shared poison/venom immunity timer, set to each anti-venom's venom duration (45 s, 216 s, 378 s) |
+| Venom immunity | The game's single poison counter (`core/poison.ts`): Antidote++ -40, anti-venom -41, anti-venom+ -50, extended anti-venom+ -59 steps, venom blocked below -38. The 30-tick step clock keeps its phase through drinks and envenoming and starts fresh only when the counter leaves 0 (capture), so a venom immunity drunk from clean is the top of its wiki range and one drunk over a running counter falls inside it. A re-sip resets to the potion's full value (reported by the project owner from play); a weaker potion over a longer running immunity keeps the longer one (owner-approved policy) |
 | Arena | Map squares 35_47 and 35_48: the engine accepts any tile inside the arena bounds (`isInTileSpace`), and terrain heights are composed across both squares |
 | Loadouts | The wiki's five inventory setups slot for slot, plus Ranged Only with a Twisted bow; substitutions are in the open questions |

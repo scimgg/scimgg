@@ -7,7 +7,7 @@ import { contextAttackDecisions, contextDecisions } from '../../core/decisionRan
 import type { EncounterTickResult, EnvironmentalDamage } from '../../core/encounters/types';
 import { canNpcActThisTurn, canReceiveNewAttack } from '../../core/npcDeath';
 import { createNpcDefinition, type NpcDefinitionContext } from '../../core/npcs';
-import { VENOM_THRESHOLD } from '../../core/timers';
+import { VENOM_THRESHOLD } from '../../core/poison';
 import { getMonsterFormulaStats } from '../../data/monsterData';
 import type { Coordinate, TickNumber } from '../../types/simulation';
 import { emitInfernoVisual } from '../inferno/visualEvents';

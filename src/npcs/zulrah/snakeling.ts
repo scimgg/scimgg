@@ -7,7 +7,7 @@ import { canNpcActThisTurn, canReceiveNewAttack } from '../../core/npcDeath';
 import { isArenaFootprintWalkable } from '../../core/npcMovementCollision';
 import { type NpcPursuitProfile, pursuePlayer } from '../../core/npcPursuit';
 import { createNpcDefinition } from '../../core/npcs';
-import { VENOM_THRESHOLD } from '../../core/timers';
+import { VENOM_THRESHOLD } from '../../core/poison';
 import { getMonsterFormulaStats, getMonsterHp } from '../../data/monsterData';
 import type { Coordinate, TickNumber } from '../../types/simulation';
 import { emitInfernoVisual } from '../inferno/visualEvents';

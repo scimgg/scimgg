@@ -8,8 +8,8 @@ import {
   setArenaConfig,
   setResolvedArenaConfig,
 } from '../../../core/constants';
+import { VENOM_THRESHOLD } from '../../../core/poison';
 import { SimulationEngine } from '../../../core/SimulationEngine';
-import { VENOM_THRESHOLD } from '../../../core/timers';
 import type { WorldState } from '../../../core/WorldState';
 import {
   PLAYER_STUNNED_SPOTANIM_ID,

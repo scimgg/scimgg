@@ -29,6 +29,7 @@ import { isCoreEvent } from '../core/events/types';
 import { reviveNpc } from '../core/npcDeath';
 import { createNpcStepOccupancyPredicate } from '../core/npcOccupancy';
 import { createNpcDefinition, NpcDefinitionCollection } from '../core/npcs';
+import { VENOM_THRESHOLD } from '../core/poison';
 import { SimulationEngine } from '../core/SimulationEngine';
 import type { WorldState } from '../core/WorldState';
 import { RUNE } from '../data/spellRunes';
@@ -4728,6 +4729,92 @@ describe('SimulationEngine', () => {
 
       expect(player.poisonState.poisonVarp).toBe(30);
       expect(player.poisonState.poisonTickCounter).toBe(POISON_TICK_INTERVAL);
+    });
+
+    it('lets venom through once a drunk cure counts up to the venom cutoff', () => {
+      // Antidote++ sets -40 and anti-venom -41; venom lands from -38. A step is 30 ticks from the
+      // drink, and a hit lands before that tick's timer band, so it takes one tick past the step.
+      function ticksToFirstEnvenom(potionId: number): number {
+        const eng = new SimulationEngine({ encounter: new YamaEncounter(), startPos: safePos });
+        eng.setMechanicsConfig({ yamaMageRange: false, waves: false, fireballs: false, voidFlares: false });
+        eng.setInventory([{ id: potionId }]);
+        const world = getWorldState(eng);
+        const player = world.getPlayer()!;
+        eng.queueItemAction(0);
+        eng.advanceTick(safePos);
+        const drankTick = world.tick;
+        for (let i = 0; i < 4 * POISON_TICK_INTERVAL; i++) {
+          enqueueEnginePendingHit(eng, {
+            sourceId: 'yama',
+            targetId: 'player',
+            style: 'melee',
+            attackKind: 'melee_crush',
+            launchTick: world.tick,
+            impactTick: world.tick + 1,
+            rolledDamage: 0,
+            accuracySucceeded: true,
+            applyPoison: VENOM_THRESHOLD,
+          });
+          eng.advanceTick(safePos);
+          if (player.poisonState.poisonVarp >= VENOM_THRESHOLD) return world.tick - drankTick;
+        }
+        throw new Error(`venom never landed after potion ${potionId}`);
+      }
+
+      expect(ticksToFirstEnvenom(5952)).toBe(2 * POISON_TICK_INTERVAL + 1); // Antidote++
+      expect(ticksToFirstEnvenom(12905)).toBe(3 * POISON_TICK_INTERVAL + 1); // Anti-venom
+    });
+
+    it('keeps the 30-tick step clock through envenoming and drinking, as in the capture', () => {
+      // Private gameplay capture zulrah-packet-data-2.txt: a step on t3172 (-38 to -37); venom at -37
+      // on t3193; its first step on t3202; an extended anti-venom+ sip on t3222 (to -59); the next
+      // step on t3232. Every step stays on the t3172 phase.
+      const EXTENDED_ANTI_VENOM_PLUS_4 = 29824;
+      const eng = new SimulationEngine({ encounter: new YamaEncounter(), startPos: safePos });
+      eng.setMechanicsConfig({ yamaMageRange: false, waves: false, fireballs: false, voidFlares: false });
+      eng.setInventory([{ id: EXTENDED_ANTI_VENOM_PLUS_4 }]);
+      const world = getWorldState(eng);
+      const player = world.getPlayer()!;
+      // A step is due on the next tick, as on t3172.
+      player.poisonState = { poisonVarp: -38, poisonTickCounter: 1, startedTick: null };
+      const stepped = () => player.poisonState.poisonVarp;
+      const advance = (ticks: number) => {
+        for (let i = 0; i < ticks; i++) eng.advanceTick(safePos);
+      };
+      advance(1);
+      expect(stepped()).toBe(-37);
+      const stepTick = world.tick;
+
+      advance(3193 - 3172 - 1);
+      enqueueEnginePendingHit(eng, {
+        sourceId: 'yama',
+        targetId: 'player',
+        style: 'melee',
+        attackKind: 'melee_crush',
+        launchTick: world.tick,
+        impactTick: world.tick + 1,
+        rolledDamage: 0,
+        accuracySucceeded: true,
+        applyPoison: VENOM_THRESHOLD,
+      });
+      advance(1);
+      expect(world.tick - stepTick).toBe(3193 - 3172);
+      expect(stepped()).toBe(VENOM_THRESHOLD);
+
+      advance(3202 - 3193 - 1);
+      expect(stepped()).toBe(VENOM_THRESHOLD);
+      advance(1);
+      expect(stepped()).toBe(VENOM_THRESHOLD + 1);
+
+      advance(3222 - 3202 - 1);
+      eng.queueItemAction(0);
+      advance(1);
+      expect(stepped()).toBe(-59);
+      advance(3232 - 3222 - 1);
+      expect(stepped()).toBe(-59);
+      advance(1);
+      expect(world.tick - stepTick).toBe(3232 - 3172);
+      expect(stepped()).toBe(-58);
     });
 
     it('does not let a delayed heal come due after a lethal hit revive the corpse', () => {

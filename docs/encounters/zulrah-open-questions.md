@@ -63,6 +63,15 @@ Paths: **N/** = `src/npcs/zulrah/`, **E/** = `src/encounters/zulrah/`.
 | Dying NPC 2047 | Unused; 2045/2046 play 2408 | UNVERIFIED | A snakeling dying |
 | Orb launched as Zulrah dives | Not modelled | Gap | — |
 
+## Venom
+
+| Question | Simulator | Label | Settled by |
+|---|---|---|---|
+| Immunity steps per potion | Poison immunity / 18 s: Antidote++ 40, anti-venom 41, anti-venom+ 50, extended anti-venom+ 59; venom immunity is the steps below -38 | INFERENCE (wiki durations and RuneLite's cutoff). Anti-venom's 41 fits /w/Anti-venom (read 2026-11-27): "immunity to venom for 36-54 seconds" is 3 steps below -38, depending on the clock's phase; 41 steps of poison immunity is the page's "12 minutes" to within one step | The poison varp after each potion |
+| Step clock with the counter at 0 | Stopped; a counter leaving 0 starts it with a full 30 ticks | UNVERIFIED | Z2 never shows the counter at 0. Ticks from poisoning or drinking from clean to the first step |
+| Re-drinking over a running immunity | Resets to the potion's full value (`Math.min(current, -steps)`); the step clock keeps its phase | REPORTED (from play) | Reported by the project owner for extended anti-venom+ (to -59); not yet captured. Z2 shows the clock keeping its phase across a drink from venom (t3222, next step t3232) |
+| A weaker potion over a longer running immunity | Keeps the longer immunity, and its step clock | POLICY (approved by the project owner; not captured) | The poison varp after, e.g., anti-venom+ drunk at -55 |
+
 ## Attacks and rotation
 
 | Question | Simulator | Label | Settled by |

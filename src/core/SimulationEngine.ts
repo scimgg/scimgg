@@ -11,7 +11,6 @@ import {
 import { applyMonsterStatOverrideToFormulaStats } from '../data/monsterData';
 import { hasPrayerRestorationEnhancement } from '../data/prayerRestoration';
 import { DEATH_CHARGE_SPELL, MARK_OF_DARKNESS_SPELL } from '../data/spellRunes';
-import { VENOM_IMMUNE_HEAD_IDS } from '../data/venomImmunity';
 import { gracefulRegenBonusPercent } from '../data/weightReducingClothing';
 import { baseEncounterKind } from '../encounters/catalog';
 import type { ObjTypeLoader } from '../rs/config/objtype/ObjTypeLoader';
@@ -190,6 +189,7 @@ import {
 } from './npcDeath';
 import { npcFootprintsOverlap } from './npcOccupancy';
 import { NpcDefinitionCollection, type NpcDefinitionContext } from './npcs';
+import { applyPlayerPoison, VENOM_THRESHOLD } from './poison';
 import { type PrayerInputOutcome, type QueuedPrayerAction, resolvePrayerActions } from './prayerInput';
 import type { ReplayTakeoverWork } from './replayTakeover';
 import { mulberry32 } from './rng';
@@ -297,8 +297,6 @@ const NON_METAL_BODY_NAME_FRAGMENTS = [
   'hide',
   "d'hide",
 ];
-
-const VENOM_THRESHOLD = 1_000_000;
 
 export interface SimulationEngineOptions {
   replayTakeoverWork?: ReplayTakeoverWork;
@@ -4238,27 +4236,9 @@ export class SimulationEngine {
     };
   }
 
-  private applyPoisonToPlayer(poisonVarp: number): void {
+  private applyPoisonToPlayer(severity: number): void {
     const player = this.player();
-    const currentVarp = player.poisonState.poisonVarp;
-    if (currentVarp < 0 || currentVarp >= VENOM_THRESHOLD) {
-      return;
-    }
-    // A worn serpentine helm (or its recolours) grants immunity to venom and poison; it does not cure
-    // what is already there (https://oldschool.runescape.wiki/w/Serpentine_helm).
-    if (player.equipment.head !== undefined && VENOM_IMMUNE_HEAD_IDS.has(player.equipment.head)) {
-      return;
-    }
-
-    // Reset tick counter on 0→nonzero transition so the first cycle is a full 30 ticks. The
-    // timer band runs AFTER the hit that poisons, so recording the tick is what stops it
-    // spending one of those 30 on the application tick itself.
-    const resetCounter = currentVarp === 0;
-    player.poisonState = {
-      ...player.poisonState,
-      poisonVarp: Math.max(currentVarp, poisonVarp),
-      ...(resetCounter ? { poisonTickCounter: POISON_TICK_INTERVAL, startedTick: this.worldState.tick } : {}),
-    };
+    player.poisonState = applyPlayerPoison(player.poisonState, severity, player.equipment.head, this.worldState.tick);
   }
 
   public getFailedCondition(): FailCondition | null {

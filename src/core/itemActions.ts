@@ -19,13 +19,13 @@ import type {
 } from '../types/playerState';
 import {
   clonePlayerStats,
-  POISON_TICK_INTERVAL,
   RESTORABLE_STATS,
   SATURATED_HEART_COOLDOWN_TICKS,
   SATURATED_HEART_DURATION_TICKS,
   SURGE_POTION_COOLDOWN_TICKS,
 } from '../types/playerState';
 import type { PrayerState } from '../types/simulation';
+import { cureWithAntipoison, cureWithAntivenom, reducePoison } from './poison';
 import { boostStat, drainStat, lockStatDecay, restoreStat, withStatCurrent } from './statLevels';
 
 /**
@@ -140,19 +140,6 @@ export type ItemActionModifiers = {
   readonly enhancedPrayerRestoration?: boolean;
   readonly ringOfEnduranceEquipped?: boolean;
 };
-
-const VENOM_THRESHOLD = 1_000_000;
-const VENOM_OFFSET = VENOM_THRESHOLD - 3;
-
-function getVenomDamage(poisonVarp: number): number {
-  return Math.min((poisonVarp - VENOM_OFFSET) * 2, 20);
-}
-
-function downgradeVenomToPoisonVarp(poisonVarp: number): number {
-  // Convert venom damage to poison varp that produces the same hit.
-  // Poison damage = ceil(varp / 5), so varp = damage * 5 gives exact match.
-  return getVenomDamage(poisonVarp) * 5;
-}
 
 function handleHeal(state: ItemActionState, amount: number): ItemActionState {
   const cappedHeal = Math.min(state.maxHP, state.playerHP + amount);
@@ -305,39 +292,9 @@ function handleRestoreRun(state: ItemActionState, amount: number): ItemActionSta
   };
 }
 
-function handleCurePoison(state: ItemActionState, immunityTicks: number): ItemActionState {
-  // Convert game ticks to varp units: each varp unit = one 30-tick poison cycle
-  const varpUnits = Math.ceil(immunityTicks / POISON_TICK_INTERVAL);
-  // Reset tick counter so first immunity cycle is a full 30 ticks
-  return {
-    ...state,
-    poisonState: {
-      ...state.poisonState,
-      poisonVarp: -varpUnits,
-      poisonTickCounter: POISON_TICK_INTERVAL,
-      startedTick: state.currentTick,
-    },
-  };
-}
-
-function handleReducePoison(state: ItemActionState, amount: number): ItemActionState {
-  const { poisonVarp } = state.poisonState;
-  if (poisonVarp < 0 || poisonVarp === 0) {
-    return state;
-  }
-
-  const reducedVarp =
-    poisonVarp >= VENOM_THRESHOLD
-      ? Math.max(0, downgradeVenomToPoisonVarp(poisonVarp) - amount)
-      : Math.max(0, poisonVarp - amount);
-
-  return {
-    ...state,
-    poisonState: {
-      ...state.poisonState,
-      poisonVarp: reducedVarp,
-    },
-  };
+/** Keeps `state` itself when the poison rule left the poison state unchanged. */
+function withPoisonState(state: ItemActionState, poisonState: PoisonState): ItemActionState {
+  return poisonState === state.poisonState ? state : { ...state, poisonState };
 }
 
 function handleApplyTimedEffect(
@@ -438,22 +395,14 @@ export function applyEffectOp(op: EffectOp, state: ItemActionState, modifiers?: 
         combatTimers: { ...state.combatTimers, surgePotionCooldownTicks: SURGE_POTION_COOLDOWN_TICKS },
       };
 
-    case 'cure_poison': {
-      const downgradedState =
-        state.poisonState.poisonVarp >= VENOM_THRESHOLD
-          ? {
-              ...state,
-              poisonState: {
-                ...state.poisonState,
-                poisonVarp: downgradeVenomToPoisonVarp(state.poisonState.poisonVarp),
-              },
-            }
-          : state;
-      return handleCurePoison(downgradedState, op.immunityTicks);
-    }
+    case 'cure_poison':
+      return withPoisonState(state, cureWithAntipoison(state.poisonState, op.immunitySteps, state.currentTick));
+
+    case 'cure_venom':
+      return withPoisonState(state, cureWithAntivenom(state.poisonState, op.immunitySteps, state.currentTick));
 
     case 'reduce_poison':
-      return handleReducePoison(state, op.amount);
+      return withPoisonState(state, reducePoison(state.poisonState, op.amount));
 
     case 'saturated_heart':
       return handleSaturatedHeart(state);

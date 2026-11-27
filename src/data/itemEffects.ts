@@ -55,7 +55,13 @@ export type EffectOp =
   | { op: 'restore_run'; amount: number }
   /** Restores special attack energy and starts the surge potion's own cooldown. */
   | { readonly op: 'surge'; readonly percent: number }
-  | { op: 'cure_poison'; immunityTicks: number }
+  /**
+   * An antipoison: converts venom to poison, otherwise cures poison. Immunity is in poison-counter
+   * steps, each 30 ticks (`core/poison.ts`).
+   */
+  | { readonly op: 'cure_poison'; readonly immunitySteps: number }
+  /** An anti-venom: cures venom and poison. Immunity steps beyond 38 also block venom. */
+  | { readonly op: 'cure_venom'; readonly immunitySteps: number }
   | { op: 'reduce_poison'; amount: number }
   | { op: 'saturated_heart' }
   /** Suspends natural decay of these skills' boosts; see `expireStatDecayLocks`. */
@@ -222,10 +228,11 @@ export const ITEM_ACTIONS: Readonly<Record<number, ItemActionDef>> = {
 
   // Sanfew serum dose chain (UNNOTED doses)
   // Noted IDs are +1 (10926/10928/10930/10932) and should never be used for consume replacement.
+  // Immunity steps: see the antipoison and anti-venom chains below.
   ...doseChainByStep(10925, 2, 229, 'potion', 3, () => [
     { op: 'restore_all_stats', formula: 'sanfew' },
     { op: 'restore_prayer_formula', formula: 'sanfew' },
-    { op: 'cure_poison', immunityTicks: 600 },
+    { op: 'cure_poison', immunitySteps: 20 },
   ]),
 
   ...doseChainByStep(3024, 2, 229, 'potion', 3, () => [
@@ -291,15 +298,19 @@ export const ITEM_ACTIONS: Readonly<Record<number, ItemActionDef>> = {
     { op: 'reduce_poison', amount: 1 },
   ]),
 
-  ...doseChainByStep(5952, 2, 229, 'potion', 3, () => [{ op: 'cure_poison', immunityTicks: 1200 }]),
-
-  // Anti-venoms cure venom and poison outright. The engine keeps one immunity timer for both, so each
-  // takes its venom immunity, the one that matters against venom sources:
-  // https://oldschool.runescape.wiki/w/Venom: anti-venom 36-54 s (45 s taken), anti-venom+ 216 s,
-  // extended anti-venom+ 378 s per dose.
-  ...doseChainByStep(12905, 2, 229, 'potion', 3, () => [{ op: 'cure_poison', immunityTicks: 75 }]),
-  ...doseChainByStep(12913, 2, 229, 'potion', 3, () => [{ op: 'cure_poison', immunityTicks: 360 }]),
-  ...doseChainByStep(29824, 3, 229, 'potion', 3, () => [{ op: 'cure_poison', immunityTicks: 630 }]),
+  // Poison and venom immunity share one counter, one step per 18 s, that blocks venom only below -38
+  // (RuneLite TimersAndBuffsPlugin `VENOM_VALUE_CUTOFF`; see `core/poison.ts`). So `immunitySteps`
+  // = poison immunity / 18 s, and venom immunity = (steps - 38) * 18 s, from each item's wiki page:
+  // - Sanfew serum (/w/Sanfew_serum): 6 min poison -> 20.
+  // - Antidote++ (/w/Antidote%2B%2B): 12 min poison, venom 18-36 s -> 40.
+  // - Anti-venom (/w/Anti-venom): 12 min poison, venom 36-54 s -> 41 (three venom steps; 12.3 min).
+  // - Anti-venom+ (/w/Anti-venom%2B): 15 min poison, venom ~3.6 min -> 50.
+  // - Extended anti-venom+ (/w/Extended_anti-venom%2B): 17.7 min poison, venom ~6.3 min -> 59.
+  // Antipoisons only convert venom to poison; anti-venoms cure it (https://oldschool.runescape.wiki/w/Venom).
+  ...doseChainByStep(5952, 2, 229, 'potion', 3, () => [{ op: 'cure_poison', immunitySteps: 40 }]),
+  ...doseChainByStep(12905, 2, 229, 'potion', 3, () => [{ op: 'cure_venom', immunitySteps: 41 }]),
+  ...doseChainByStep(12913, 2, 229, 'potion', 3, () => [{ op: 'cure_venom', immunitySteps: 50 }]),
+  ...doseChainByStep(29824, 3, 229, 'potion', 3, () => [{ op: 'cure_venom', immunitySteps: 59 }]),
 
   // https://oldschool.runescape.wiki/w/Extended_stamina_potion: 40% energy and four minutes per dose.
   ...doseChainByStep(31638, 3, 229, 'potion', 3, () => [
@@ -395,6 +406,7 @@ const PREPOT_EFFECT_OPS: ReadonlySet<EffectOp['op']> = new Set([
   'saturated_heart',
   'apply_timed_effect',
   'cure_poison',
+  'cure_venom',
 ]);
 
 export function getPrepotEffects(effects: readonly EffectOp[]): EffectOp[] {

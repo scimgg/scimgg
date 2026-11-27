@@ -28,8 +28,7 @@ export interface ApplyNpcPoisonInput {
 /**
  * /w/Poison: poison does not stack. A fresh application keeps the GREATER severity and restarts
  * the cadence only when the target was not already poisoned, so re-poisoning mid-cycle cannot
- * drag the next pulse forward. Same rule as `applyPoisonToPlayer`, which is where the player side
- * of this already lives.
+ * drag the next pulse forward. Same rule as the player's `applyPlayerPoison` in `core/poison.ts`.
  */
 export function applyNpcPoison(input: ApplyNpcPoisonInput): boolean {
   const { target, severity, tick } = input;

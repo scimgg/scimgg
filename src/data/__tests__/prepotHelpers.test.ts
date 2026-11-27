@@ -71,14 +71,14 @@ describe('getPrepotEffects', () => {
     const effects = getPrepotEffects(getItemAction(10925).effects);
 
     expect(effects).toHaveLength(1);
-    expect(effects[0]).toMatchObject({ op: 'cure_poison', immunityTicks: 600 });
+    expect(effects[0]).toMatchObject({ op: 'cure_poison', immunitySteps: 20 });
   });
 
   it('keeps cure_poison from antidote++', () => {
     const effects = getPrepotEffects(getItemAction(5952).effects);
 
     expect(effects).toHaveLength(1);
-    expect(effects[0]).toMatchObject({ op: 'cure_poison', immunityTicks: 1200 });
+    expect(effects[0]).toMatchObject({ op: 'cure_poison', immunitySteps: 40 });
   });
 
   it('returns an empty array for non-prepottable items', () => {

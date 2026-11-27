@@ -16,15 +16,9 @@ import {
 import type { PrayerState } from '../types/simulation';
 import { PRAYER_DRAIN_EFFECTS, PrayerType } from '../types/simulation';
 import type { EncounterPrayerDrainParams } from './encounters/types';
+import { VENOM_THRESHOLD, venomDamage } from './poison';
 
 const SPECIAL_ATTACK_MAX_ENERGY = 100;
-/**
- * Poison severities at or above this are venom: 6 damage on the first hit, 2 more each hit, capped at
- * 20 (https://oldschool.runescape.wiki/w/Venom). An attack or hazard envenoms by passing it as
- * `applyPoison`.
- */
-export const VENOM_THRESHOLD = 1_000_000;
-const VENOM_OFFSET = VENOM_THRESHOLD - 3;
 
 function decrementTimer(ticks: number): number {
   return Math.max(0, ticks - 1);
@@ -172,7 +166,7 @@ export function tickPoisonState(state: PoisonState): { state: PoisonState; damag
   }
 
   if (state.poisonVarp >= VENOM_THRESHOLD) {
-    const damage = Math.min((state.poisonVarp - VENOM_OFFSET) * 2, 20);
+    const damage = venomDamage(state.poisonVarp);
     return {
       state: {
         ...state,
