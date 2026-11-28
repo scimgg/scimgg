@@ -1,10 +1,10 @@
 import type { ActorFrameState, FrameSoundTracker } from '../../audio/FrameSoundTracker';
-import { COVER_TILES, PILLARS, square, VENTS, WARDEN_SIZE, WARDEN_TILE } from '../../encounters/dukePractice/arena';
-import { DUKE_ASLEEP_NPC_ID, DUKE_NPC_ID, DUKE_ORB_NPC_ID, DUKE_SEQS } from '../../encounters/dukePractice/constants';
+import { COVER_TILES, PILLARS, square, VENTS, WARDEN_TILE } from '../../encounters/dukePractice/arena';
+import { DUKE_ORB_NPC_ID, DUKE_SEQS } from '../../encounters/dukePractice/constants';
 import { DUKE_PRACTICE_KIND } from '../../encounters/dukePractice/controls';
 import { DUKE_PRACTICE_RENDER_CONFIG } from '../../encounters/dukePractice/renderConfig';
 import type { DukePracticePose, WardenHazardKind } from '../../encounters/dukePractice/snapshot';
-import { LEGACY_DUKE_TYPE_ID, WARDEN_ID } from '../../encounters/dukePractice/warden';
+import { DUKE_ASLEEP_NPC_ID, DUKE_NPC_ID, LEGACY_DUKE_TYPE_ID, WARDEN_ID, WARDEN_SIZE } from '../../npcs/duke/duke';
 import { NpcType } from '../../rs/config/npctype/NpcType';
 import type { ModelLoader } from '../../rs/model/ModelLoader';
 import type { NpcModelLoader } from '../../rs/model/NpcModelLoader';
@@ -88,6 +88,7 @@ export class DukePracticeSceneCompositor extends SceneCompositor {
   private dukeRenderTypeId: number | undefined;
   private readonly effects = new DukePracticeEffects();
   private readonly gazeOverlay = new DukeGazeOverlay();
+  private replayUsesVisualEvents = false;
   private replayPose: DukePracticePose | undefined;
   private sampledPose: DukePracticePose | undefined;
   private poseTimeline = new ReplayPrimaryIndex<NpcAnimationTrigger, AnimClipRef>([]);
@@ -105,7 +106,9 @@ export class DukePracticeSceneCompositor extends SceneCompositor {
     // Duke's combat sounds use captured cues. His sleep and the player's clips use frame sounds.
     const dukeId = this.actorRenderIdOf(WARDEN_ID);
     return this.collectActorFrameStates().filter(({ actorId, seqId }) =>
-      actorId === dukeId ? seqId === DUKE_SEQS.asleep : !actorId.startsWith('spotanim:duke-'),
+      actorId === dukeId
+        ? seqId === DUKE_SEQS.asleep
+        : !actorId.startsWith('spotanim:duke-') && !actorId.startsWith('spotanim:cue-'),
     );
   }
 
@@ -120,18 +123,22 @@ export class DukePracticeSceneCompositor extends SceneCompositor {
   }
 
   protected override encounterNpcTriggers(state: SimulationState): readonly NpcAnimationTrigger[] {
-    const pose = state.encounter.kind === DUKE_PRACTICE_KIND ? state.encounter.visuals.pose : undefined;
+    if (state.encounter.kind !== DUKE_PRACTICE_KIND || state.encounter.visuals.usesVisualEvents) return [];
+    const { pose } = state.encounter.visuals;
     return pose && pose.startTick === state.currentTick
       ? [{ actorId: this.actorRenderIdOf(WARDEN_ID), trigger: 'attack', tick: pose.startTick, clipId: pose.clip }]
       : [];
   }
 
   protected override reconstructEncounterVisuals({ simulationState }: RenderContext): void {
-    this.replayPose =
-      simulationState.encounter.kind === DUKE_PRACTICE_KIND ? simulationState.encounter.visuals.pose : undefined;
+    const visuals =
+      simulationState.encounter.kind === DUKE_PRACTICE_KIND ? simulationState.encounter.visuals : undefined;
+    this.replayUsesVisualEvents = visuals?.usesVisualEvents === true;
+    this.replayPose = visuals?.pose;
   }
 
   protected override restoreEncounterTimelines(destination: ReplayEffectDestination): boolean {
+    if (this.replayUsesVisualEvents) return false;
     const pose = this.replayPose;
     const actorId = this.actorRenderIdOf(WARDEN_ID);
     if (pose?.startTick !== this.sampledPose?.startTick || pose?.clip !== this.sampledPose?.clip) {

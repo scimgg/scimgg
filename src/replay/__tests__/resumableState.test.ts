@@ -90,7 +90,7 @@ describe('diffResumableState', () => {
     expect(diffResumableState(expectedState, withTrail)).toEqual([]);
   });
 
-  it('accepts a Duke recording without orb interpolation history and still compares its true tile', () => {
+  it('accepts an older Duke presentation and still compares the orb’s true tile', () => {
     const encounter: SimulationState['encounter'] = {
       kind: 'duke_practice',
       state: { bileTicksRemaining: 0, enraged: false, perfectKillEligible: true },
@@ -99,7 +99,7 @@ describe('diffResumableState', () => {
     const recorded: SimulationState = { ...makeEngine().getState(), encounter };
     const rebuilt: SimulationState = {
       ...recorded,
-      encounter: { ...encounter, visuals: { ...encounter.visuals, orbPreviousTile: [36, 51] } },
+      encounter: { ...encounter, visuals: { ...encounter.visuals, orbPreviousTile: [36, 51], usesVisualEvents: true } },
     };
 
     expect(diffResumableState(recorded, rebuilt)).toEqual([]);

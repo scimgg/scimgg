@@ -43,13 +43,13 @@ boundary. Placement, animation, and damage may occur on different ticks.
 **C** = [`constants.ts`](../../src/encounters/dukePractice/constants.ts),
 **A** = [`arena.ts`](../../src/encounters/dukePractice/arena.ts),
 **P** = [`controls.ts`](../../src/encounters/dukePractice/controls.ts), and
-**W** = [`warden.ts`](../../src/encounters/dukePractice/warden.ts).
+**W** = [`duke.ts`](../../src/npcs/duke/duke.ts).
 
 | Timing | Value | Code | Capture evidence (n) | Status |
 |---|---|---|---|---|
 | Awakened poison tolerance | 125 per dose, capped at 370 after three | C `DUKE_POISON_PER_DOSE`, `DUKE_POISON_TOLERANCE` | A1:t8–10, A6:t730–732 | VERIFIED |
 | Final tolerance → wake → first attack | Wake +1 from the final tolerance update, first attack +5 from wake | C `DUKE_WAKE_AFTER_FEED_TICKS`, `DUKE_FIRST_ATTACK_DELAY_TICKS` | A1:t10→11→16, A6:t732→733→738, R three complete openers | VERIFIED for the stated boundaries |
-| Basic attack cadence | 5 ticks before enrage, 4 during enrage | W `wardenCadence` | A2:t258–270, A8:t304–319, and A10:t317→322 and enrage window | VERIFIED |
+| Basic attack cadence | 5 ticks before enrage, 4 during enrage | E `wardenCadence` | A2:t258–270, A8:t304–319, and A10:t317→322 and enrage window | VERIFIED |
 | Exact enrage threshold | 440 HP | P `ENRAGE_HP` | Phase timings agree with the [published threshold](https://oldschool.runescape.wiki/w/Duke_Sucellus/Strategies#Awakened_mode) | WIKI-ONLY for exact HP |
 | Melee or magic | Melee at X 27–35, Y 51 before movement at windup | A `isInMeleeLane`, E `processNpcTick` | 487/501 earlier basics and 19/19 in A12. [Selection audit](./duke-capture-analysis.md#basic-attack-selection-by-tick) | MODEL with 14 earlier off-row melee exceptions |
 | Icicles and shatter | Chip check at windup, shatter +2 from the start-of-tick tile on X 28–34, Y 51 | A `SLAM_TILES`, C `DUKE_SLAM_IMPACT_DELAY_TICKS` | All 11 exposed shatter checks with recorded melee windups. [Damage replay audit](./duke-capture-analysis.md#2-damage-replay-audit) | VERIFIED |
@@ -58,7 +58,7 @@ boundary. Placement, animation, and damage may occur on different ticks.
 | Four-flare volley | Launch offsets +0/+3/+5/+7 | E `launchFlare` | A2 all 13 volleys and the [enrage cross-check](./duke-capture-analysis.md#three-awakened-enrage-recordings) | VERIFIED |
 | Flare travel, gas pulse and fade | Landing +3, first damage +4 and every 2 thereafter, fade at +18 before enrage or +16 during enrage | C `DUKE_GAS_FLIGHT_TICKS`, `DUKE_VENT_*` | A7:L5529–5607. Awakened fades with launch and expiry HP present (221 before enrage, 60 during enrage) | VERIFIED for sampled Awakened fades and pulses |
 | Vent distance tie between rows | North wins when available grates are equally close | E `targetedVent` | A12:t146 and L7142–7181 (1) | SINGLE-OBSERVATION |
-| Final flare → bile → next basic | 4 then 5 ticks before enrage, 3 then 4 during enrage | E `launchFlare`, `beginBile`, W `wardenCadence` | 37 complete transitions (26 before enrage, 11 during enrage). A10:t130→134→139 and A3:t396→399→403 | VERIFIED |
+| Final flare → bile → next basic | 4 then 5 ticks before enrage, 3 then 4 during enrage | E `launchFlare`, `beginBile`, `wardenCadence` | 37 complete transitions (26 before enrage, 11 during enrage). A10:t130→134→139 and A3:t396→399→403 | VERIFIED |
 | Bile trail and first drip | First pool +1 after cast, 15 drips. Later drips can include a running step's intermediate tile | E `BILE_TICKS`, `resolveHazards` | A1:t226–240, A6:t1088→1089 and A12:t24→25 | VERIFIED for the sampled drips |
 | Bile pool lifetime and first hit | 9 ticks visible, damaging from placement +1 | E `BILE_POOL_TICKS`, `dropBile` | A0 and A1 complete lifetimes. A5:t359 hits on removal tick. [Damage replay audit](./duke-capture-analysis.md#2-damage-replay-audit) | MODEL at the expiry boundary |
 | Orb countdown and sweep | First spawn +3 from threshold crossing, then every 12 ticks. Moves one tile per tick and hits one tick after sharing a tile | E `ORB_SPAWN_DELAY_TICKS`, `ORB_PERIOD`, `resolveOrb` | A1:t224→227 and 232→233, A7:t252→255, A12:t117→120 | VERIFIED for the recorded sweeps. Exact HP threshold is open |
@@ -75,7 +75,7 @@ The arena renders terrain and scenery from map square `(47, 100)`, archive
 scenery levels for the side fences. Duke occupies a seven-tile-wide footprint.
 His southwest anchor `[28, 52]` is a practice placement between the pillars
 around the [Wiki map pin](https://oldschool.runescape.wiki/w/Duke_Sucellus#Location).
-The sim uses the cache sleeping NPC 12166 and awake NPC 12191. A1 uses sleeping NPC 12167.
+The actor definition (W) uses cache sleeping NPC 12166 and awake NPC 12191. A1 uses sleeping NPC 12167.
 Cache floor clipping across local Y 52–53 closes the arena behind the front
 lane. Ground clicks under either form of Duke path to the edge of the lane.
 The front lane is for step-backs and orb crossings. The tile directly behind
@@ -199,6 +199,10 @@ previous pulse on the tick before the second projectile arrives
 (`20261126-232238-Duke.jsonl:5736–5800`). The first four-flare volley resumes
 basic attacks four ticks after the last flare. At tick 150, the due grate
 volley starts one basic attack after Gaze.
+
+Duke's attack clips, frontal icicles, and blue bolt travel and impact use the shared
+[visual batches](../architecture/events.md#visual-batches). Older recordings can
+still play those effects from their snapshots.
 
 ### Orb of Darkness
 

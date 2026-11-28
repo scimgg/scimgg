@@ -1,4 +1,5 @@
 import type { ArenaConfig } from '../../core/arena/ArenaConfig';
+import { WARDEN_SIZE } from '../../npcs/duke/duke';
 import { CollisionFlag } from '../../rs/collision/CollisionFlag';
 import { createCollisionMap } from '../../rs/collision/WalkabilityAnalyzer';
 import type { Coordinate } from '../../types/simulation';
@@ -8,12 +9,11 @@ export const BOUNDS = { minX: 26, maxX: 36, minY: 39, maxY: 58, width: 11, heigh
 export const START_TILE: Coordinate = [31, 50];
 // Place the footprint between the front pillars, around the Wiki's local pin [31, 54].
 export const WARDEN_TILE: Coordinate = [28, 52];
-// Both Awakened Duke cache types (12166 and 12191) occupy a 7×7 footprint.
-export const WARDEN_SIZE = 7;
 export const DUKE_CENTER_TILE: Coordinate = [
   WARDEN_TILE[0] + (WARDEN_SIZE - 1) / 2,
   WARDEN_TILE[1] + (WARDEN_SIZE - 1) / 2,
 ];
+export const DUKE_MOUTH_POSITION: Coordinate = [DUKE_CENTER_TILE[0] + 0.5, DUKE_CENTER_TILE[1] - 1.5];
 // Cache LOCs 47513 and 47523 span three tiles from their west/east anchors 25 and 35.
 const PILLAR_ROWS = [40, 44, 48, 52];
 export const PILLARS = PILLAR_ROWS.flatMap((y): Coordinate[] => [

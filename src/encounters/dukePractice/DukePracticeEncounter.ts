@@ -1,4 +1,5 @@
 import type { NpcActor } from '../../core/actors/NpcActor';
+import type { PlayerActor } from '../../core/actors/PlayerActor';
 import {
   calculateAccuracy,
   calculateNpcMaxHit,
@@ -25,13 +26,31 @@ import type {
   EncounterTickResult,
   EnvironmentalDamage,
 } from '../../core/encounters/types';
+import {
+  type EncounterVisualBatch,
+  emitEncounterVisual,
+  type NpcVisualTarget,
+} from '../../core/events/encounterVisual';
+import type { TickEvents } from '../../core/events/TickEvents';
 import { mulberry32 } from '../../core/rng';
+import {
+  createWarden,
+  createWardenPlan,
+  DUKE_ASLEEP_NPC_ID,
+  DUKE_NPC_ID,
+  getWardenPlan,
+  WARDEN_ID,
+  WARDEN_MAX_HP,
+  type WardenPlan,
+  wardenDefinitions,
+} from '../../npcs/duke/duke';
 import { ARDER_MUSCA_POISON_ITEM_ID, getFiniteStackQuantity } from '../../types/inventory';
 import type { Coordinate, MechanicsConfig } from '../../types/simulation';
 import {
   buildArena,
   COVER_TILES,
   DUKE_CENTER_TILE,
+  DUKE_MOUTH_POSITION,
   isInMeleeLane,
   ORB_LANE,
   SLAM_TILES,
@@ -39,21 +58,23 @@ import {
   sameTile,
   square,
   VENTS,
+  WARDEN_TILE,
 } from './arena';
 import { emitDukePracticeAudio } from './audioCues';
 import {
-  DUKE_ASLEEP_NPC_ID,
   DUKE_ENRAGED_VENT_ACTIVE_TICKS,
   DUKE_FIRST_ATTACK_DELAY_TICKS,
   DUKE_GAS_FLIGHT_TICKS,
   DUKE_GAZE_COVER_CHECK_TICKS,
   DUKE_GAZE_DURATION_TICKS,
   DUKE_GAZE_HIT_DELAY_TICKS,
+  DUKE_GROUND_ICICLES,
   DUKE_MAGIC_FLIGHT_TICKS,
-  DUKE_NPC_ID,
+  DUKE_MAGIC_PROJECTILE,
   DUKE_POISON_PER_DOSE,
   DUKE_POISON_TOLERANCE,
   DUKE_SLAM_IMPACT_DELAY_TICKS,
+  DUKE_SPOT_ANIMS,
   DUKE_VENT_ACTIVE_TICKS,
   DUKE_VENT_ARM_TICKS,
   DUKE_VENT_FADE_TICKS,
@@ -71,19 +92,8 @@ import {
   practiceStartHp,
   START_PHASE_KEY,
   VENTS_HP,
-  WARDEN_MAX_HP,
 } from './controls';
 import type { DukeOrbBurst, DukePracticePose, WardenHazard, WardenHazardKind } from './snapshot';
-import {
-  createWarden,
-  createWardenPlan,
-  getWardenPlan,
-  WARDEN_ID,
-  type WardenPlan,
-  wardenCadence,
-  wardenDefinitions,
-  wardenGasInterval,
-} from './warden';
 
 // 20261127-005253-Duke-Sucellus_2.jsonl, first spawn tick 228 and every 12 ticks through 432.
 const ORB_PERIOD = 12;
@@ -96,6 +106,16 @@ const BILE_CHANCE = 27 / 58;
 // All 23 complete pool lifetimes in 20261126-232238-Duke.jsonl (lines 6586–6824 and 7575–7937).
 const BILE_POOL_TICKS = 9;
 const ORB_DAMAGE_SOURCE = 'Orb of Darkness';
+
+// 20261126-232238-Duke.jsonl and 20261127-005253-Duke-Sucellus_2.jsonl (ticks 258–270).
+function wardenCadence(hp: number): number {
+  return hp <= ENRAGE_HP ? 4 : 5;
+}
+
+// The post-volley countdown model is documented in docs/encounters/duke-unverified.md.
+function wardenGasInterval(hp: number): number {
+  return hp <= ENRAGE_HP ? 3 : hp <= VENTS_HP ? 4 : 5;
+}
 
 function newEncounterSeed(): number {
   return Math.floor(Math.random() * 0x100000000);
@@ -131,8 +151,11 @@ const HAZARD_DAMAGE = {
     baseDamage: [0, 16],
     prayerReduction: { type: 'reduce', value: 0.5 },
   },
-  // https://oldschool.runescape.wiki/w/Duke_Sucellus#Awakened
+  // 20261127-014756-Duke-Sucellus_5.jsonl:11238–11350 records a hit of 93.
+  // The 65 minimum is modeled. https://oldschool.runescape.wiki/w/Duke_Sucellus#Awakened
   gaze: { source: 'Freezing Gaze', attackType: 'typeless', baseDamage: [65, 121] },
+  // 20261127-192944-Duke-Sucellus_12.jsonl:7245 and :7303 record hits of 26 and 25.
+  // The 16 minimum is modeled. See docs/encounters/duke-unverified.md#damage-and-hazard-boundaries.
   vent: { source: 'Gas flare', attackType: 'typeless', baseDamage: [16, 27] },
   // 20261127-002024-Duke-Sucellus_1.jsonl:8472. Poison varp 10 starts at 2 damage per pulse.
   bile: { source: 'Bile pool', attackType: 'typeless', baseDamage: [9, 12], applyPoison: 10 },
@@ -183,6 +206,10 @@ function targetedVent([x, y]: Coordinate, smokingVents: ReadonlySet<string>): Co
     }
   }
   return nearest;
+}
+
+function boltTarget(player: PlayerActor): NpcVisualTarget {
+  return { kind: 'actor', actorId: player.id, size: player.size, position: player.position };
 }
 
 export class DukePracticeEncounter implements Encounter {
@@ -322,7 +349,7 @@ export class DukePracticeEncounter implements Encounter {
   }
 
   private createStartWarden(): NpcActor {
-    const duke = createWarden(this.startHp);
+    const duke = createWarden(WARDEN_TILE, this.startHp, wardenCadence(this.startHp));
     if (this.phaseStartMode === 'awake' && this.startHp <= VENTS_HP) {
       this.restartWardenPhase(duke, this.startHp, SIMULATION_START_TICK, true);
     }
@@ -413,6 +440,17 @@ export class DukePracticeEncounter implements Encounter {
             if (hit) {
               this.perfectKillEligible = false;
               emitDukePracticeAudio(ctx.tickEvents, 'magic');
+              const player = ctx.world.getPlayer();
+              if (player) {
+                // 20261127-002024-Duke-Sucellus_1.jsonl:8637 attaches graphic 2435 to the player.
+                emitEncounterVisual(ctx.tickEvents, {
+                  animations: [],
+                  projectiles: [],
+                  graphics: [
+                    { spotAnimId: DUKE_SPOT_ANIMS.magicImpact, target: boltTarget(player), delayCycles: 0, height: 0 },
+                  ],
+                });
+              }
             }
           },
         });
@@ -496,7 +534,7 @@ export class DukePracticeEncounter implements Encounter {
     const plan = getWardenPlan(duke);
     if (!plan || plan.openingAttackTick !== null) return;
     plan.openingAttackTick = info.tick + DUKE_FIRST_ATTACK_DELAY_TICKS;
-    this.pose = { clip: 'wake', startTick: info.tick };
+    this.playPose(ctx.tickEvents, info.tick, 'wake');
     emitDukePracticeAudio(ctx.tickEvents, 'wake', DUKE_CENTER_TILE);
   }
 
@@ -515,7 +553,7 @@ export class DukePracticeEncounter implements Encounter {
     if (actor.npcTypeId === DUKE_ASLEEP_NPC_ID) {
       if (plan.poisonToleranceFilled === DUKE_POISON_TOLERANCE && ctx.tick >= wakeTick) {
         actor.npcTypeId = DUKE_NPC_ID;
-        this.pose = { clip: 'wake', startTick: wakeTick };
+        this.playPose(ctx.tickEvents, wakeTick, 'wake');
         emitDukePracticeAudio(ctx.tickEvents, 'wake', DUKE_CENTER_TILE);
       } else if (ctx.tick >= wakeTick + DUKE_WAKE_ANIMATION_TICKS) {
         actor.npcTypeId = DUKE_NPC_ID;
@@ -542,16 +580,18 @@ export class DukePracticeEncounter implements Encounter {
       // The gaze comes after five basics and takes six ticks from windup to next action.
       // https://oldschool.runescape.wiki/w/Duke_Sucellus/Strategies#Fight_overview
       this.schedule('gaze', COVER_TILES, ctx.tick + DUKE_GAZE_COVER_CHECK_TICKS + DUKE_GAZE_HIT_DELAY_TICKS);
-      this.pose = { clip: 'gaze', startTick: ctx.tick };
+      this.playPose(ctx.tickEvents, ctx.tick, 'gaze');
       emitDukePracticeAudio(ctx.tickEvents, 'gazeWindup', DUKE_CENTER_TILE);
       actor.combat.nextActionTick = ctx.tick + DUKE_GAZE_DURATION_TICKS;
       plan.autosSinceGaze = 0;
-      // The first flare follows three basics after the first gaze (capture ticks 41–62).
+      // The first flare follows three basics after the first Gaze.
+      // 20261127-002024-Duke-Sucellus_1.jsonl:5148–5470 (ticks 41–62).
       plan.autosUntilGas ??= 3;
       plan.basicAfterGaze = true;
       message(ctx, 'Freezing gaze. Move behind a pillar onto a teal tile.');
     } else if (plan.autosUntilGas === 0 && !plan.basicAfterGaze) {
-      // At capture ticks 139–150, a basic follows gaze and then the due grate volley begins.
+      // A basic follows Gaze and then the due volley begins.
+      // 20261126-232238-Duke.jsonl, ticks 139–150.
       plan.flaresRemaining = hp <= VENTS_HP ? 4 : 1;
       plan.autosUntilGas = wardenGasInterval(hp);
       this.launchFlare(actor, plan, ctx, alwaysBile);
@@ -563,7 +603,23 @@ export class DukePracticeEncounter implements Encounter {
       if (isInMeleeLane(ctx.playerPos)) {
         this.schedule('spikes', square(ctx.playerPos, 1), ctx.tick);
         this.schedule('slam', SLAM_TILES, ctx.tick + DUKE_SLAM_IMPACT_DELAY_TICKS);
-        this.pose = { clip: 'slam', startTick: ctx.tick };
+        this.playPose(ctx.tickEvents, ctx.tick, 'slam', {
+          graphics: [
+            // Graphic 2439 has its frontal offset baked relative to Duke's center.
+            {
+              spotAnimId: DUKE_SPOT_ANIMS.npcIcicles,
+              target: { kind: 'tile', position: DUKE_CENTER_TILE },
+              delayCycles: 0,
+              height: 0,
+            },
+            ...SLAM_TILES.map((position, index) => ({
+              spotAnimId: DUKE_GROUND_ICICLES[index],
+              target: { kind: 'tile' as const, position },
+              delayCycles: 0,
+              height: 0,
+            })),
+          ],
+        });
         emitDukePracticeAudio(ctx.tickEvents, 'slamWindup', DUKE_CENTER_TILE);
         const accuracy = attackAccuracy(dukeFormulaActor(actor), ctx, 'melee_crush');
         return { environmentalDamages: [{ ...HAZARD_DAMAGE.spikes, accuracy }] };
@@ -576,11 +632,40 @@ export class DukePracticeEncounter implements Encounter {
           expiresTick: impactTick + 1,
           windupTick: ctx.tick,
         });
-        this.pose = { clip: 'magic', startTick: ctx.tick };
+        const player = ctx.world.getPlayer();
+        const { startCycle, endCycle, ...flight } = DUKE_MAGIC_PROJECTILE;
+        this.playPose(ctx.tickEvents, ctx.tick, 'magic', {
+          projectiles: player
+            ? [
+                {
+                  ...flight,
+                  spotAnimId: DUKE_SPOT_ANIMS.magicProjectile,
+                  sourcePosition: DUKE_MOUTH_POSITION,
+                  target: boltTarget(player),
+                  startDelayCycles: startCycle,
+                  endDelayCycles: endCycle,
+                },
+              ]
+            : [],
+        });
         emitDukePracticeAudio(ctx.tickEvents, 'magicLaunch', DUKE_CENTER_TILE);
       }
     }
     return { environmentalDamages: [] };
+  }
+
+  private playPose(
+    tickEvents: TickEvents,
+    tick: number,
+    clip: DukePracticePose['clip'],
+    { graphics = [], projectiles = [] }: Partial<Pick<EncounterVisualBatch, 'graphics' | 'projectiles'>> = {},
+  ): void {
+    this.pose = { clip, startTick: tick };
+    emitEncounterVisual(tickEvents, {
+      animations: [{ actorId: WARDEN_ID, clipId: clip, delayCycles: 0 }],
+      projectiles,
+      graphics,
+    });
   }
 
   private launchFlare(actor: NpcActor, plan: WardenPlan, ctx: EncounterContext, alwaysBile: boolean): void {
@@ -606,7 +691,7 @@ export class DukePracticeEncounter implements Encounter {
       impactTick,
       expiresTick: impactTick + activeTicks,
     });
-    this.pose = { clip: 'fastMagic', startTick: ctx.tick };
+    this.playPose(ctx.tickEvents, ctx.tick, 'fastMagic');
     emitDukePracticeAudio(ctx.tickEvents, 'ventLaunch', DUKE_CENTER_TILE);
     const firstOfFour = plan.flaresRemaining === 4;
     if (firstOfFour) message(ctx, 'Gas flares. Run south to bait the rest of the volley.');
@@ -627,7 +712,7 @@ export class DukePracticeEncounter implements Encounter {
   private beginBile(ctx: EncounterContext): void {
     this.bileThroughTick = ctx.tick + BILE_TICKS;
     // 20261126-232238-Duke.jsonl:6554–6590 and :7537–7579.
-    this.pose = { clip: 'bile', startTick: ctx.tick };
+    this.playPose(ctx.tickEvents, ctx.tick, 'bile');
     emitDukePracticeAudio(ctx.tickEvents, 'bile', DUKE_CENTER_TILE);
     message(ctx, 'Bile is dripping onto the floor. Keep moving to leave the pools behind.');
   }
@@ -696,7 +781,8 @@ export class DukePracticeEncounter implements Encounter {
     if (warden?.alive && warden.vitals.hp <= ORB_HP && this.nextOrbTick === null) {
       const openingAttackTick = getWardenPlan(warden)?.openingAttackTick;
       if (openingAttackTick != null && ctx.tick > openingAttackTick) {
-        // Count from the HP change, including hits after the NPC band (capture ticks 225–228).
+        // Count from the HP change, including hits after the NPC band.
+        // 20261127-005253-Duke-Sucellus_2.jsonl, ticks 225–228.
         this.nextOrbTick = ctx.tick + ORB_SPAWN_DELAY_TICKS;
         message(ctx, 'Orbs of darkness will sweep across the front lane.');
       }
@@ -724,6 +810,7 @@ export class DukePracticeEncounter implements Encounter {
       visuals: {
         hazards: this.hazards.filter(({ expiresTick }) => ctx.tick < expiresTick),
         orbTile,
+        usesVisualEvents: true,
         ...(orbPreviousTile ? { orbPreviousTile } : {}),
         ...(this.orbBursts.length ? { orbBursts: [...this.orbBursts] } : {}),
         ...(this.pose ? { pose: this.pose } : {}),

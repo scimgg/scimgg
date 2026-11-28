@@ -1,6 +1,3 @@
-// Awakened Duke states supplied for this drill and verified in cache 2772.
-export const DUKE_NPC_ID = 12191;
-export const DUKE_ASLEEP_NPC_ID = 12166;
 // https://oldschool.runescape.wiki/w/Orb_of_Darkness
 export const DUKE_ORB_NPC_ID = 11708;
 // The Acid pool LOC in cache 2772 matches the green center and lighter rim at 1:56.
@@ -89,3 +86,14 @@ export const DUKE_SPOT_ANIMS = {
   groundIciclesMidInner: 2442,
   groundIciclesCenter: 2443,
 } as const;
+
+// 20261126-232238-Duke.jsonl:4697–4704, west to east along the front row.
+export const DUKE_GROUND_ICICLES = [
+  DUKE_SPOT_ANIMS.groundIciclesOuter,
+  DUKE_SPOT_ANIMS.groundIciclesMidOuter,
+  DUKE_SPOT_ANIMS.groundIciclesMidInner,
+  DUKE_SPOT_ANIMS.groundIciclesCenter,
+  DUKE_SPOT_ANIMS.groundIciclesMidInner,
+  DUKE_SPOT_ANIMS.groundIciclesMidOuter,
+  DUKE_SPOT_ANIMS.groundIciclesOuter,
+] as const;

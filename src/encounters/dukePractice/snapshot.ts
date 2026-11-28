@@ -33,6 +33,8 @@ export interface DukeOrbBurst {
 export interface DukePracticeVisuals {
   readonly hazards: readonly WardenHazard[];
   readonly orbTile: Coordinate | null;
+  /** Earlier replays reconstruct attack clips and ordinary effects from snapshots alone. */
+  readonly usesVisualEvents?: true;
   /** Previous tile of the same orb, available while it is moving. */
   readonly orbPreviousTile?: Coordinate;
   readonly orbBursts?: readonly DukeOrbBurst[];

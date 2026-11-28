@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { applySpecialAttackEffects } from '../../../core/combat/player/specialAttacks/postHitEffects';
 import { getArenaAllowUnboundedFallback, getArenaConfig, setArenaConfig } from '../../../core/constants';
 import { SimulationEngine } from '../../../core/SimulationEngine';
+import { DUKE_ASLEEP_NPC_ID, DUKE_NPC_ID, WARDEN_ID, WARDEN_MAX_HP } from '../../../npcs/duke/duke';
 import { ObjType } from '../../../rs/config/objtype/ObjType';
 import { PARAM_ATTACK_SPEED } from '../../../types/equipmentStats';
 import { ARDER_MUSCA_POISON_ITEM_ID, createEmptyInventory } from '../../../types/inventory';
@@ -10,7 +11,6 @@ import { type Coordinate, PrayerType } from '../../../types/simulation';
 import { SLUG_TO_KIND } from '../../slugs';
 import { ORB_LANE, START_TILE, VENTS } from '../arena';
 import { DUKE_PRACTICE_AUDIO_EVENT } from '../audioCues';
-import { DUKE_ASLEEP_NPC_ID, DUKE_NPC_ID } from '../constants';
 import {
   ALWAYS_BILE_KEY,
   BILE_HP,
@@ -20,11 +20,9 @@ import {
   ORB_HP,
   practiceStartHp,
   START_PHASE_KEY,
-  WARDEN_MAX_HP,
 } from '../controls';
 import { DukePracticeEncounter } from '../DukePracticeEncounter';
 import { DUKE_PRACTICE_RENDER_CONFIG } from '../renderConfig';
-import { WARDEN_ID } from '../warden';
 import {
   DUKE_BILE_CAST_RUN_CAPTURE,
   DUKE_BILE_MELEE_CAPTURES,
@@ -127,7 +125,7 @@ describe('Awakened Duke practice', () => {
     expect(DUKE_PRACTICE_RENDER_CONFIG.primaryNpc?.npcTypeId).toBe(DUKE_NPC_ID);
     advanceTo(engine, 20);
     expect(engine.getState().npcs[0].npcTypeId).toBe(DUKE_ASLEEP_NPC_ID);
-    expect(snapshot(engine).visuals).toEqual({ hazards: [], orbTile: null });
+    expect(snapshot(engine).visuals).toEqual({ hazards: [], orbTile: null, usesVisualEvents: true });
   });
 
   // Cache 2772, map square (47, 100). The floor at y=52 and 53 blocks access under Duke.
@@ -387,7 +385,7 @@ describe('Awakened Duke practice', () => {
     engine.reset();
     expect(engine.getState().npcs[0].hp).toBe(440);
     expect(engine.getState().npcs[0].npcTypeId).toBe(DUKE_NPC_ID);
-    expect(snapshot(engine).visuals).toEqual({ hazards: [], orbTile: null });
+    expect(snapshot(engine).visuals).toEqual({ hazards: [], orbTile: null, usesVisualEvents: true });
   });
 
   it('jumps to each HP breakpoint in the current attempt', () => {
@@ -475,7 +473,7 @@ describe('Awakened Duke practice', () => {
     advanceTo(engine, 1, cover);
     engine.applyAction({ type: 'applyBossHpPreset', hp: 1697 });
     advanceTo(engine, 5, cover);
-    expect(snapshot(engine).visuals).toEqual({ hazards: [], orbTile: null });
+    expect(snapshot(engine).visuals).toEqual({ hazards: [], orbTile: null, usesVisualEvents: true });
     advanceTo(engine, 6, cover);
     expect(snapshot(engine).visuals.pose).toEqual({ clip: 'slam', startTick: 6 });
   });
@@ -506,7 +504,7 @@ describe('Awakened Duke practice', () => {
     expect(snapshot(engine).visuals.orbTile).not.toBeNull();
 
     engine.applyAction({ type: 'applyBossHpPreset', hp: 1697 });
-    expect(snapshot(engine).visuals).toEqual({ hazards: [], orbTile: null });
+    expect(snapshot(engine).visuals).toEqual({ hazards: [], orbTile: null, usesVisualEvents: true });
     expect(advanceThroughFlareLaunches(engine, 116)).toEqual([112]);
   });
 
@@ -811,6 +809,12 @@ describe('Awakened Duke practice', () => {
       expect.objectContaining({ source: 'Magic bolt', tick: 10, effectiveDamage: 0 }),
     );
     expect(audioCues(engine)).not.toContainEqual(expect.objectContaining({ cue: 'magic' }));
+    expect(engine.getLastTickEvents()).not.toContainEqual(
+      expect.objectContaining({
+        type: 'encounter_visual',
+        graphics: expect.arrayContaining([expect.objectContaining({ spotAnimId: 2435 })]),
+      }),
+    );
     expect(snapshot(engine).visuals.hazards).toContainEqual(expect.objectContaining({ kind: 'magic', missed: true }));
     expect(snapshot(engine).state.perfectKillEligible).toBe(true);
   });
@@ -1314,6 +1318,6 @@ describe('Awakened Duke practice', () => {
     engine.setBossHp(0);
     advanceTo(engine, 14);
     expect(engine.getState().encounterOutcome.phase).toBe('victory');
-    expect(snapshot(engine).visuals).toEqual({ hazards: [], orbTile: null });
+    expect(snapshot(engine).visuals).toEqual({ hazards: [], orbTile: null, usesVisualEvents: true });
   });
 });

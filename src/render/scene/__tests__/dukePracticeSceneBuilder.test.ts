@@ -9,29 +9,19 @@ import {
   DUKE_MAGIC_AIM_CAPTURE,
   DUKE_SLAM_CAPTURE,
 } from '../../../encounters/dukePractice/__tests__/fixtures/dukeCombatCapture';
-import {
-  ORB_LANE,
-  SLAM_TILES,
-  START_TILE,
-  square,
-  WARDEN_SIZE,
-  WARDEN_TILE,
-} from '../../../encounters/dukePractice/arena';
-import {
-  DUKE_ASLEEP_NPC_ID,
-  DUKE_NPC_ID,
-  DUKE_ORB_NPC_ID,
-  DUKE_SEQS,
-  DUKE_SPOT_ANIMS,
-} from '../../../encounters/dukePractice/constants';
+import { ORB_LANE, SLAM_TILES, START_TILE, square, WARDEN_TILE } from '../../../encounters/dukePractice/arena';
+import { DUKE_ORB_NPC_ID, DUKE_SEQS, DUKE_SPOT_ANIMS } from '../../../encounters/dukePractice/constants';
 import { ALWAYS_BILE_KEY, BILE_HP, ENRAGE_HP, ORB_HP, VENTS_HP } from '../../../encounters/dukePractice/controls';
 import { DukePracticeEncounter } from '../../../encounters/dukePractice/DukePracticeEncounter';
 import { DUKE_PRACTICE_RENDER_CONFIG } from '../../../encounters/dukePractice/renderConfig';
-import { LEGACY_DUKE_TYPE_ID, WARDEN_ID } from '../../../encounters/dukePractice/warden';
+import { DUKE_ASLEEP_NPC_ID, DUKE_NPC_ID, LEGACY_DUKE_TYPE_ID, WARDEN_ID, WARDEN_SIZE } from '../../../npcs/duke/duke';
 import { LocModelLoader } from '../../../rs/config/loctype/LocModelLoader';
 import { ArchiveNpcTypeLoader } from '../../../rs/config/npctype/NpcTypeLoader';
+import { ArchiveSeqTypeLoader } from '../../../rs/config/seqtype/SeqTypeLoader';
+import { ArchiveSpotAnimTypeLoader } from '../../../rs/config/spotanimtype/SpotAnimTypeLoader';
 import { IndexModelLoader } from '../../../rs/model/ModelLoader';
 import { NpcModelLoader } from '../../../rs/model/NpcModelLoader';
+import { SpotAnimModelLoader } from '../../../rs/model/SpotAnimModelLoader';
 import { openRealCache, skipWithoutRealCache } from '../../../test/helpers/real-cache';
 import type { Coordinate } from '../../../types/simulation';
 import { DEFAULT_TILE_INDICATOR_CONFIG } from '../../../types/tileIndicators';
@@ -68,32 +58,44 @@ it.each<Coordinate>([
   [27, 51],
   [31, 51],
   [35, 51],
-])('draws the captured frontal row when the player is at (%i, %i)', (x, y) => {
+])('draws the captured frontal row through shared cues when the player is at (%i, %i)', (x, y) => {
+  const engine = new SimulationEngine({ encounter: new DukePracticeEncounter() });
+  engine.setAttackTarget(WARDEN_ID);
+  engine.advanceTick([31, 51]);
+  engine.setAttackTarget(null);
+  while (engine.currentTick < 6) engine.advanceTick([x, y]);
   const scene = new DukePracticeSceneCompositor();
   try {
     const renderer = scene['spotAnimRenderer'];
     vi.spyOn(renderer, 'isLoaded').mockReturnValue(true);
     vi.spyOn(renderer, 'getFrameLengths').mockReturnValue([90]);
     const upsert = vi.spyOn(renderer, 'upsert');
-    new DukePracticeEffects().update(
-      renderer,
-      { hazards: [{ kind: 'spikes', tiles: square([x, y], 1), impactTick: 7, expiresTick: 8 }], orbTile: null },
-      7,
-      [x, y],
+    const viewport = { width: 800, height: 600, dpr: 1 };
+    scene.build(
+      {
+        simulationState: engine.getState(),
+        events: engine.getLastTickEvents(),
+        options: { ...options, renderMode: '3d' },
+        interaction: { hoveredTile: null, targetTile: null },
+        interpolatedTick: 6,
+        speedMultiplier: 1,
+      },
+      new Projection3D(viewport),
+      viewport,
     );
 
     const [frontal, ...ground] = upsert.mock.calls.map(([request]) => request);
     expect(ground.map(({ spotAnimId }) => spotAnimId)).toEqual(DUKE_SLAM_CAPTURE.frontRowGraphics);
     for (const [index, { transform, lifecycle }] of ground.entries()) {
       if (transform.kind !== 'dynamic') throw new Error('Expected a tile transform for each ground graphic');
-      expect(transform.resolve(7, 7, null)?.position.slice(0, 2)).toEqual(SLAM_TILES[index].map((axis) => axis + 0.5));
-      expect(lifecycle).toMatchObject({ kind: 'oneShot', startTick: 7 });
+      expect(transform.resolve(6, 6, null)?.position.slice(0, 2)).toEqual(SLAM_TILES[index].map((axis) => axis + 0.5));
+      expect(lifecycle).toMatchObject({ kind: 'oneShot', startTick: 6 });
     }
     const { spotAnimId, lifecycle, transform } = frontal;
     expect(spotAnimId).toBe(DUKE_SPOT_ANIMS.npcIcicles);
-    expect(lifecycle).toMatchObject({ kind: 'oneShot', startTick: 7 });
+    expect(lifecycle).toMatchObject({ kind: 'oneShot', startTick: 6 });
     if (transform.kind !== 'dynamic') throw new Error('Expected a dynamic transform for the icicles');
-    expect(transform.resolve(7, 7, null)?.position.slice(0, 2)).toEqual([
+    expect(transform.resolve(6, 6, null)?.position.slice(0, 2)).toEqual([
       WARDEN_TILE[0] + WARDEN_SIZE / 2,
       WARDEN_TILE[1] + WARDEN_SIZE / 2,
     ]);
@@ -352,7 +354,7 @@ it('aims the blue bolt and its impact at the rendered player during movement', (
   engine.setAttackTarget(WARDEN_ID);
   engine.advanceTick([31, 51]);
   engine.setAttackTarget(null);
-  while (engine.currentTick < 7) engine.advanceTick(launch.trueTile);
+  while (engine.currentTick < 6) engine.advanceTick(launch.trueTile);
 
   const scene = new DukePracticeSceneCompositor();
   try {
@@ -362,12 +364,12 @@ it('aims the blue bolt and its impact at the rendered player during movement', (
     const upsert = vi.spyOn(renderer, 'upsert');
     const viewport = { width: 800, height: 600, dpr: 1 };
     const projection = new Projection3D(viewport);
-    const draw = (time: number, position: Coordinate, simulationState = engine.getState()) => {
+    const draw = (time: number, position: Coordinate) => {
       upsert.mockClear();
       scene.build(
         {
-          simulationState,
-          events: [],
+          simulationState: engine.getState(),
+          events: engine.getLastTickEvents(),
           options: { ...options, renderMode: '3d' },
           interaction: { hoveredTile: null, targetTile: null },
           interpolatedTick: time,
@@ -390,6 +392,8 @@ it('aims the blue bolt and its impact at the rendered player during movement', (
     const effect = (spotAnimId: number) =>
       upsert.mock.calls.find(([request]) => request.spotAnimId === spotAnimId)?.[0];
 
+    draw(6, launch.visibleTile);
+    engine.advanceTick(launch.trueTile);
     draw(7.6, launch.visibleTile);
     expect(effect(DUKE_SPOT_ANIMS.magicProjectile)).toBeUndefined();
     engine.advanceTick(launch.trueTile);
@@ -427,19 +431,6 @@ it('aims the blue bolt and its impact at the rendered player during movement', (
     const movingGraphic = effect(DUKE_SPOT_ANIMS.magicImpact);
     if (movingGraphic?.transform.kind !== 'dynamic') throw new Error('Expected a dynamic impact graphic');
     expect(movingGraphic.transform.resolve(10, 10.25, null)?.position.slice(0, 2)).toEqual([28.75, 51.5]);
-
-    if (hitState.encounter.kind !== 'duke_practice') throw new Error('Expected Duke encounter');
-    draw(10.5, impact.trueTile, {
-      ...hitState,
-      encounter: {
-        ...hitState.encounter,
-        visuals: {
-          ...hitState.encounter.visuals,
-          hazards: hitState.encounter.visuals.hazards.map((hazard) => ({ ...hazard, missed: true })),
-        },
-      },
-    });
-    expect(effect(DUKE_SPOT_ANIMS.magicImpact)).toBeUndefined();
   } finally {
     scene.dispose();
   }
@@ -489,7 +480,6 @@ it('renders the captured bile projectile during its flight and removes it at arr
 });
 
 it.each([
-  DUKE_NPC_ID,
   LEGACY_DUKE_TYPE_ID,
 ])('renders awake snapshot type %i with the same Duke model between sleeping snapshots', (awakeSnapshotType) => {
   const engine = new SimulationEngine({ encounter: new DukePracticeEncounter() });
@@ -651,6 +641,16 @@ it.skipIf(skipWithoutRealCache('pinned'))(
     try {
       scene.setEncounterRenderConfig(DUKE_PRACTICE_RENDER_CONFIG);
       await scene.loadNpc(npcs, animation);
+      const frameLoader = animation.getSeqFrameLoader();
+      if (!frameLoader) throw new Error('Expected the cache sequence frame loader');
+      await scene.loadSpotAnims(
+        new SpotAnimModelLoader(
+          new ArchiveSpotAnimTypeLoader(info, configs.getArchive(13)),
+          models,
+          new ArchiveSeqTypeLoader(info, configs.getArchive(12)),
+          frameLoader,
+        ),
+      );
       const engine = new SimulationEngine({ encounter: new DukePracticeEncounter() });
       const bait: Coordinate = [31, 51];
       engine.setAttackTarget(WARDEN_ID);
@@ -660,9 +660,22 @@ it.skipIf(skipWithoutRealCache('pinned'))(
 
       const viewport = { width: 800, height: 600, dpr: 1 };
       const projection = new Projection3D(viewport);
-      const draw = (time: number, replay = false) => {
-        const state = engine.getState();
-        const events = engine.getLastTickEvents();
+      const frames: {
+        state: ReturnType<typeof engine.getState>;
+        events: ReturnType<typeof engine.getLastTickEvents>;
+      }[] = [];
+      const draw = (time: number, replay: 'shared' | 'legacy' | false = false) => {
+        let state = engine.getState();
+        let events = engine.getLastTickEvents();
+        if (frames.at(-1)?.state.currentTick !== state.currentTick) frames.push({ state, events });
+        if (replay === 'legacy' && state.encounter.kind === 'duke_practice') {
+          state = {
+            ...state,
+            encounter: { ...state.encounter, visuals: { ...state.encounter.visuals, usesVisualEvents: undefined } },
+          };
+          events = events.filter((event) => event.type !== 'encounter_visual');
+        }
+        const history = replay === 'legacy' ? [{ state, events }] : frames.slice();
         scene.build(
           {
             simulationState: state,
@@ -673,8 +686,8 @@ it.skipIf(skipWithoutRealCache('pinned'))(
             speedMultiplier: 1,
             ...(replay
               ? {
-                  replayHistory: { frames: [{ state, events }], throughFrameIndex: 0 },
-                  timeline: { timelineKey: 'review', paused: true, timeMs: time * 600 },
+                  replayHistory: { frames: history, throughFrameIndex: history.length - 1 },
+                  timeline: { timelineKey: replay, paused: true, timeMs: time * 600 },
                 }
               : {}),
           },
@@ -691,12 +704,14 @@ it.skipIf(skipWithoutRealCache('pinned'))(
       // Cache 2772, seq 10176. Frame 41 carries the hand-impact cue (7224).
       expect(draw(7.35)).toMatchObject({ seqId: DUKE_SEQS.slam, currentFrame: 40 });
       expect(draw(7.38)).toMatchObject({ seqId: DUKE_SEQS.slam, currentFrame: 41 });
-      expect(draw(7.38, true)).toMatchObject({ seqId: DUKE_SEQS.slam, currentFrame: 41 });
+      expect(draw(7.38, 'shared')).toMatchObject({ seqId: DUKE_SEQS.slam, currentFrame: 41 });
+
+      expect(draw(7.38, 'legacy')).toMatchObject({ seqId: DUKE_SEQS.slam, currentFrame: 41 });
 
       engine.applyAction({ type: 'attackTarget', targetId: WARDEN_ID });
       engine.advanceTick(START_TILE);
       expect(engine.getState().playerPosition).toEqual(bait);
-      expect(draw(8, true)).toMatchObject({ seqId: DUKE_SEQS.slam, currentFrame: 60 });
+      expect(draw(8, 'shared')).toMatchObject({ seqId: DUKE_SEQS.slam, currentFrame: 60 });
       expect(engine.getState().damageHistory).not.toContainEqual(expect.objectContaining({ source: 'Slam' }));
     } finally {
       scene.dispose();

@@ -1,6 +1,7 @@
-import { DUKE_CENTER_TILE, SLAM_TILES } from '../../encounters/dukePractice/arena';
+import { DUKE_CENTER_TILE, DUKE_MOUTH_POSITION, SLAM_TILES } from '../../encounters/dukePractice/arena';
 import {
   DUKE_BILE_PROJECTILE,
+  DUKE_GROUND_ICICLES,
   DUKE_MAGIC_PROJECTILE,
   DUKE_SPOT_ANIMS,
   DUKE_VENT_ARM_TICKS,
@@ -19,18 +20,7 @@ import type { TransformSource } from '../effects/spotAnimTypes';
 import { getTerrainHeightInterpolated } from '../shared/renderUtils';
 
 const CYCLES_PER_TICK = GAME_TICK_MS / CLIENT_TICK_MS;
-const DUKE_MOUTH_X = DUKE_CENTER_TILE[0] + 0.5;
-const DUKE_MOUTH_Y = DUKE_CENTER_TILE[1] - 1.5;
-// 20261126-232238-Duke.jsonl:4697–4704, west to east along the front row.
-const GROUND_ICICLES = [
-  DUKE_SPOT_ANIMS.groundIciclesOuter,
-  DUKE_SPOT_ANIMS.groundIciclesMidOuter,
-  DUKE_SPOT_ANIMS.groundIciclesMidInner,
-  DUKE_SPOT_ANIMS.groundIciclesCenter,
-  DUKE_SPOT_ANIMS.groundIciclesMidInner,
-  DUKE_SPOT_ANIMS.groundIciclesMidOuter,
-  DUKE_SPOT_ANIMS.groundIciclesOuter,
-];
+const [DUKE_MOUTH_X, DUKE_MOUTH_Y] = DUKE_MOUTH_POSITION;
 
 type DukeProjectile = {
   startCycle: number;
@@ -241,11 +231,12 @@ export class DukePracticeEffects {
     for (const hazard of [...visuals.hazards, ...(visuals.fadingEffects ?? [])]) {
       const { kind, impactTick, expiresTick, tiles, landingTick = impactTick, windupTick } = hazard;
       const id = `duke-${kind}-${impactTick}`;
+      if (visuals.usesVisualEvents && (kind === 'spikes' || kind === 'magic')) continue;
       if (kind === 'spikes') {
         // Cache graphic 2439 has its frontal offset baked relative to the NPC's center.
         play(`${id}-rise`, DUKE_SPOT_ANIMS.npcIcicles, DUKE_CENTER_TILE, impactTick);
         SLAM_TILES.forEach((tile, index) => {
-          play(`${id}-tile-${index}`, GROUND_ICICLES[index], tile, impactTick);
+          play(`${id}-tile-${index}`, DUKE_GROUND_ICICLES[index], tile, impactTick);
         });
       } else if (kind === 'magic') {
         if (time < landingTick) {

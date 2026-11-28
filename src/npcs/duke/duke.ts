@@ -1,10 +1,14 @@
 import type { NpcActor } from '../../core/actors/NpcActor';
 import { createNpcDefinition, NpcDefinitionCollection } from '../../core/npcs';
 import { getMonsterFormulaStats } from '../../data/monsterData';
-import { WARDEN_SIZE, WARDEN_TILE } from './arena';
-import { DUKE_ASLEEP_NPC_ID, DUKE_NPC_ID } from './constants';
-import { ENRAGE_HP, VENTS_HP, WARDEN_MAX_HP } from './controls';
+import type { Coordinate } from '../../types/simulation';
 
+// Awakened Duke types and 7×7 footprint verified in cache 2772.
+export const DUKE_NPC_ID = 12191;
+export const DUKE_ASLEEP_NPC_ID = 12166;
+export const WARDEN_SIZE = 7;
+// https://oldschool.runescape.wiki/w/Duke_Sucellus#Awakened
+export const WARDEN_MAX_HP = 1697;
 export const WARDEN_ID = 'rift-warden';
 /** NPC type stored by replays from before the Duke models were loaded from cache. */
 export const LEGACY_DUKE_TYPE_ID = -100;
@@ -23,14 +27,6 @@ const definition = createNpcDefinition<WardenPlan, undefined>({ id: WARDEN_ID, m
 export const wardenDefinitions = new NpcDefinitionCollection([definition.register(undefined)]);
 export const getWardenPlan = definition.getState;
 
-export function wardenCadence(hp: number): number {
-  return hp <= ENRAGE_HP ? 4 : 5;
-}
-
-export function wardenGasInterval(hp: number): number {
-  return hp <= ENRAGE_HP ? 3 : hp <= VENTS_HP ? 4 : 5;
-}
-
 export function createWardenPlan(openingAttackTick: number | null): WardenPlan {
   return {
     openingAttackTick,
@@ -43,7 +39,7 @@ export function createWardenPlan(openingAttackTick: number | null): WardenPlan {
   };
 }
 
-export function createWarden(hp: number): NpcActor {
+export function createWarden(position: Coordinate, hp: number, attackSpeed: number): NpcActor {
   // https://oldschool.runescape.wiki/w/Duke_Sucellus#Awakened
   const formulaStats = getMonsterFormulaStats(DUKE_NPC_ID, { hitpoints: WARDEN_MAX_HP });
   if (!formulaStats) throw new TypeError('Missing Awakened Duke formula stats');
@@ -55,8 +51,8 @@ export function createWarden(hp: number): NpcActor {
       role: 'boss',
       npcTypeId: DUKE_ASLEEP_NPC_ID,
       archetypeId: WARDEN_ID,
-      position: [...WARDEN_TILE],
-      previousPosition: [...WARDEN_TILE],
+      position: [...position],
+      previousPosition: [...position],
       size: WARDEN_SIZE,
       facing: 0,
       alive: true,
@@ -73,7 +69,7 @@ export function createWarden(hp: number): NpcActor {
         freezeResistance: 100,
       },
       combat: {
-        attackSpeed: wardenCadence(hp),
+        attackSpeed,
         attackRange: 12,
         attackStyle: 'melee',
         targetId: null,

@@ -1,11 +1,11 @@
 import type { EncounterControls } from '../../core/encounters/types';
+import { WARDEN_MAX_HP } from '../../npcs/duke/duke';
 
 export const DUKE_PRACTICE_KIND = 'duke_practice';
 export const START_PHASE_KEY = 'dukePracticeStartPhase';
 export const ALWAYS_BILE_KEY = 'dukePracticeAlwaysBile';
 
 // Practice breakpoints from https://oldschool.runescape.wiki/w/Duke_Sucellus/Strategies#Awakened_mode
-export const WARDEN_MAX_HP = 1697;
 export const VENTS_HP = Math.floor(WARDEN_MAX_HP * 0.76);
 export const BILE_HP = Math.floor(WARDEN_MAX_HP * 0.65);
 // Practice estimate near one third HP. In 20261127-022231-Duke-Sucellus_7.jsonl,

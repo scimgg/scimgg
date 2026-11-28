@@ -1,19 +1,11 @@
+import { DUKE_ASLEEP_NPC_ID, DUKE_NPC_ID, WARDEN_ID, WARDEN_SIZE } from '../../npcs/duke/duke';
 import type { SceneObjectLocData } from '../../render/graphics/SceneObjectRenderer';
 import type { SceneObjectSpec } from '../../render/graphics/sceneObjectTypes';
 import type { EncounterRenderConfig } from '../../render/scene/encounterRenderConfig';
 import { LocModelType } from '../../rs/config/loctype/LocModelType';
-import { WARDEN_SIZE, WARDEN_TILE } from './arena';
-import {
-  DUKE_ASLEEP_NPC_ID,
-  DUKE_BILE_POOL_LOC_ID,
-  DUKE_MAP_SQUARE,
-  DUKE_NPC_ID,
-  DUKE_ORB_NPC_ID,
-  DUKE_SEQS,
-  DUKE_SPOT_ANIMS,
-} from './constants';
+import { WARDEN_TILE } from './arena';
+import { DUKE_BILE_POOL_LOC_ID, DUKE_MAP_SQUARE, DUKE_ORB_NPC_ID, DUKE_SEQS, DUKE_SPOT_ANIMS } from './constants';
 import { DUKE_PRACTICE_KIND } from './controls';
-import { WARDEN_ID } from './warden';
 
 const POOL_LOCAL_TRANSFORM = new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
 
