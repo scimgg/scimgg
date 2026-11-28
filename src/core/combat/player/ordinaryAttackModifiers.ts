@@ -17,6 +17,7 @@ export type OrdinaryModifierInput = {
   readonly targetMagicAttackBonus: number;
   readonly markOfDarknessActive: boolean;
   readonly demonbaneVulnerability: number;
+  readonly twistedBowMagicCap?: number | undefined;
 };
 
 export type OrdinaryModifierStages = {
@@ -54,6 +55,20 @@ const DEMONBANE_WEAPON_BONUS_PERCENT: ReadonlyMap<number, number> = new Map([
 ]);
 
 const DEMON_ATTRIBUTE = 'demon';
+const DRAGON_ATTRIBUTE = 'dragon';
+
+/**
+ * Dragonbane melee and ranged weapons (/w/Dragon_hunter_lance, /w/Dragon_hunter_crossbow):
+ * - Dragon hunter lance (22978): +20% accuracy and +20% damage vs draconic targets.
+ * - Dragon hunter crossbow (21012, base of 25916/25918): +30% accuracy and +25% damage vs draconic targets.
+ */
+const DRAGONBANE_WEAPON_BONUS: ReadonlyMap<
+  number,
+  { readonly accuracyPercent: number; readonly damagePercent: number }
+> = new Map([
+  [22978, { accuracyPercent: 120, damagePercent: 120 }],
+  [21012, { accuracyPercent: 130, damagePercent: 125 }],
+]);
 
 function percent(value: number): FormulaRatio {
   return { numerator: value, denominator: 100 };
@@ -76,6 +91,8 @@ export function ordinaryModifierStages(input: OrdinaryModifierInput): OrdinaryMo
   if (twistedBow !== null) return twistedBow;
   const crystalArmour = crystalArmourStages(input);
   if (crystalArmour !== null) return crystalArmour;
+  const dragonbane = input.targetAttributes.includes(DRAGON_ATTRIBUTE) ? dragonbaneWeaponStages(input) : null;
+  if (dragonbane !== null) return dragonbane;
   if (!input.targetAttributes.includes(DEMON_ATTRIBUTE)) return NO_STAGES;
   return demonbaneWeaponStages(input);
 }
@@ -109,13 +126,24 @@ function crystalArmourStages(input: OrdinaryModifierInput): OrdinaryModifierStag
 function twistedBowStages(input: OrdinaryModifierInput): OrdinaryModifierStages | null {
   if (input.weaponId === undefined || !TWISTED_BOW_IDS.has(input.weaponId)) return null;
 
-  const magic = Math.min(Math.max(input.targetMagicLevel, input.targetMagicAttackBonus), TWISTED_BOW_MAGIC_CAP);
+  const magicCap = input.twistedBowMagicCap ?? TWISTED_BOW_MAGIC_CAP;
+  const magic = Math.min(Math.max(input.targetMagicLevel, input.targetMagicAttackBonus), magicCap);
   const accuracy = twistedBowBonusPercent(magic, true);
   const damage = twistedBowBonusPercent(magic, false);
 
   return {
     attackRollStages: [percent(accuracy)],
     maxHitStages: [percent(damage)],
+  };
+}
+
+function dragonbaneWeaponStages(input: OrdinaryModifierInput): OrdinaryModifierStages | null {
+  if (input.weaponId === undefined) return null;
+  const bonus = DRAGONBANE_WEAPON_BONUS.get(getEquipmentCombatBaseId(input.weaponId));
+  if (bonus === undefined) return null;
+  return {
+    attackRollStages: [percent(bonus.accuracyPercent)],
+    maxHitStages: [percent(bonus.damagePercent)],
   };
 }
 

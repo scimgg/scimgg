@@ -94,12 +94,28 @@ export function launchPlayerAttack(input: PlayerAttackLaunchInput): void {
   const targetHpAtLaunch = input.target.vitals.hp;
   const equipmentHitEffects = captureEquipmentHitEffects(input.player.equipment, input.formulaStyle);
   const accuracySucceeded = !forcedMiss && firstHit.accurate;
+  const resolveTargetHitRule = input.deps.encounterRules?.resolveTargetHitDamage;
+  const resolveTargetHitDamage =
+    resolveTargetHitRule === undefined
+      ? undefined
+      : (
+          target: Readonly<NpcActor>,
+          style: FirstPartyPlayerAttackResult['hits'][number]['style'],
+          attackKind: FirstPartyPlayerAttackResult['hits'][number]['attackKind'],
+          damage: number,
+          accurate: boolean,
+        ) =>
+          resolveTargetHitRule(
+            { target, style, attackKind, damage, accurate },
+            { tick: input.deps.world.tick, player: input.player, world: input.deps.world },
+          );
   const playerAttackBridge = {
     events: input.deps.tickEvents,
     infiniteHealth: input.deps.infiniteHealth,
     enablePendingHits: firstHit.impactDelayTicks > 0,
     outgoingDamageMultiplier: input.outgoingDamageMultiplier,
     specDamageMultiplier: input.specialAttackDamageMultiplier,
+    ...(resolveTargetHitDamage === undefined ? {} : { resolveTargetHitDamage }),
     getAttackSpeed: () => input.finalSpeed,
     resolveAttack: (): Partial<AttackResolution> => ({
       style: firstHit.style,
@@ -155,6 +171,8 @@ export function launchPlayerAttack(input: PlayerAttackLaunchInput): void {
         targetId: input.target.id,
         attackType: firstHit.style,
         attackKind: firstHit.attackKind,
+        accurate: accuracySucceeded,
+        rolledDamage: firstHit.damage,
       });
     },
   };
@@ -200,6 +218,7 @@ export function launchPlayerAttack(input: PlayerAttackLaunchInput): void {
           enablePendingHits: hit.impactDelayTicks > 0,
           outgoingDamageMultiplier: input.outgoingDamageMultiplier,
           specDamageMultiplier: input.specialAttackDamageMultiplier,
+          ...(resolveTargetHitDamage === undefined ? {} : { resolveTargetHitDamage }),
           onDamageApplied: (info): void => input.deps.onDamageApplied(info),
         },
       );

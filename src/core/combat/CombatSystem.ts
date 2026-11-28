@@ -180,6 +180,17 @@ export interface CombatBridge {
   incomingDamageMultiplier?: number;
   outgoingDamageMultiplier?: number;
   specDamageMultiplier?: number;
+  resolveTargetHitDamage?(
+    target: Readonly<NpcActor>,
+    style: DamageType,
+    attackKind: AttackKind,
+    damage: number,
+    accurate: boolean,
+  ): {
+    readonly damage: number;
+    readonly invertToHeal?: boolean;
+    readonly blockStatDrains?: boolean;
+  };
   getAttackSpeed?(attacker: ActorBase): number;
   resolveAttack?(world: WorldState, attacker: ActorBase, target: ActorBase): Partial<AttackResolution>;
   onDamageApplied?(info: DamageAppliedInfo): void;
@@ -1031,6 +1042,62 @@ export class CombatSystem {
     ) {
       baseDamage = Math.max(0, Math.floor(baseDamage * bridge.specDamageMultiplier));
     }
+
+    let blockStatDrains = false;
+    if (
+      damageMode === 'standard' &&
+      source.kind === 'player' &&
+      this.isNpcActor(target) &&
+      bridge.resolveTargetHitDamage
+    ) {
+      const targetHit = bridge.resolveTargetHitDamage(
+        target,
+        attack.style,
+        attack.attackKind,
+        baseDamage,
+        attack.accuracySucceeded,
+      );
+      blockStatDrains = targetHit.blockStatDrains === true;
+      if (targetHit.invertToHeal === true) {
+        const healAmount = Math.max(0, Math.floor(targetHit.damage));
+        const hpBefore = target.vitals.hp;
+        if (healAmount > 0) {
+          target.vitals.hp = Math.min(target.vitals.maxHp, hpBefore + healAmount);
+        }
+        bridge.events.setTick(world.tick);
+        bridge.events.emit({
+          type: 'hit_applied',
+          targetId: target.id,
+          targetPosition: [...target.position] as Coordinate,
+          damage: 0,
+          blocked: true,
+          attackKind: attack.attackKind,
+          prayedCorrectly: null,
+          accurate: attack.accuracySucceeded,
+        });
+        bridge.events.emit({
+          type: 'hitsplat_spawned',
+          targetId: target.id,
+          amount: healAmount,
+          hitsplatType: healAmount > 0 ? 'heal' : 'block',
+        });
+        bridge.onDamageApplied?.({
+          tick: world.tick,
+          sourceId: source.id,
+          targetId: target.id,
+          attackType: attack.style,
+          baseDamage: 0,
+          effectiveDamage: 0,
+          activePrayer: null,
+          prayedCorrectly: null,
+          hpBefore,
+          hpAfter: target.vitals.hp,
+          expectedHit: attack.expectedHit,
+        });
+        return;
+      }
+      baseDamage = Math.max(0, Math.floor(targetHit.damage));
+    }
     const damageApplied = this.applyDamage(
       source,
       target,
@@ -1082,12 +1149,22 @@ export class CombatSystem {
       // runs before `outgoingDamageMultiplier`, so a damping encounter can floor a landed hit to 0.
       // Shadow's drain and Ice's freeze key off the hit landing; everything else, Smoke's poison
       // included, still wants real damage. See {@link appliesOnAccurateHit}.
-      const eligible =
+      const rawEligible =
         damageApplied.effectiveDamage > 0
           ? attack.postHitEffects
           : attack.accuracySucceeded
             ? attack.postHitEffects.filter(appliesOnAccurateHit)
             : [];
+      const eligible = blockStatDrains
+        ? rawEligible.filter(
+            (effect) =>
+              effect.effect !== 'drain_defence' &&
+              effect.effect !== 'drain_magic' &&
+              effect.effect !== 'drain_attack' &&
+              effect.effect !== 'weaken' &&
+              effect.effect !== 'condemn',
+          )
+        : rawEligible;
       if (eligible.length > 0) {
         applySpecialAttackEffects(source, target, damageApplied.effectiveDamage, eligible, world.tick);
       }

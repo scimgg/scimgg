@@ -769,12 +769,19 @@ export class SimulationEngine {
   private buildCombatBridge(overrides?: Partial<CombatBridge>): CombatBridge {
     const rules = this.getEncounterRules();
     const ctx = this.buildEngineContext();
+    const resolveTargetHitRule = rules?.resolveTargetHitDamage;
     return {
       events: this.tickEvents,
       infiniteHealth: this.mechanicsConfig.infiniteHealth,
       incomingDamageMultiplier: resolveDynamic(rules?.incomingDamageMultiplier, ctx),
       outgoingDamageMultiplier: resolveDynamic(rules?.outgoingDamageMultiplier, ctx),
       specDamageMultiplier: resolveDynamic(rules?.specialAttacks?.damageMultiplier, ctx),
+      ...(resolveTargetHitRule === undefined
+        ? {}
+        : {
+            resolveTargetHitDamage: (target, style, attackKind, damage, accurate) =>
+              resolveTargetHitRule({ target, style, attackKind, damage, accurate }, this.buildEngineContext()),
+          }),
       onDamageApplied: (info) => this.onCombatDamageApplied(info),
       onSourceSelfDamageApplied: () => this.tryRedemption(this.worldState.tick),
       ...overrides,
@@ -1412,9 +1419,11 @@ export class SimulationEngine {
     const shouldRun = effectiveRunning && player.runEnergy.energy > 0;
 
     let movementResult: MovementResult;
+    // Locked, frozen, or teleported earlier this tick: the walk target is no longer the player's to follow.
+    const movementLocked =
+      this.walkTargetDiscarded || resolveDynamic(rules?.playerMovementLocked, this.buildEngineContext()) === true;
     const attackNpc = player.attackTarget ? this.worldState.actors.get(player.attackTarget) : undefined;
-    // Locked or teleported earlier this tick: the walk target is no longer the player's to follow.
-    if (this.walkTargetDiscarded) {
+    if (movementLocked) {
       movementResult = { position: [...player.position] as Coordinate, stepTiles: [] };
     } else if (attackNpc !== undefined && canPlayerStartAttackOn(player, attackNpc) && attackNpc.kind === 'npc') {
       const npc = attackNpc as NpcActor;

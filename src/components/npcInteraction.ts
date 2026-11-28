@@ -9,7 +9,7 @@ import { log } from '../util/Logger';
 // left click as an attack. The action array is sparse (holes for unset slots), so
 // a non-Attack option never makes the NPC attackable.
 export function isNpcAttackable(npcType: Pick<NpcType, 'actions'>): boolean {
-  return npcType.actions.some((action): action is string => action === 'Attack');
+  return npcType.actions.some((action): action is string => action === 'Attack' || action === 'Douse');
 }
 
 // True when the NPC's cache type carries at least one op, i.e. it contributes a

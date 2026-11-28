@@ -324,6 +324,15 @@ export const VERIFIED_WEAPONS: Readonly<Record<number, WeaponVerification>> = {
     projectile: [COLOSSEUM_CAPTURE, YAMA_FORFEIT_BREATH_CAPTURE, 'src/data/weaponCombatVisuals.ts'],
     special: 'none',
   },
+  22978: {
+    name: 'Dragon hunter lance',
+    // Every style (stab/slash/crush) is captured in the weapon sweep; its +20% dragonbane
+    // accuracy and damage modifier lives in `ordinaryAttackModifiers.ts`.
+    animation: [WEAPON_SWEEP_CAPTURE],
+    sound: [WEAPON_SWEEP_CAPTURE],
+    projectile: 'none',
+    special: 'none',
+  },
 };
 
 export function findWeaponVerification(itemId: number): WeaponVerification | undefined {
@@ -418,7 +427,6 @@ export const WEAPON_VERIFICATION_GAPS: Readonly<Record<number, Gaps>> = {
   11808: ['Special attack freeze graphic missing.'],
   // Sever is simulated from the wiki; its animation and sounds were never captured.
   4587: ['Special attack unverified.'],
-  // No encounter has a dragon yet, so dragonbane fails closed rather than guessing its stacking.
-  22978: [DRAGON_BONUS_NOT_IMPLEMENTED],
+  // Dragon hunter wand spell dragonbane passive is not modeled yet.
   30070: [DRAGON_BONUS_NOT_IMPLEMENTED],
 };
