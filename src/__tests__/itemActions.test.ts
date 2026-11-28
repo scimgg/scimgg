@@ -18,6 +18,7 @@ import {
   getPrepotEffects,
   ITEM_ACTIONS,
 } from '../data/itemEffects';
+import { HALIBUT_ITEM_ID } from '../data/itemIds';
 import { prayerRestoreAmount } from '../data/prayerRestoration';
 import { YamaEncounter } from '../encounters/yamaP3/YamaEncounter';
 import { ITEM_WEAPON_CATEGORY } from '../types/attackStyles';
@@ -1587,10 +1588,13 @@ describe('COMBO EATING: priority-ordered cooldown tracks', () => {
       expect(r2.state.cooldownTracks.potion).toBe(13);
     });
 
-    it('food → combo_food: both apply (no potion needed)', () => {
+    it.each([
+      { id: 3144, name: 'karambwan', heal: 18 },
+      { id: HALIBUT_ITEM_ID, name: 'halibut', heal: 20 },
+    ])('can combo eat $name after regular food on the same tick', ({ id, heal }) => {
       const state = createTestState({ playerHP: 50, currentTick: 10 });
       const foodDef = ITEM_ACTIONS[29143];
-      const comboDef = ITEM_ACTIONS[3144];
+      const comboDef = ITEM_ACTIONS[id];
 
       const r1 = tryConsume(state, foodDef);
       expect(r1.applied).toBe(true);
@@ -1598,7 +1602,8 @@ describe('COMBO EATING: priority-ordered cooldown tracks', () => {
       const r2 = tryConsume(r1.state, comboDef);
       expect(r2.applied).toBe(true);
 
-      expect(r2.state.playerHP).toBe(82);
+      expect(r2.state.playerHP).toBe(64 + heal);
+      expect(r2.state.cooldownTracks.combo_food).toBe(13);
     });
 
     it('potion → food: food is BLOCKED (potion to the right is on cooldown)', () => {
@@ -1714,7 +1719,7 @@ describe('ATTACK_DELAY_BY_TRACK / getAttackDelayForTrack', () => {
       // The locator orb and rock cake are deliberately absent: they are inventory options,
       // not food, and carry no track at all.
       food: [13441, 29143], // anglerfish, antelope
-      combo_food: [3144], // cooked karambwan
+      combo_food: [3144, HALIBUT_ITEM_ID], // cooked karambwan, halibut
       potion: [10925, 27641, 6685, 12695, 27629], // sanfew, sat heart, sara brew, super combat, forgotten brew
     } as const;
 
