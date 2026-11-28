@@ -192,7 +192,7 @@ import { npcFootprintsOverlap } from './npcOccupancy';
 import { NpcDefinitionCollection, type NpcDefinitionContext } from './npcs';
 import {
   type PrayerInputOutcome,
-  prayerSetChanges,
+  prayerSetLogChanges,
   type QueuedPrayerAction,
   resolvePrayerActions,
 } from './prayerInput';
@@ -2813,8 +2813,8 @@ export class SimulationEngine {
       this.logEvent({ tick, type: EventType.PRAYER_CHANGE, from: protectionBefore, to: player.activePrayer });
     }
     for (const change of [
-      ...prayerSetChanges(boostBefore, player.boostPrayers),
-      ...prayerSetChanges(independentBefore, player.independentPrayers),
+      ...prayerSetLogChanges(boostBefore, player.boostPrayers),
+      ...prayerSetLogChanges(independentBefore, player.independentPrayers),
     ]) {
       this.logEvent({ tick, type: EventType.PRAYER_CHANGE, ...change });
     }

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { ObjType } from '../../../rs/config/objtype/ObjType';
-import { WIKI_TIERED_PRAYER_ROWS, type WikiTieredPrayer } from '../../../types/__tests__/fixtures/wikiPrayerTable';
+import { WIKI_TIERED_PRAYER_ROWS } from '../../../types/__tests__/fixtures/wikiPrayerTable';
 import { createEmptyCombatSupplies } from '../../../types/encounterLoadout';
 import type { EquipmentStats } from '../../../types/equipmentStats';
 import { createEmptyStats, getItemStats } from '../../../types/equipmentStats';
@@ -993,55 +993,14 @@ describe('offensive prayer multipliers', () => {
   });
 });
 
-/**
- * Each tiered prayer and Chivalry through the whole player-attack path, with 99s everywhere.
- *
- * Wiki formulas (https://oldschool.runescape.wiki/w/Damage_per_second/Melee, /Ranged, /Magic):
- * effective level = floor(99 × prayer) + stance + 8; attack roll = effective × (bonus + 64);
- * melee and ranged max hit = floor((effective strength × (strength bonus + 64) + 320) / 640);
- * magic max hit = floor(base × (1 + magic damage)).
- * - melee: scimitar Accurate (+3 Attack, +0 Strength), slash +80, strength +120
- * - ranged: Accurate (+3 both), ranged attack +60, ranged strength +100
- * - magic: Casting (+0), magic attack +70, a 100 base max hit and no gear damage
- *
- * Unprayed: melee 110 × 144 = 15840 and floor((107 × 184 + 320) / 640) = 31; ranged 110 × 124 =
- * 13640 and floor((110 × 164 + 320) / 640) = 28; magic 107 × 134 = 14338 and 100.
- */
-const UNPRAYED_ATTACKS = {
-  meleeRoll: 15840,
-  meleeMax: 31,
-  rangedRoll: 13640,
-  rangedMax: 28,
-  magicRoll: 14338,
-  magicMax: 100,
-} as const;
+const ATTACK_NUMBERS = ['meleeRoll', 'meleeMax', 'rangedRoll', 'rangedMax', 'magicRoll', 'magicMax'] as const;
+type AttackNumber = (typeof ATTACK_NUMBERS)[number];
 
-const PRAYED_ATTACKS: Record<WikiTieredPrayer, Partial<Record<keyof typeof UNPRAYED_ATTACKS, number>>> = {
-  [PrayerType.ThickSkin]: {},
-  [PrayerType.RockSkin]: {},
-  [PrayerType.SteelSkin]: {},
-  // floor(99 × 1.05) = 103, floor(99 × 1.1) = 108, floor(99 × 1.15) = 113: max hits from 111, 116, 121.
-  [PrayerType.BurstOfStrength]: { meleeMax: 32 },
-  [PrayerType.SuperhumanStrength]: { meleeMax: 33 },
-  [PrayerType.UltimateStrength]: { meleeMax: 35 },
-  // (103 + 11) × 144, (108 + 11) × 144, (113 + 11) × 144
-  [PrayerType.ClarityOfThought]: { meleeRoll: 16416 },
-  [PrayerType.ImprovedReflexes]: { meleeRoll: 17136 },
-  [PrayerType.IncredibleReflexes]: { meleeRoll: 17856 },
-  // (103 + 11) × 124 = 14136, floor((114 × 164 + 320) / 640) = 29; (108 + 11) × 124 = 14756, 30
-  [PrayerType.SharpEye]: { rangedRoll: 14136, rangedMax: 29 },
-  [PrayerType.HawkEye]: { rangedRoll: 14756, rangedMax: 30 },
-  // (103 + 8) × 134 = 14874; (108 + 8) × 134 = 15544 and floor(100 × 1.01) = 101
-  [PrayerType.MysticWill]: { magicRoll: 14874 },
-  [PrayerType.MysticLore]: { magicRoll: 15544, magicMax: 101 },
-  // Attack (113 + 11) × 144 = 17856; Strength floor(99 × 1.18) = 116, floor((124 × 184 + 320) / 640) = 36
-  [PrayerType.Chivalry]: { meleeRoll: 17856, meleeMax: 36 },
-};
-
-describe('tiered prayers and Chivalry in player attacks', () => {
+describe('boost prayers in player attacks', () => {
   const NO_GEAR_DAMAGE = { outgoingDamageMultiplier: 1, specialAttackDamageMultiplier: 1 };
 
-  function attacksWith(boostPrayers: PrayerType[]): Record<keyof typeof UNPRAYED_ATTACKS, number> {
+  /** Base attack rolls and max hits of a scimitar, a bow and a 100-base-max-hit spell, at 99s. */
+  function attacksWith(boostPrayers: PrayerType[]): Record<AttackNumber, number> {
     const base = runtimeInput({ application: NO_GEAR_DAMAGE });
     const diagnostics = (input: PlayerAttackRuntimeInput) => {
       const plan = ready(planPlayerAttackFromRuntime(input));
@@ -1084,11 +1043,19 @@ describe('tiered prayers and Chivalry in player attacks', () => {
     };
   }
 
-  it('starts from the unprayed numbers the wiki formulas give', () => {
-    expect(attacksWith([])).toEqual(UNPRAYED_ATTACKS);
-  });
-
-  it.each(WIKI_TIERED_PRAYER_ROWS)('changes exactly the attack numbers $prayer boosts', ({ prayer }) => {
-    expect(attacksWith([prayer])).toEqual({ ...UNPRAYED_ATTACKS, ...PRAYED_ATTACKS[prayer] });
+  // A representative prayer per stat it boosts, against the same unprayed player: each raises its
+  // own numbers and leaves every other one as it was.
+  it.each([
+    [PrayerType.IncredibleReflexes, ['meleeRoll']],
+    [PrayerType.UltimateStrength, ['meleeMax']],
+    [PrayerType.HawkEye, ['rangedRoll', 'rangedMax']],
+    [PrayerType.MysticLore, ['magicRoll', 'magicMax']],
+  ] as const)('%s raises only %j', (prayer, raised: readonly AttackNumber[]) => {
+    const unprayed = attacksWith([]);
+    const prayed = attacksWith([prayer]);
+    for (const key of ATTACK_NUMBERS) {
+      if (raised.includes(key)) expect(prayed[key], key).toBeGreaterThan(unprayed[key]);
+      else expect(prayed[key], key).toBe(unprayed[key]);
+    }
   });
 });

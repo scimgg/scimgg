@@ -1,4 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { AudioEngine } from '../../audio/AudioEngine';
+import { coreAudioRules } from '../../audio/coreAudioRules';
+import { EventAudioPlayer } from '../../audio/EventAudioPlayer';
 import { getMonsterFormulaStats } from '../../data/monsterData';
 import { LobbyEncounter } from '../../encounters/lobby/LobbyEncounter';
 import { VOID_FLARE_CHARGE_TICKS } from '../../encounters/yamaP3/contractConfig';
@@ -1904,7 +1907,7 @@ describe('SimulationEngine boost prayer conflicts', () => {
     expect(engine.prayerState.drainCounter).toBe(3);
   });
 
-  it('turns all three rows off with one Chivalry click and one change', () => {
+  it('turns all three rows off with one Chivalry click and one change, logging each', () => {
     const engine = engineWithSingleStats();
     engine.queueBoostPrayer(PrayerType.Chivalry);
     tick(engine);
@@ -1912,7 +1915,26 @@ describe('SimulationEngine boost prayer conflicts', () => {
     expect(engine.boostPrayers).toEqual([PrayerType.Chivalry]);
     expect(engine.prayerState.activePrayers).toEqual([PrayerType.Chivalry]);
     expect(changedThisTick(engine)).toEqual([{ from: PrayerType.ThickSkin, to: PrayerType.Chivalry }]);
-    expect(loggedThisTick(engine)).toEqual([{ from: PrayerType.ThickSkin, to: PrayerType.Chivalry }]);
+    expect(loggedThisTick(engine)).toEqual([
+      { from: PrayerType.ThickSkin, to: PrayerType.Chivalry },
+      { from: PrayerType.BurstOfStrength, to: null },
+      { from: PrayerType.ClarityOfThought, to: null },
+    ]);
+  });
+
+  it('plays only the Chivalry activation sound for that click', () => {
+    const engine = engineWithSingleStats();
+    engine.queueBoostPrayer(PrayerType.Chivalry);
+    tick(engine);
+    const audio = { play: vi.fn(), preloadSounds: vi.fn().mockResolvedValue(undefined) };
+
+    new EventAudioPlayer(audio as unknown as AudioEngine, coreAudioRules).onEvents(
+      [...engine.getLastTickEvents()],
+      engine.getState().playerPosition,
+    );
+
+    // 3826 is Chivalry's activation sound; the shared deactivation sound never plays.
+    expect(audio.play.mock.calls.map(([soundId]) => soundId)).toEqual([3826]);
   });
 
   it('lets Sharp Eye turn the offence rows off but leave Thick Skin burning', () => {

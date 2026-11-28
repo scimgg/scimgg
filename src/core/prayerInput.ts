@@ -60,8 +60,9 @@ export interface PrayerInputOutcome extends PrayerInputState {
  *
  * A prayer that lit is paired with the first prayer it turned off by conflict, the way a slot
  * swap always was: one click, one change, one sound. Any further prayers the same arrival turned
- * off are not reported separately. Prayers leaving without being displaced come first, so the
- * deactivation sound never plays after the activation that followed it.
+ * off are not reported separately; {@link prayerSetLogChanges} adds them for the event log. Prayers
+ * leaving without being displaced come first, so the deactivation sound never plays after the
+ * activation that followed it.
  */
 export function prayerSetChanges(before: readonly PrayerType[], after: readonly PrayerType[]): PrayerChange[] {
   const arrivals = after.filter((prayer) => !before.includes(prayer));
@@ -77,6 +78,18 @@ export function prayerSetChanges(before: readonly PrayerType[], after: readonly 
     changes.push({ from, to: arrival });
   }
   return changes;
+}
+
+/**
+ * {@link prayerSetChanges} with a removal after them for each further prayer an arrival turned off,
+ * so the event log names every prayer that went dark. Not for sounds: those play per change, and
+ * the extra removals would add a deactivation sound to a click that only plays its activation.
+ */
+export function prayerSetLogChanges(before: readonly PrayerType[], after: readonly PrayerType[]): PrayerChange[] {
+  const changes = prayerSetChanges(before, after);
+  const reported = new Set(changes.map((change) => change.from));
+  const unreported = before.filter((prayer) => !after.includes(prayer) && !reported.has(prayer));
+  return [...changes, ...unreported.map((prayer) => ({ from: prayer, to: null }))];
 }
 
 /** Light `prayer` in `set`, turning off whatever it conflicts with. */

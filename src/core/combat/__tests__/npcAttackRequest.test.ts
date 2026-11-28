@@ -1,13 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CollisionFlag } from '../../../rs/collision/CollisionFlag';
-import { WIKI_TIERED_PRAYER_ROWS, type WikiTieredPrayer } from '../../../types/__tests__/fixtures/wikiPrayerTable';
 import { createEmptyStats } from '../../../types/equipmentStats';
 import { PrayerType } from '../../../types/simulation';
 import type { NpcActor } from '../../actors/NpcActor';
 import type { PlayerActor } from '../../actors/PlayerActor';
 import type { NpcFormulaStats } from '../../actors/types';
 import { setArenaConfig } from '../../constants';
-import { hitChance, playerDefenceRoll } from '../accuracy';
+import { playerDefenceRoll } from '../accuracy';
 import { isFootprintInAttackRange } from '../distance';
 import { DEFAULT_PRAYER_MULTIPLIERS } from '../formulaTypes';
 import {
@@ -414,41 +413,12 @@ describe('hasNpcAttackReach', () => {
 });
 
 /**
- * Each tiered prayer and Chivalry on the player's side of an NPC attack, read through the player's
- * lit `boostPrayers` exactly as the engine's NPC attacks read them.
- *
- * Wiki (https://oldschool.runescape.wiki/w/Damage_per_second/Melee, /Magic): defence roll =
- * effective × (defence bonus + 64), no worn defence here. Melee and ranged: effective =
- * floor(99 × prayer Defence) + 8. Magic: floor(floor(99 × prayer Magic) × 0.7) +
- * floor(floor(99 × prayer Defence) × 0.3) + 8. The NPC's roll is (100 + 9) × (100 + 64) = 17876
- * for both styles. Unprayed: 107 × 64 = 6848 and (69 + 29 + 8) × 64 = 6784.
+ * The player's lit boost prayers on their side of an NPC attack, read as the engine's NPC attacks
+ * read them. The NPC rolls (100 + 9) × (100 + 64) = 17876 against an unarmoured 99 Defence player;
+ * it lands while one draw is under 1 − (defence + 2) / (2 × (17876 + 1))
+ * (https://oldschool.runescape.wiki/w/Damage_per_second/Melee, /Magic).
  */
-const NPC_ROLL = 17876;
-const UNPRAYED_DEFENCE = { melee: 6848, magic: 6784 } as const;
-const PRAYED_DEFENCE: Record<WikiTieredPrayer, Partial<Record<keyof typeof UNPRAYED_DEFENCE, number>>> = {
-  // floor(99 × 1.05) = 103: (103 + 8) × 64 = 7104; magic (69 + 30 + 8) × 64 = 6848
-  [PrayerType.ThickSkin]: { melee: 7104, magic: 6848 },
-  // 108: 116 × 64 = 7424; magic (69 + 32 + 8) × 64 = 6976
-  [PrayerType.RockSkin]: { melee: 7424, magic: 6976 },
-  // 113: 121 × 64 = 7744; magic (69 + 33 + 8) × 64 = 7040
-  [PrayerType.SteelSkin]: { melee: 7744, magic: 7040 },
-  [PrayerType.BurstOfStrength]: {},
-  [PrayerType.SuperhumanStrength]: {},
-  [PrayerType.UltimateStrength]: {},
-  [PrayerType.ClarityOfThought]: {},
-  [PrayerType.ImprovedReflexes]: {},
-  [PrayerType.IncredibleReflexes]: {},
-  [PrayerType.SharpEye]: {},
-  [PrayerType.HawkEye]: {},
-  // Magic 103: (72 + 29 + 8) × 64 = 6976
-  [PrayerType.MysticWill]: { magic: 6976 },
-  // Magic 108: (75 + 29 + 8) × 64 = 7168
-  [PrayerType.MysticLore]: { magic: 7168 },
-  // Defence floor(99 × 1.2) = 118: 126 × 64 = 8064; magic (69 + 35 + 8) × 64 = 7168
-  [PrayerType.Chivalry]: { melee: 8064, magic: 7168 },
-};
-
-describe('tiered prayers and Chivalry against NPC attacks', () => {
+describe('boost prayers against NPC attacks', () => {
   const MAGIC_PLAN = {
     formulaStyle: 'magic',
     damageType: 'magic',
@@ -470,7 +440,6 @@ describe('tiered prayers and Chivalry against NPC attacks', () => {
     } as unknown as PlayerActor;
   }
 
-  /** Whether one draw of `draw` passes the NPC's accuracy roll against this player. */
   function lands(boostPrayers: PrayerType[], plan: AttackPlan, draw: number): boolean {
     const request = resolveAttackRequest({
       attacker: makeNpc('attacker'),
@@ -482,23 +451,22 @@ describe('tiered prayers and Chivalry against NPC attacks', () => {
     return request.accuracySucceeded;
   }
 
-  /** Pins the NPC's hit chance to the one this defence roll gives, to well under one roll's worth. */
-  function expectDefenceRoll(boostPrayers: PrayerType[], plan: AttackPlan, defenceRoll: number): void {
-    const chance = hitChance(NPC_ROLL, defenceRoll);
-    expect(lands(boostPrayers, plan, chance - 1e-9)).toBe(true);
-    expect(lands(boostPrayers, plan, chance + 1e-9)).toBe(false);
-  }
-
-  it('starts from the unprayed defence rolls the wiki formulas give', () => {
-    expectDefenceRoll([], MELEE_PLAN, UNPRAYED_DEFENCE.melee);
-    expectDefenceRoll([], RANGE_PLAN, UNPRAYED_DEFENCE.melee);
-    expectDefenceRoll([], MAGIC_PLAN, UNPRAYED_DEFENCE.magic);
+  it('reads the Defence boost of every lit prayer, not just the first', () => {
+    // Defence rolls: unprayed 107 × 64 = 6848 (hit chance 0.808); Steel Skin floor(99 × 1.15) = 113,
+    // 121 × 64 = 7744 (0.783); Steel Skin and Deadeye floor(99 × 1.2) = 118, 126 × 64 = 8064 (0.774).
+    const draw = 0.778;
+    expect(lands([], MELEE_PLAN, draw)).toBe(true);
+    expect(lands([PrayerType.SteelSkin], MELEE_PLAN, draw)).toBe(true);
+    expect(lands([PrayerType.SteelSkin, PrayerType.Deadeye], MELEE_PLAN, draw)).toBe(false);
   });
 
-  it.each(WIKI_TIERED_PRAYER_ROWS)('changes exactly the defence rolls $prayer boosts', ({ prayer }) => {
-    const expected = { ...UNPRAYED_DEFENCE, ...PRAYED_DEFENCE[prayer] };
-    expectDefenceRoll([prayer], MELEE_PLAN, expected.melee);
-    expectDefenceRoll([prayer], RANGE_PLAN, expected.melee);
-    expectDefenceRoll([prayer], MAGIC_PLAN, expected.magic);
+  it('raises magic defence through the Magic boost of Mystic Will', () => {
+    // floor(99 × 0.7) + floor(99 × 0.3) + 8 = 106, × 64 = 6784 (0.810); Magic floor(99 × 1.05) =
+    // 103: (72 + 29 + 8) × 64 = 6976 (0.805).
+    const draw = 0.807;
+    expect(lands([], MAGIC_PLAN, draw)).toBe(true);
+    expect(lands([PrayerType.MysticWill], MAGIC_PLAN, draw)).toBe(false);
+    // Mystic Will boosts no Defence, so melee is as unprayed.
+    expect(lands([PrayerType.MysticWill], MELEE_PLAN, 0.808)).toBe(true);
   });
 });

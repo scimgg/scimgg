@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { PrayerType } from '../../types/simulation';
-import { type PrayerInputState, prayerSetChanges, type QueuedPrayerAction, resolvePrayerActions } from '../prayerInput';
+import {
+  type PrayerInputState,
+  prayerSetChanges,
+  prayerSetLogChanges,
+  type QueuedPrayerAction,
+  resolvePrayerActions,
+} from '../prayerInput';
 
 const NOTHING_ON: PrayerInputState = { protection: null, boost: [], independent: [], quickPrayersActive: false };
 
@@ -474,5 +480,22 @@ describe('prayerSetChanges', () => {
       { from: PrayerType.Piety, to: PrayerType.BurstOfStrength },
       { from: null, to: PrayerType.ClarityOfThought },
     ]);
+  });
+});
+
+describe('prayerSetLogChanges', () => {
+  it('adds a removal for each further prayer an arrival displaced', () => {
+    const before = [PrayerType.ThickSkin, PrayerType.BurstOfStrength, PrayerType.ClarityOfThought];
+    expect(prayerSetLogChanges(before, [PrayerType.Chivalry])).toEqual([
+      { from: PrayerType.ThickSkin, to: PrayerType.Chivalry },
+      { from: PrayerType.BurstOfStrength, to: null },
+      { from: PrayerType.ClarityOfThought, to: null },
+    ]);
+  });
+
+  it('matches prayerSetChanges when nothing extra was displaced', () => {
+    expect(prayerSetLogChanges([PrayerType.Piety], [PrayerType.Rigour])).toEqual(
+      prayerSetChanges([PrayerType.Piety], [PrayerType.Rigour]),
+    );
   });
 });

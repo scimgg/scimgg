@@ -8,25 +8,8 @@
  */
 import { type PrayerBoostMultipliers, PrayerType } from '../../simulation';
 
-/** The prayers the rows below cover. */
-export type WikiTieredPrayer =
-  | PrayerType.ThickSkin
-  | PrayerType.BurstOfStrength
-  | PrayerType.ClarityOfThought
-  | PrayerType.SharpEye
-  | PrayerType.MysticWill
-  | PrayerType.RockSkin
-  | PrayerType.SuperhumanStrength
-  | PrayerType.ImprovedReflexes
-  | PrayerType.HawkEye
-  | PrayerType.MysticLore
-  | PrayerType.SteelSkin
-  | PrayerType.UltimateStrength
-  | PrayerType.IncredibleReflexes
-  | PrayerType.Chivalry;
-
 export interface WikiPrayerRow {
-  readonly prayer: WikiTieredPrayer;
+  readonly prayer: PrayerType;
   /** The "Level" column. */
   readonly level: number;
   /** The "Drain effect" column. */

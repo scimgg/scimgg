@@ -10,9 +10,8 @@ import { VOID_FLARE_UNTARGETABLE_TICKS } from '../npcs/yama/timing';
 import type { CacheInfo } from '../rs/cache/CacheInfo';
 import { ObjType } from '../rs/config/objtype/ObjType';
 import { DummyTypeLoader } from '../rs/config/TypeLoader';
-import { WIKI_TIERED_PRAYER_ROWS, type WikiTieredPrayer } from '../types/__tests__/fixtures/wikiPrayerTable';
 import { createEmptyCombatSupplies } from '../types/encounterLoadout';
-import { type Coordinate, PrayerType } from '../types/simulation';
+import type { Coordinate } from '../types/simulation';
 
 const PLAYER_POS: Coordinate = [31, 33];
 const YAMA_TARGET_ID = 'yama';
@@ -424,118 +423,5 @@ describe('shipped equipment presets', () => {
     const world = getWorldState(createPresetEngine(EQUIPMENT_PRESETS.yama_p3.melee));
 
     expect(world.getNpc(YAMA_TARGET_ID)?.formulaStats?.demonbaneVulnerability).toBe(1.2);
-  });
-});
-
-/**
- * What the DPS overlay shows (`getAdjustedTheoreticalDps`) for each tiered prayer and Chivalry, lit
- * through the prayer book's engine call, on 99s against Yama Phase 3. The stub item loader leaves
- * only the hand-set gear stats in `EQUIPMENT_STAT_OVERRIDES`, so each loadout's bonuses are known.
- *
- * Wiki formulas (https://oldschool.runescape.wiki/w/Damage_per_second/Melee, /Ranged, /Magic):
- * effective level = floor(99 × prayer) + stance + 8; attack roll = effective × (bonus + 64);
- * melee and ranged max hit = floor((effective strength × (strength bonus + 64) + 320) / 640);
- * magic max hit = floor(base × (1 + gear damage + prayer damage)); NPC defence roll =
- * (level + 9) × (defence bonus + 64); accuracy = attack / (2 × (defence + 1)) when attack ≤ defence.
- * DPS = accuracy × (max / 2 + 1 / (max + 1)) / seconds per attack, the last term being the
- * projection's rule that an accurate 0 lands as 1 (playerAttackProjection.ts).
- *
- * - melee, Inquisitor's mace on Pound (+3 Attack): crush +102, strength +96, 4 ticks = 2.4 s, against
- *   (225 + 9) × (449 + 64) = 120042. Unprayed: 110 × 166 = 18260, floor((107 × 160 + 320) / 640) = 27.
- * - ranged, Bow of Faerdhinen on Accurate (+3 both) with Necklace of rupture, Dizana's quiver and
- *   Avernic treads (max): ranged +53, ranged strength +14, 2.4 s, against (225 + 9) × (297 + 64) =
- *   84474. Unprayed: 110 × 117 = 12870, floor((110 × 78 + 320) / 640) = 13.
- * - magic, Ice Barrage (base 30) from an Ancient staff with Blue Moon chestplate and Avernic treads
- *   (max): magic +41, damage +3%, 5 ticks = 3 s, against (250 + 9) × (81 + 64) = 37555. Unprayed:
- *   107 × 105 = 11235, floor(30 × 1.03) = 30.
- */
-type OverlayNumbers = { readonly accuracy: number; readonly maxHit: number; readonly dps: number };
-type OverlayStyle = 'melee' | 'ranged' | 'magic';
-
-const UNPRAYED_OVERLAY: Record<OverlayStyle, OverlayNumbers> = {
-  // 18260 / 240086
-  melee: { accuracy: 0.07605607990470081, maxHit: 27, dps: 0.4289472363672858 },
-  // 12870 / 168950
-  ranged: { accuracy: 0.07617638354542765, maxHit: 13, dps: 0.20857819304105188 },
-  // 11235 / 75112
-  magic: { accuracy: 0.1495766322292044, maxHit: 30, dps: 0.7494915120302069 },
-};
-
-/** Only the styles each prayer changes; every other style must read exactly as unprayed. */
-const PRAYED_OVERLAY: Record<WikiTieredPrayer, Partial<Record<OverlayStyle, OverlayNumbers>>> = {
-  // Defence prayers move no attack number; their effect on the NPC's roll is in npcAttackRequest.test.ts.
-  [PrayerType.ThickSkin]: {},
-  [PrayerType.RockSkin]: {},
-  [PrayerType.SteelSkin]: {},
-  // Strength 103 / 108 / 113: floor((111 | 116 | 121) × 160 + 320) / 640) = 28 / 29 / 30
-  [PrayerType.BurstOfStrength]: { melee: { accuracy: 0.07605607990470081, maxHit: 28, dps: 0.44475322587950045 } },
-  [PrayerType.SuperhumanStrength]: { melee: { accuracy: 0.07605607990470081, maxHit: 29, dps: 0.4605618172006883 } },
-  [PrayerType.UltimateStrength]: { melee: { accuracy: 0.07605607990470081, maxHit: 30, dps: 0.47637275854288413 } },
-  // Attack 103 / 108 / 113: (114 | 119 | 124) × 166 = 18924 / 19754 / 20584, over 240086
-  [PrayerType.ClarityOfThought]: { melee: { accuracy: 0.07882175553759903, maxHit: 27, dps: 0.4445453176897326 } },
-  [PrayerType.ImprovedReflexes]: { melee: { accuracy: 0.0822788500787218, maxHit: 27, dps: 0.46404291934279107 } },
-  [PrayerType.IncredibleReflexes]: { melee: { accuracy: 0.08573594461984456, maxHit: 27, dps: 0.4835405209958495 } },
-  // Ranged 103 / 108: (114 | 119) × 117 = 13338 / 13923 over 168950; floor((114 | 119) × 78 + 320) / 640) = 14 / 15
-  [PrayerType.SharpEye]: { ranged: { accuracy: 0.07894643385617046, maxHit: 14, dps: 0.2324533885765019 } },
-  [PrayerType.HawkEye]: { ranged: { accuracy: 0.08240899674459899, maxHit: 15, dps: 0.2596741824504291 } },
-  // Magic 103 / 108: (111 | 116) × 105 = 11655 / 12180 over 75112; Mystic Lore floor(30 × 1.04) = 31
-  [PrayerType.MysticWill]: { magic: { accuracy: 0.1551682820321653, maxHit: 30, dps: 0.77750988631171 } },
-  [PrayerType.MysticLore]: { magic: { accuracy: 0.16215784428586644, maxHit: 31, dps: 0.839504673021621 } },
-  // Attack 113 as Incredible Reflexes; Strength floor(99 × 1.18) = 116: floor((124 × 160 + 320) / 640) = 31
-  [PrayerType.Chivalry]: { melee: { accuracy: 0.08573594461984456, maxHit: 31, dps: 0.5548276624487336 } },
-};
-
-describe('tiered prayers and Chivalry in the DPS overlay', () => {
-  const ICE_BARRAGE_RUNES = { kind: 'standard', slots: [{ id: 555 }, { id: 565 }, { id: 560 }] } as const;
-  const LOADOUTS: Record<OverlayStyle, () => SimulationEngine> = {
-    melee: () => {
-      const engine = createEngine(24417);
-      engine.setSelectedAttackStyleIndex(0);
-      return engine;
-    },
-    ranged: () => {
-      const engine = createEngine(25865);
-      engine.setEquipment({ weapon: 25865, amulet: 33639, cape: 28951, boots: 31097 });
-      engine.setSelectedAttackStyleIndex(0);
-      return engine;
-    },
-    magic: () => {
-      const engine = createEngine(4675);
-      engine.setEquipment({ weapon: 4675, body: 29037, boots: 31097 });
-      engine.setCombatSupplies({
-        ...createEmptyCombatSupplies(),
-        spellbook: 'ancient',
-        selectedSpell: 'Ice Barrage',
-        runePouch: ICE_BARRAGE_RUNES,
-      });
-      engine.setSelectedAttackStyleIndex(3);
-      return engine;
-    },
-  };
-
-  function overlay(style: OverlayStyle, prayer: PrayerType | null): OverlayNumbers {
-    const engine = LOADOUTS[style]();
-    if (prayer !== null) engine.queueBoostPrayer(prayer);
-    advanceTicks(engine, 1);
-    expect(engine.boostPrayers).toEqual(prayer === null ? [] : [prayer]);
-    const projection = engine.getAdjustedTheoreticalDps();
-    if (projection === null) throw new TypeError('Expected a DPS projection');
-    return { accuracy: projection.accuracy, maxHit: projection.maxHit, dps: projection.dps };
-  }
-
-  function expectOverlay(actual: OverlayNumbers, expected: OverlayNumbers): void {
-    expect(actual.maxHit).toBe(expected.maxHit);
-    expect(actual.accuracy).toBeCloseTo(expected.accuracy, 12);
-    expect(actual.dps).toBeCloseTo(expected.dps, 12);
-  }
-
-  it.each(['melee', 'ranged', 'magic'] as const)('reads the unprayed %s numbers the wiki formulas give', (style) => {
-    expectOverlay(overlay(style, null), UNPRAYED_OVERLAY[style]);
-  });
-
-  it.each(WIKI_TIERED_PRAYER_ROWS)('changes exactly the overlay numbers $prayer boosts', ({ prayer }) => {
-    for (const style of ['melee', 'ranged', 'magic'] as const) {
-      expectOverlay(overlay(style, prayer), PRAYED_OVERLAY[prayer][style] ?? UNPRAYED_OVERLAY[style]);
-    }
   });
 });

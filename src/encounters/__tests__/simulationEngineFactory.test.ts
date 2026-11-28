@@ -677,6 +677,45 @@ describe('createSimulationEngineFromRunConfig', () => {
     expect(diffResumableState(state, rebuilt.getState())).toEqual([]);
   });
 
+  it('takes over a fresh run fighting under stacked and swapped boost prayers', () => {
+    const original = newRun();
+    const config = original.getRunConfig();
+    const recorder = new ReplayRecorder();
+    const position = original.getState().playerPosition;
+    recorder.startRun(config);
+    recorder.recordFrame(0, position, original.getState(), []);
+    const boost = (prayer: PrayerType): EngineAction => ({ type: 'offensivePrayer', prayer });
+    const inputs = new Map<number, EngineAction[]>([
+      [1, [{ type: 'attackTarget', targetId: 'yama' }, boost(PrayerType.SteelSkin), boost(PrayerType.Deadeye)]],
+      // Chivalry takes both down: it conflicts with Defence and ranged prayers.
+      [30, [boost(PrayerType.Chivalry)]],
+    ]);
+    const TICKS = 60;
+    for (let tick = 1; tick <= TICKS; tick++) {
+      for (const action of inputs.get(tick) ?? []) {
+        recorder.recordAction(action);
+        original.applyAction(action);
+      }
+      original.advanceTick(position);
+      recorder.recordFrame(tick, position, original.getState(), original.getLastTickEvents());
+    }
+    const state = original.getState();
+    expect(recorder.exportData().frames[29]?.state.boostPrayers).toEqual([PrayerType.SteelSkin, PrayerType.Deadeye]);
+    expect(state.boostPrayers).toEqual([PrayerType.Chivalry]);
+    expect(state.damageHistory.some((hit) => hit.source === 'PlayerAttack')).toBe(true);
+
+    const rebuilt = reconstructReplayPrefix(
+      config,
+      recorder.exportData().frames,
+      TICKS,
+      null,
+      new ReplayTakeoverWork(),
+    );
+
+    if (!rebuilt) throw new Error('Expected reconstructed prefix');
+    expect(diffResumableState(state, rebuilt.getState())).toEqual([]);
+  });
+
   it('refuses a recording without a bootstrap', () => {
     const bootstrapless: EngineRunConfig = {
       completionOwnership: 'encounter-owned',
