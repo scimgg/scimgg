@@ -88,6 +88,7 @@ import { rgba, rgbaFromHex, vec2 } from '../core/types';
 import { PLAYER_GRAPHIC_PRELOAD_IDS, PlayerGraphicController } from '../effects/controllers/PlayerGraphicController';
 import { ProjectileController, type SurfaceHeightResolver } from '../effects/controllers/ProjectileController';
 import { EncounterCuePlayer } from '../effects/EncounterCuePlayer';
+import type { EncounterEffectFilter } from '../effects/NpcProjectileFlights';
 import { describePlayerEffects } from '../effects/playerEffectDescriptors';
 import type { ActorVisualPositionResolver } from '../effects/projectileAim';
 import { ReplayProjectileWork } from '../effects/replayProjectileWork';
@@ -1206,6 +1207,11 @@ export class SceneCompositor {
 
   /** How the scene draws a cue graphic (depth bias, view culling); the default style unless overridden. */
   protected encounterGraphicStyle(_cue: EncounterGraphicCue): SpotAnimStyle | undefined {
+    return undefined;
+  }
+
+  /** Snapshot ownership for effects that can be cancelled by encounter actions. */
+  protected encounterEffectFilter(_state: SimulationState): EncounterEffectFilter | undefined {
     return undefined;
   }
 
@@ -2475,6 +2481,7 @@ export class SceneCompositor {
           cycle: this.primaryCycle,
           resolveActor: this.createActorVisualPositionResolver(visualPosition),
           resolveAttachment: (actorId) => this.resolveAttachedActor(actorId, simulationState, visualPosition),
+          retainEffect: this.encounterEffectFilter(simulationState),
           terrainHeights: this.terrainHeights,
           resolveSurfaceHeight: this.resolveSurfaceHeight,
         },

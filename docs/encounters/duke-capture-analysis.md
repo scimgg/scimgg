@@ -500,3 +500,24 @@ combat roll. The four orb spawns match at ticks 120, 132, 144, and 156 after the
 four bile splats, with zero extras. The same changes leave the hit history
 unchanged over 4,211 battle ticks from the earlier 12 captures. Focused
 capture tests cover the flare targets, pool placements, and damage ticks.
+
+### Gas flare repeat targets
+
+**OBSERVED.** In `20261126-232238-Duke.jsonl`, both windups at ticks 74 and 76
+target `[28, 46]`. The first projectile lands at tick 77 (lines 5694–5746).
+The follow-up smoke NPC spawns at 78 and replaces the prior pulse (lines
+5758–5800). In `20261127-005253-Duke-Sucellus_2.jsonl`, Duke targets
+`[34, 46]` at 373 and again at 391. Its previous smoke starts fading at 389
+and the old NPC remains until 393 (lines 11672, 11976, 12023 and 12060).
+
+**DERIVED.** The audit paired 379 projectile records with their windup and
+preceding player tile across 13 recordings. Of those, 65 targeted the same
+grate as an earlier flare that was still airborne. The other 247 repeat
+targets came at least 18 ticks after the previous shot at that grate.
+Picking the closest grate without regard to smoke matches 319 targets. Excluding grates from
+landing until fade matches 378 without pre-capture context. The remaining
+case, at tick 2 of `20261127-024405-Duke-Sucellus_9.jsonl`, also fits when
+the pre-existing flare at `[28, 50]` is included. Its smoke ignites at
+the windup boundary, so the next flare targets `[28, 46]` (lines 4270–4300).
+This supports keeping landed smoke as an exclusion while allowing repeat
+targets before landing and during the fade.

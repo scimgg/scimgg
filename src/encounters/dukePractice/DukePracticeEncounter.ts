@@ -673,8 +673,9 @@ export class DukePracticeEncounter implements Encounter {
     const impactTick = landingTick + DUKE_VENT_ARM_TICKS;
     const hp = actor.vitals.hp;
     const activeTicks = hp <= ENRAGE_HP ? DUKE_ENRAGED_VENT_ACTIVE_TICKS : DUKE_VENT_ACTIVE_TICKS;
-    // 20261127-024405-Duke-Sucellus_9.jsonl:8231–8456.
-    // A grate starts blocking new targets on landing, so shots still in flight can share a grate.
+    // A grate is blocked from landing through the last active smoke tick.
+    // In-flight shots can share it (20261126-232238-Duke.jsonl:5694–5746).
+    // A grate is eligible again during the fade (20261127-005253-Duke-Sucellus_2.jsonl:11672–12060).
     const smokingVents = new Set(
       this.hazards
         .filter(

@@ -1,6 +1,11 @@
 import type { ActorFrameState, FrameSoundTracker } from '../../audio/FrameSoundTracker';
 import { COVER_TILES, PILLARS, square, VENTS, WARDEN_TILE } from '../../encounters/dukePractice/arena';
-import { DUKE_ORB_NPC_ID, DUKE_SEQS } from '../../encounters/dukePractice/constants';
+import {
+  DUKE_GROUND_ICICLES,
+  DUKE_ORB_NPC_ID,
+  DUKE_SEQS,
+  DUKE_SPOT_ANIMS,
+} from '../../encounters/dukePractice/constants';
 import { DUKE_PRACTICE_KIND } from '../../encounters/dukePractice/controls';
 import { DUKE_PRACTICE_RENDER_CONFIG } from '../../encounters/dukePractice/renderConfig';
 import type { DukePracticePose, WardenHazardKind } from '../../encounters/dukePractice/snapshot';
@@ -16,6 +21,7 @@ import type { RenderQueue } from '../core/commands';
 import type { ReplayEffectDestination } from '../core/replayEffectIndex';
 import { ReplayPrimaryIndex } from '../core/replayPrimaryIndex';
 import { rgba } from '../core/types';
+import type { EncounterEffectFilter } from '../effects/NpcProjectileFlights';
 import type { AnimClipRef } from '../npc/animationTypes';
 import type { NpcAnimationTrigger } from '../npc/NpcInstanceManager';
 import { interpolateNpcPosition } from '../npc/npcRenderPosition';
@@ -88,6 +94,7 @@ export class DukePracticeSceneCompositor extends SceneCompositor {
   private dukeRenderTypeId: number | undefined;
   private readonly effects = new DukePracticeEffects();
   private readonly gazeOverlay = new DukeGazeOverlay();
+  private visualHistory: RenderContext['replayHistory'];
   private replayUsesVisualEvents = false;
   private replayPose: DukePracticePose | undefined;
   private sampledPose: DukePracticePose | undefined;
@@ -113,6 +120,7 @@ export class DukePracticeSceneCompositor extends SceneCompositor {
   }
 
   override build(ctx: RenderContext, projection: Projection2D, viewport: Viewport): RenderQueue {
+    this.visualHistory = ctx.replayHistory ?? ctx.restoredPresentation?.history;
     const queue = super.build(ctx, projection, viewport);
     const { encounter } = ctx.simulationState;
     if (ctx.options.renderMode !== '2d' && encounter.kind === DUKE_PRACTICE_KIND) {
@@ -133,8 +141,48 @@ export class DukePracticeSceneCompositor extends SceneCompositor {
   protected override reconstructEncounterVisuals({ simulationState }: RenderContext): void {
     const visuals =
       simulationState.encounter.kind === DUKE_PRACTICE_KIND ? simulationState.encounter.visuals : undefined;
-    this.replayUsesVisualEvents = visuals?.usesVisualEvents === true;
     this.replayPose = visuals?.pose;
+    this.replayUsesVisualEvents =
+      visuals?.usesVisualEvents === true && !(this.replayPose && this.legacyEffectAtTick(this.replayPose.startTick));
+  }
+
+  /** A takeover retains old frames as recorded, including attacks with only snapshot visuals. */
+  private readonly legacyEffectAtTick = (tick: number): boolean => {
+    const history = this.visualHistory;
+    if (!history) return false;
+    let low = 0;
+    let high = Math.min(history.frames.length, history.throughFrameIndex + 1);
+    if (high === 0) return false;
+    while (low < high) {
+      const mid = Math.floor((low + high) / 2);
+      if (history.frames[mid].state.currentTick <= tick) low = mid + 1;
+      else high = mid;
+    }
+    // A trimmed prefix can start after windup while still carrying its legacy hazard.
+    const source = history.frames[Math.max(0, low - 1)]?.state;
+    return (
+      (source?.currentTick === tick || (low === 0 && source && tick < source.currentTick)) &&
+      source.encounter.kind === DUKE_PRACTICE_KIND &&
+      !source.encounter.visuals.usesVisualEvents
+    );
+  };
+
+  protected override encounterEffectFilter(state: SimulationState): EncounterEffectFilter | undefined {
+    if (state.encounter.kind !== DUKE_PRACTICE_KIND) return undefined;
+    const { hazards, fadingEffects = [] } = state.encounter.visuals;
+    const effects = [...hazards, ...fadingEffects];
+    return (spotAnimId, tick) => {
+      if (spotAnimId === DUKE_SPOT_ANIMS.magicProjectile) {
+        return effects.some((effect) => effect.kind === 'magic' && effect.windupTick === tick);
+      }
+      if (spotAnimId === DUKE_SPOT_ANIMS.magicImpact) {
+        return effects.some((effect) => effect.kind === 'magic' && effect.impactTick === tick && !effect.missed);
+      }
+      if (spotAnimId === DUKE_SPOT_ANIMS.npcIcicles || DUKE_GROUND_ICICLES.some((id) => id === spotAnimId)) {
+        return effects.some((effect) => effect.kind === 'spikes' && effect.impactTick === tick);
+      }
+      return true;
+    };
   }
 
   protected override restoreEncounterTimelines(destination: ReplayEffectDestination): boolean {
@@ -229,6 +277,7 @@ export class DukePracticeSceneCompositor extends SceneCompositor {
       interpolatedTick,
       playerVisualPosition,
       this.resolveSurfaceHeight,
+      this.legacyEffectAtTick,
     );
   }
 

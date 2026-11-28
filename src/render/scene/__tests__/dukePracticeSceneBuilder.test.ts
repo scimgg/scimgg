@@ -2,6 +2,7 @@ import { afterEach, expect, it, vi } from 'vitest';
 import type { AudioEngine } from '../../../audio/AudioEngine';
 import { FrameSoundTracker } from '../../../audio/FrameSoundTracker';
 import { getArenaAllowUnboundedFallback, getArenaConfig, setArenaConfig } from '../../../core/constants';
+import type { ReplayDisplayFrame } from '../../../core/ReplayRecorder';
 import { SimulationEngine } from '../../../core/SimulationEngine';
 import { DUKE_BILE_CAPTURE } from '../../../encounters/dukePractice/__tests__/fixtures/dukeBileCapture';
 import {
@@ -32,7 +33,7 @@ import { PRIMARY_NPC_ACTOR_ID } from '../../npc/NpcInstanceManager';
 import { Projection3D } from '../../projections/Projection3D';
 import { DukePracticeEffects } from '../dukePracticeEffects';
 import { DukePracticeSceneCompositor } from '../dukePracticeSceneBuilder';
-import type { SceneOptions } from '../types';
+import type { RenderContext, SceneOptions } from '../types';
 
 const options: SceneOptions = {
   showCoordinates: false,
@@ -431,6 +432,130 @@ it('aims the blue bolt and its impact at the rendered player during movement', (
     const movingGraphic = effect(DUKE_SPOT_ANIMS.magicImpact);
     if (movingGraphic?.transform.kind !== 'dynamic') throw new Error('Expected a dynamic impact graphic');
     expect(movingGraphic.transform.resolve(10, 10.25, null)?.position.slice(0, 2)).toEqual([28.75, 51.5]);
+  } finally {
+    scene.dispose();
+  }
+});
+
+function startBolt() {
+  const engine = new SimulationEngine({ encounter: new DukePracticeEncounter(37), combatRandom: () => 0 });
+  engine.setAttackTarget(WARDEN_ID);
+  engine.advanceTick([31, 51]);
+  engine.setAttackTarget(null);
+  while (engine.currentTick < 6) engine.advanceTick(START_TILE);
+  return engine;
+}
+
+function drawBoltScene(scene: DukePracticeSceneCompositor) {
+  const renderer = scene['spotAnimRenderer'];
+  vi.spyOn(renderer, 'isLoaded').mockReturnValue(true);
+  vi.spyOn(renderer, 'getFrameLengths').mockReturnValue([90]);
+  const upsert = vi.spyOn(renderer, 'upsert');
+  const viewport = { width: 800, height: 600, dpr: 1 };
+  const projection = new Projection3D(viewport);
+  return (context: Pick<RenderContext, 'simulationState' | 'events' | 'interpolatedTick'> & Partial<RenderContext>) => {
+    upsert.mockClear();
+    scene.build(
+      {
+        options: { ...options, renderMode: '3d' },
+        interaction: { hoveredTile: null, targetTile: null },
+        speedMultiplier: 1,
+        ...context,
+      },
+      projection,
+      viewport,
+    );
+    return upsert.mock.calls.map(([request]) => request.spotAnimId);
+  };
+}
+
+it.each([6, 8])('clears the old bolt in live play and replay when jumping phases at tick %i', (jumpTick) => {
+  const engine = startBolt();
+  const launch = { state: engine.getState(), events: engine.getLastTickEvents() };
+  const scene = new DukePracticeSceneCompositor();
+  try {
+    const draw = drawBoltScene(scene);
+    draw({ simulationState: launch.state, events: launch.events, interpolatedTick: 6 });
+    while (engine.currentTick < jumpTick) {
+      engine.advanceTick(START_TILE);
+      const effects = draw({
+        simulationState: engine.getState(),
+        events: engine.getLastTickEvents(),
+        interpolatedTick: engine.currentTick,
+      });
+      if (engine.currentTick === 8) expect(effects).toContain(DUKE_SPOT_ANIMS.magicProjectile);
+    }
+    engine.applyAction({ type: 'applyBossHpPreset', hp: ENRAGE_HP });
+    engine.advanceTick(START_TILE);
+    const jumped = { state: engine.getState(), events: engine.getLastTickEvents() };
+    const context = { simulationState: jumped.state, events: jumped.events, interpolatedTick: jumpTick + 1.75 };
+    expect(draw(context)).not.toContain(DUKE_SPOT_ANIMS.magicProjectile);
+    expect(
+      draw({
+        ...context,
+        replayHistory: { frames: [launch, jumped], throughFrameIndex: 1 },
+        timeline: { timelineKey: 'replay', paused: true, timeMs: context.interpolatedTick * 600 },
+      }),
+    ).not.toContain(DUKE_SPOT_ANIMS.magicProjectile);
+    while (engine.currentTick < 10) engine.advanceTick([31, 51]);
+    expect(engine.getState().damageHistory).not.toContainEqual(expect.objectContaining({ source: 'Magic bolt' }));
+  } finally {
+    scene.dispose();
+  }
+});
+
+it.each([6, 7])('finishes a legacy bolt after takeover from a recording starting at tick %i', (firstTick) => {
+  const engine = startBolt();
+  const frames: ReplayDisplayFrame[] = [];
+  const recordLegacyFrame = () => {
+    const state = engine.getState();
+    if (state.encounter.kind !== 'duke_practice') throw new Error('Expected the Duke encounter');
+    const { usesVisualEvents: _usesVisualEvents, ...visuals } = state.encounter.visuals;
+    frames.push({
+      state: { ...state, encounter: { ...state.encounter, visuals } },
+      events: engine.getLastTickEvents().filter(({ type }) => type !== 'encounter_visual'),
+    });
+  };
+  while (engine.currentTick < firstTick) engine.advanceTick(START_TILE);
+  recordLegacyFrame();
+  while (engine.currentTick < 8) {
+    engine.advanceTick(START_TILE);
+    recordLegacyFrame();
+  }
+  const history = { frames, throughFrameIndex: frames.length - 1 };
+  const restoredPresentation = { engine, tick: 8, timeMs: 5400, history };
+  const scene = new DukePracticeSceneCompositor();
+  try {
+    const draw = drawBoltScene(scene);
+    expect(
+      draw({
+        simulationState: engine.getState(),
+        events: [],
+        interpolatedTick: 9,
+        restoredPresentation,
+        timeline: { timelineKey: 'takeover', paused: true, timeMs: 5400 },
+      }),
+    ).toContain(DUKE_SPOT_ANIMS.magicProjectile);
+    engine.advanceTick(START_TILE);
+    expect(
+      draw({
+        simulationState: engine.getState(),
+        events: engine.getLastTickEvents(),
+        interpolatedTick: 9.5,
+        restoredPresentation,
+        timeline: { timelineKey: 'takeover', paused: false },
+      }),
+    ).toContain(DUKE_SPOT_ANIMS.magicProjectile);
+    engine.advanceTick(START_TILE);
+    const effects = draw({
+      simulationState: engine.getState(),
+      events: engine.getLastTickEvents(),
+      interpolatedTick: 10,
+      restoredPresentation,
+      timeline: { timelineKey: 'takeover', paused: false },
+    });
+    expect(effects.filter((id) => id === DUKE_SPOT_ANIMS.magicImpact)).toHaveLength(1);
+    expect(effects).not.toContain(DUKE_SPOT_ANIMS.magicProjectile);
   } finally {
     scene.dispose();
   }

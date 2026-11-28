@@ -5,7 +5,12 @@ import { type ActorCueLife, ActorCueLives } from '../core/actorCueLife';
 import { encounterCueId, type ScheduledEncounterClip } from '../core/encounterCueIndex';
 import type { ReplayEffectDestination, ReplayEffectIndex } from '../core/replayEffectIndex';
 import { getTerrainHeightInterpolated } from '../shared/renderUtils';
-import { NpcProjectileFlights, type NpcProjectileFrame, npcVisualTargetCentre } from './NpcProjectileFlights';
+import {
+  type EncounterEffectFilter,
+  NpcProjectileFlights,
+  type NpcProjectileFrame,
+  npcVisualTargetCentre,
+} from './NpcProjectileFlights';
 import type { ProjectileFlightRenderer } from './ProjectileFlight';
 import { projectileEndpoint } from './projectileMotion';
 import { ReplayProjectileWork } from './replayProjectileWork';
@@ -16,6 +21,8 @@ import type { SpotAnimStyle, SpotAnimTransform } from './spotAnimTypes';
 export type EncounterCueFrame = NpcProjectileFrame & {
   /** An actor's rendered model transform, or null while it is not drawn: what `attached` graphics ride. */
   readonly resolveAttachment: (actorId: string) => SpotAnimTransform | null;
+  /** Whether the encounter still owns a scheduled projectile or graphic. */
+  readonly retainEffect?: EncounterEffectFilter;
 };
 
 /** The actors a live frame shows, after its tick: what its cues' actor lives are worked out from. */
@@ -134,8 +141,14 @@ export class EncounterCuePlayer {
       { cycle: frame.cycle, throughFrameIndex: replay.destination.throughFrameIndex },
       'snapshot',
     );
+    if (frame.retainEffect) this.flights.retain(frame.retainEffect);
     this.flights.update(frame, sampler, replayWork);
     this.graphics.forEach(({ cue, start, playback }, id) => {
+      if (frame.retainEffect && !frame.retainEffect(cue.spotAnimId, (start - cue.delayCycles) / 30)) {
+        this.renderer.despawn(id);
+        this.graphics.delete(id);
+        return;
+      }
       if (cue.target.kind === 'attached' && frame.resolveAttachment(cue.target.actorId) === null) {
         // Hidden while its actor is not drawn; it keeps its own clock and shows again with the actor.
         this.renderer.despawn(id);

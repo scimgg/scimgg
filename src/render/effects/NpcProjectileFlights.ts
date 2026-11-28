@@ -7,6 +7,8 @@ import { ProjectileFlight, type ProjectileFlightFrame, type ProjectileFlightRend
 import type { ActorVisualPositionResolver } from './projectileAim';
 import { ReplayProjectileWork } from './replayProjectileWork';
 
+export type EncounterEffectFilter = (spotAnimId: number, tick: number) => boolean;
+
 export type NpcProjectileFrame = {
   readonly cycle: number;
   readonly resolveActor: ActorVisualPositionResolver;
@@ -83,6 +85,14 @@ export class NpcProjectileFlights {
   delete(instanceId: string): void {
     this.renderer.despawn(instanceId);
     this.flights.delete(instanceId);
+  }
+
+  /** Prunes effects whose encounter-owned hazard has ended, including flights yet to launch. */
+  retain(filter: EncounterEffectFilter): void {
+    for (const [id, { cue, runtime }] of this.flights) {
+      const tick = (runtime.config.startCycle - cue.startDelayCycles) / 30;
+      if (!filter(cue.spotAnimId, tick)) this.delete(id);
+    }
   }
 
   /** With a replay `sampler`, each flight is re-flown from history rather than from the live frame. */

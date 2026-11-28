@@ -268,17 +268,28 @@ describe('useViewportInteraction', () => {
     expect(engine.applyAction).toHaveBeenCalledWith({ type: 'attackTarget', targetId: 'yama' });
   });
 
-  it('records a claimed NPC interaction in place of an attack or a manual cast', () => {
+  it('records a claimed NPC interaction from an ordinary click', () => {
+    const engine = makeEngine(false);
+    vi.mocked(engine.acceptsEncounterInput).mockReturnValue(true);
+    const { result, replay } = renderInteraction(engine);
+
+    act(() => result.current.handleTileClick([28, 52], false, 'duke'));
+
+    const action = { type: 'npcInteraction', targetId: 'duke' };
+    expect(engine.applyAction).toHaveBeenCalledExactlyOnceWith(action);
+    expect(replay.recordAction).toHaveBeenLastCalledWith(action);
+  });
+
+  it('preserves the armed spell when a clicked NPC only offers a claimed interaction', () => {
     const engine = makeEngine(false);
     vi.mocked(engine.acceptsEncounterInput).mockReturnValue(true);
     const { result, replay, setArmedSpell } = renderInteraction(engine, { armedSpell: 'Fire Surge' });
 
     act(() => result.current.handleTileClick([28, 52], false, 'duke'));
 
-    const action = { type: 'npcInteraction', targetId: 'duke' };
-    expect(setArmedSpell).toHaveBeenCalledWith(null);
-    expect(engine.applyAction).toHaveBeenCalledExactlyOnceWith(action);
-    expect(replay.recordAction).toHaveBeenLastCalledWith(action);
+    expect(setArmedSpell).not.toHaveBeenCalled();
+    expect(engine.applyAction).not.toHaveBeenCalled();
+    expect(replay.recordAction).not.toHaveBeenCalled();
   });
 
   it('shows a walk destination immediately while movement remains buffered', () => {

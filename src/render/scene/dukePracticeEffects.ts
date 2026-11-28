@@ -154,6 +154,7 @@ export class DukePracticeEffects {
     time: number,
     playerVisualPosition: Coordinate,
     resolveSurfaceHeight: SurfaceHeightResolver = () => 0,
+    legacyEffectAtTick: (tick: number) => boolean = () => false,
   ): void {
     const cycle = time * CYCLES_PER_TICK;
     const activeIds = new Set<string>();
@@ -231,7 +232,8 @@ export class DukePracticeEffects {
     for (const hazard of [...visuals.hazards, ...(visuals.fadingEffects ?? [])]) {
       const { kind, impactTick, expiresTick, tiles, landingTick = impactTick, windupTick } = hazard;
       const id = `duke-${kind}-${impactTick}`;
-      if (visuals.usesVisualEvents && (kind === 'spikes' || kind === 'magic')) continue;
+      const cueTick = kind === 'magic' && time < landingTick ? (windupTick ?? impactTick) : impactTick;
+      if (visuals.usesVisualEvents && (kind === 'spikes' || kind === 'magic') && !legacyEffectAtTick(cueTick)) continue;
       if (kind === 'spikes') {
         // Cache graphic 2439 has its frontal offset baked relative to the NPC's center.
         play(`${id}-rise`, DUKE_SPOT_ANIMS.npcIcicles, DUKE_CENTER_TILE, impactTick);

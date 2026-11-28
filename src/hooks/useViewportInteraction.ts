@@ -130,6 +130,8 @@ export function useViewportInteraction({
         kind: 'npcInteraction',
         targetId: hoveredNpcActorId,
       });
+      // Keep the spell armed when the clicked NPC only offers Feed.
+      if (manualSpell && npcInteraction) return;
       if (manualSpell) setArmedSpell(null);
       const retireTargetPreview = previewTargetTile(null);
 

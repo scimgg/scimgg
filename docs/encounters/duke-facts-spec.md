@@ -186,17 +186,18 @@ reproduces these cues when a volley is followed by bile.
 The first pool appears only on the player's true tile. Later drips can also
 leave a pool on the intermediate tile of a run.
 
-Each flare targets the nearest vent that has no landed, active smoke at
-windup. An equal-distance tie between rows favors the northern vent.
-Moving south between launches draws later shots to a different row.
+At windup, the sim chooses the closest grate outside its active smoke window.
+A flare in flight leaves its grate eligible, and the grate becomes eligible
+again as soon as its smoke starts fading. An equal-distance tie between rows
+favors the northern vent. Moving south between launches draws later shots
+to a different row. [Target selection audit](./duke-capture-analysis.md#gas-flare-repeat-targets)
 Duke uses sequence 10178, and projectile 2436 leaves on client cycle 20
 and arrives on cycle 90 (three game ticks). The first smoke graphic (2431)
 starts at landing. Idle smoke (2432) starts the next tick and damage pulses
 every two ticks from windup +4. The fade (2433) starts at windup +18 before
-enrage and +16 for flares launched during enrage. A second flare can target
-the same grate before the first lands. The new smoke NPC replaces the
-previous pulse on the tick before the second projectile arrives
-(`20261126-232238-Duke.jsonl:5736–5800`). The first four-flare volley resumes
+enrage and +16 for flares launched during enrage. When two flares hit the same
+grate, the new smoke NPC replaces the previous pulse on the tick before the
+second projectile arrives (`20261126-232238-Duke.jsonl:5736–5800`). The first four-flare volley resumes
 basic attacks four ticks after the last flare. At tick 150, the due grate
 volley starts one basic attack after Gaze.
 
