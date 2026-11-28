@@ -32,10 +32,15 @@ export type SpellSecondaryEffect =
       readonly durationTicks: number;
     };
 
+const SPELL_ELEMENTS = ['air', 'water', 'earth', 'fire'] as const;
+
+/** The four elements of the standard spellbook's elemental spells, and of a monster's elemental weakness. */
+export type SpellElement = (typeof SPELL_ELEMENTS)[number];
+
 export interface OsrsSpell {
   readonly name: string;
   readonly spellbook: SpellbookType;
-  readonly element: 'air' | 'water' | 'earth' | 'fire' | null;
+  readonly element: SpellElement | null;
   readonly maxHit: number;
   readonly scalesWithMagic?: 'magic_dart';
   readonly secondaryEffect?: SpellSecondaryEffect;
@@ -53,7 +58,7 @@ const spells: readonly OsrsSpell[] = z
     z.object({
       name: z.string(),
       spellbook: z.enum(['standard', 'ancient', 'lunar', 'arceuus']),
-      element: z.enum(['air', 'water', 'earth', 'fire']).nullable(),
+      element: z.enum(SPELL_ELEMENTS).nullable(),
       maxHit: z.number(),
       scalesWithMagic: z.literal('magic_dart').optional(),
       secondaryEffect: secondaryEffectSchema.optional(),

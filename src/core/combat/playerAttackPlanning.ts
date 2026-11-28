@@ -57,6 +57,7 @@ type PlanningContext = {
   readonly maxHit: number;
   readonly accuracyRolls: AccuracyRolls;
   readonly standardAccuracyMode: StandardAccuracyMode;
+  readonly elementalWeaknessPercent: number;
 };
 
 export function planPlayerAttack(request: PlayerAttackRequest): PlayerAttackPlan {
@@ -90,12 +91,18 @@ function compileReadyPlan(request: PlayerAttackRequest, profile: SupportedPlayer
     request.equipmentStats,
     request.prayerMultipliers,
   );
+  // Max hit per https://oldschool.runescape.wiki/w/Maximum_magic_hit; applying it last to accuracy is unconfirmed.
+  const elementalWeaknessPercent = request.elementalWeaknessPercent ?? 0;
+  const elementalWeaknessDamage = Math.floor(
+    (Math.floor(request.attacker.magicBaseMaxHit ?? 0) * elementalWeaknessPercent) / 100,
+  );
   const context: PlanningContext = {
     formulaStyle: request.formulaStyle,
     delivery: request.delivery,
-    maxHit: applyMaxHitProfile(baseMaxHit, profile.maxHit),
+    maxHit: applyMaxHitProfile(baseMaxHit, profile.maxHit) + elementalWeaknessDamage,
     accuracyRolls,
     standardAccuracyMode: request.standardAccuracyMode ?? 'single_roll',
+    elementalWeaknessPercent,
   };
 
   return {
@@ -107,6 +114,7 @@ function compileReadyPlan(request: PlayerAttackRequest, profile: SupportedPlayer
       baseDefenceRoll: accuracyRolls.defenceRoll,
       baseMaxHit,
       profileMaxHit: context.maxHit,
+      ...(elementalWeaknessPercent === 0 ? {} : { elementalWeaknessPercent }),
     },
     hits: compileHits(profile, context),
     ...(profile.kind === 'accuracyBranchedSplit'
@@ -121,7 +129,7 @@ function compileBranchSelection(
   accuracy: FormulaAccuracyProfile,
   context: PlanningContext,
 ): BranchSelectionSpec {
-  const chance = accuracySpecChance(compileAccuracy(accuracy, context.accuracyRolls, context.standardAccuracyMode));
+  const chance = accuracySpecChance(compileAccuracy(accuracy, context));
   const [firstBranch, ...remainingBranches] = branches;
   if (firstBranch === undefined) throw new RangeError('Expected at least one accuracy branch');
   const toAttempt = (branch: AccuracyBranchProfile) => ({
@@ -230,7 +238,7 @@ function compileHit(profile: HitRollProfile, gate: HitGate, context: PlanningCon
   return {
     ...compileDelivery(context.delivery, profile.impactDelayOffsetTicks),
     gate,
-    accuracy: compileAccuracy(profile.accuracy, context.accuracyRolls, context.standardAccuracyMode),
+    accuracy: compileAccuracy(profile.accuracy, context),
     damage: compileDamage(profile.damage, context),
     ...(profile.proc === undefined ? {} : { proc: compileProc(profile.proc, context.maxHit) }),
   };
@@ -265,7 +273,7 @@ function compileIndependentHit(
   return {
     ...context.delivery,
     gate: { kind: 'always' },
-    accuracy: compileAccuracy(accuracy, context.accuracyRolls, context.standardAccuracyMode),
+    accuracy: compileAccuracy(accuracy, context),
     damage: {
       kind: 'uniform',
       minimumInclusive: 0,
@@ -298,25 +306,23 @@ function compileDelivery(delivery: PlayerAttackDelivery, impactDelayOffsetTicks 
   };
 }
 
-function compileAccuracy(
-  profile: FormulaAccuracyProfile,
-  rolls: AccuracyRolls,
-  standardAccuracyMode: PlanningContext['standardAccuracyMode'],
-): AccuracySpec {
+function compileAccuracy(profile: FormulaAccuracyProfile, context: PlanningContext): AccuracySpec {
+  const { accuracyRolls: rolls, standardAccuracyMode, elementalWeaknessPercent } = context;
+  const attackRoll = (stages: readonly FormulaRatio[] | undefined) =>
+    applyRatio(applyStages(rolls.attackRoll, stages ?? []), {
+      numerator: 100 + elementalWeaknessPercent,
+      denominator: 100,
+    });
   switch (profile.kind) {
     case 'standard':
       return {
         kind: 'roll',
-        chance: standardAccuracyChance(
-          applyStages(rolls.attackRoll, profile.attackRollStages ?? []),
-          rolls.defenceRoll,
-          standardAccuracyMode,
-        ),
+        chance: standardAccuracyChance(attackRoll(profile.attackRollStages), rolls.defenceRoll, standardAccuracyMode),
       };
     case 'doubleRoll':
       return {
         kind: 'roll',
-        chance: doubleRollHitChance(applyStages(rolls.attackRoll, profile.attackRollStages ?? []), rolls.defenceRoll),
+        chance: doubleRollHitChance(attackRoll(profile.attackRollStages), rolls.defenceRoll),
       };
     case 'guaranteed':
       return { kind: 'guaranteed' };

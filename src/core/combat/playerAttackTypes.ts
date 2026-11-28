@@ -183,6 +183,8 @@ export type PlayerAttackCalculationDiagnostics = {
   readonly baseDefenceRoll: number;
   readonly baseMaxHit: number;
   readonly profileMaxHit: number;
+  /** The target's elemental weakness percent this attack applies; absent when it applies none. */
+  readonly elementalWeaknessPercent?: number;
 };
 
 export type PlayerAttackPlan =

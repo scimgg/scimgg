@@ -1,3 +1,4 @@
+import type { SpellElement } from '../../../data/spellCatalog';
 import { type CombatStyle, getWeaponCategory } from '../../../types/attackStyles';
 import type { EquipmentStats } from '../../../types/equipmentStats';
 import type { NpcActor } from '../../actors/NpcActor';
@@ -95,6 +96,15 @@ export type FirstPartyPlayerAttackProjectionSummary = {
   readonly baseDefenceRoll: number | null;
   readonly baseMaxHit: number | null;
   readonly profileMaxHit: number | null;
+  /**
+   * The target's elemental weakness, and whether this attack applies it. Absent when the target has
+   * none, and in projections recorded before it existed.
+   */
+  readonly elementalWeakness?: {
+    readonly element: SpellElement;
+    readonly percent: number;
+    readonly applied: boolean;
+  };
   readonly hits: readonly {
     readonly planIndex: number;
     readonly accuracyProbability: number;
@@ -125,6 +135,7 @@ export function projectFirstPartyPlayerAttack(
   const plan = planFirstPartyPlayerAttackInternal(input, false, false);
   if (plan === null || plan.kind === 'unsupported') return null;
   const projection = projectPlayerAttack(plan);
+  const weakness = input.target.formulaStats?.elementalWeakness;
   return {
     dps: projection.appliedDamagePerSecond,
     maxHit: projection.maximumAppliedDamagePerAttack,
@@ -142,6 +153,15 @@ export function projectFirstPartyPlayerAttack(
     baseDefenceRoll: plan.diagnostics?.baseDefenceRoll ?? null,
     baseMaxHit: plan.diagnostics?.baseMaxHit ?? null,
     profileMaxHit: plan.diagnostics?.profileMaxHit ?? null,
+    ...(weakness === undefined
+      ? {}
+      : {
+          elementalWeakness: {
+            element: weakness.element,
+            percent: weakness.percent,
+            applied: plan.diagnostics?.elementalWeaknessPercent !== undefined,
+          },
+        }),
     hits: projection.hits.map((hit, index) => ({
       planIndex: hit.planIndex,
       accuracyProbability: hit.accuracyProbability,

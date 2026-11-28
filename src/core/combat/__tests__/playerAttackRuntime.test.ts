@@ -11,12 +11,15 @@ import type { NpcFormulaStats } from '../../actors/types';
 import { resolveAttackResources } from '../attackResources';
 import {
   calculateMaxHit,
+  hitChance,
   lookupPrayerMultipliersFromState,
   type NpcFormulaActor,
   type PlayerFormulaActor,
 } from '../formulas';
 import { DEFAULT_PRAYER_MULTIPLIERS } from '../formulaTypes';
+import { selectPlayerAttackProfile } from '../player/playerAttackProfileSelection';
 import { type PlayerAttackProfile, planPlayerAttack } from '../playerAttackPlanning';
+import { projectPlayerAttack } from '../playerAttackProjection';
 import { resolvePlayerAttack } from '../playerAttackResolution';
 import { type PlayerAttackRuntimeInput, planPlayerAttackFromRuntime } from '../playerAttackRuntime';
 import type { PlayerAttackPlan, ReadyPlayerAttackPlan } from '../playerAttackTypes';
@@ -917,6 +920,121 @@ describe('planPlayerAttackFromRuntime', () => {
     const plan = planPlayerAttackFromRuntime(input);
 
     expect(plan).toBeNull();
+  });
+});
+
+describe('elemental weakness', () => {
+  const WATER_WEAK_STATS: NpcFormulaStats = { ...NPC_STATS, elementalWeakness: { element: 'water', percent: 40 } };
+  const IMBUED_SLAYER_HELMET = 11865;
+  const MAGIC_STATS = equipment({ attackMagic: 100, magicDamage: 25, attackSpeed: 5, attackRange: 10 });
+
+  function castInput(overrides: Partial<PlayerAttackRuntimeInput> = {}): PlayerAttackRuntimeInput {
+    return runtimeInput({
+      player: {
+        ...runtimeInput().player,
+        equipment: { weapon: 4675, head: IMBUED_SLAYER_HELMET },
+        equipmentStats: MAGIC_STATS,
+        selectedAttackStyleIndex: 3,
+      },
+      target: { npcTypeId: 1234, formulaStats: WATER_WEAK_STATS },
+      formulaStyle: 'magic',
+      resources: { kind: 'spell', source: 'none', spellId: 'Water Surge' },
+      delivery: { style: 'magic', attackKind: 'magic_fire', impactDelayTicks: 4 },
+      application: { outgoingDamageMultiplier: 1, specialAttackDamageMultiplier: 1 },
+      ...overrides,
+    });
+  }
+
+  function withSelectedProfile(input: PlayerAttackRuntimeInput): PlayerAttackRuntimeInput {
+    const profile = selectPlayerAttackProfile({
+      weaponId: input.player.equipment.weapon,
+      headId: input.player.equipment.head,
+      formulaStyle: input.formulaStyle,
+      targetSize: 1,
+      isSpecialAttack: false,
+      resources: input.resources,
+    });
+    if (profile === null) throw new TypeError('Expected a player attack profile');
+    return { ...input, profile };
+  }
+
+  it('adds the weakness share of the base spell damage after gear and Slayer, and boosts the attack roll last', () => {
+    const plan = ready(planPlayerAttackFromRuntime(withSelectedProfile(castInput())));
+    const baseAttackRoll = plan.diagnostics?.baseAttackRoll ?? 0;
+    const defenceRoll = plan.diagnostics?.baseDefenceRoll ?? 0;
+    // Slayer floors first, then the weakness: floor(floor(roll x 1.15) x 1.40).
+    const boostedAttackRoll = Math.floor((Math.floor((baseAttackRoll * 115) / 100) * 140) / 100);
+
+    // Water Surge 24 -> floor(24 x 1.25) = 30 -> Slayer floor(30 x 1.15) = 34 -> + floor(24 x 0.40) = 43.
+    expect(plan.diagnostics).toMatchObject({ baseMaxHit: 30, profileMaxHit: 43, baseAttackRoll: 17548 });
+    expect(defenceRoll).toBe(9612);
+    expect(boostedAttackRoll).toBe(28252);
+    expect(plan.hits[0].accuracy).toEqual({ kind: 'roll', chance: hitChance(28252, 9612) });
+    expect(hitChance(28252, 9612)).toBe(1 - 9614 / 56506);
+
+    const projection = projectPlayerAttack(plan);
+    const resolved = resolvePlayerAttack(plan, vi.fn<() => number>().mockReturnValueOnce(0).mockReturnValue(0.999999));
+    expect(projection.maximumRolledDamagePerAttack).toBe(43);
+    expect(projection.hits[0].accuracyProbability).toBeCloseTo(1 - 9614 / 56506, 12);
+    expect(resolved.hits[0]).toMatchObject({ accuracySucceeded: true, rolledDamage: 43 });
+  });
+
+  it.each([
+    {
+      name: 'a spell of the wrong element',
+      input: castInput({
+        target: {
+          npcTypeId: 1234,
+          formulaStats: { ...NPC_STATS, elementalWeakness: { element: 'fire', percent: 40 } },
+        },
+      }),
+      magicBaseMaxHit: 24,
+      stance: 'Casting',
+    },
+    {
+      name: 'a target with no weakness',
+      input: castInput({ target: { npcTypeId: 1234, formulaStats: NPC_STATS } }),
+      magicBaseMaxHit: 24,
+      stance: 'Casting',
+    },
+    {
+      name: 'an elementless Ice Barrage',
+      input: castInput({ resources: { kind: 'spell', source: 'none', spellId: 'Ice Barrage' } }),
+      magicBaseMaxHit: 30,
+      stance: 'Casting',
+    },
+    {
+      name: 'a powered staff',
+      input: castInput({
+        player: { ...castInput().player, equipment: { weapon: 11907 }, selectedAttackStyleIndex: 0 },
+        resources: { kind: 'none', source: 'none' },
+      }),
+      magicBaseMaxHit: getPoweredStaffBaseMaxHit(11907, 99) ?? Number.NaN,
+      stance: 'Accurate',
+    },
+    {
+      name: 'a powered-spell base override',
+      input: castInput({ magicBaseMaxHitOverride: 33 }),
+      magicBaseMaxHit: 33,
+      stance: 'Casting',
+    },
+  ] as const)('leaves $name unchanged against a water weakness', ({ input, magicBaseMaxHit, stance }) => {
+    const plan = planPlayerAttackFromRuntime(input);
+
+    expect(plan).toEqual(
+      directPlan({
+        input,
+        attacker: {
+          kind: 'player',
+          levels: { attack: 99, strength: 99, defence: 99, ranged: 99, magic: 99 },
+          stance,
+          magicBaseMaxHit,
+          voidSet: 'none',
+        },
+        target: BASE_TARGET,
+        equipmentStats: MAGIC_STATS,
+      }),
+    );
   });
 });
 
