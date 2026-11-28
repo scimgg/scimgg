@@ -83,13 +83,22 @@ export interface EncounterSetupView {
   readonly mode: SetupMode;
   readonly mechanics: MechanicsConfig;
   readonly modifiers: EncounterModifierSelection;
+  /**
+   * The modifiers are the player's own saved selection, which only Reset drops, even where it
+   * equals today's default; otherwise they are the default for the setup, and follow it.
+   */
+  readonly modifiersSaved: boolean;
   readonly startingHp: number | undefined;
-  /** Mechanics (account unlocks aside), modifiers and starting hitpoints equal the defaults. */
+  /** Mechanics (account unlocks aside) and starting hitpoints equal the defaults, with no saved modifiers. */
   readonly isDefault: boolean;
 }
 
 interface EnterEncounterOptions {
-  /** The run's modifier selection, saved as the encounter's choice (the Modifiers picker's restart). */
+  /**
+   * The run's modifier selection (the Modifiers picker's restart). Saved as the encounter's choice
+   * when one is already saved or the selection differs from the automatic set; an unchanged
+   * automatic set saves nothing, so it keeps following the setup.
+   */
   readonly modifiers?: EncounterModifierSelection;
   /** Mechanics to save over the saved ones and start with (an Inferno setup link's). */
   readonly mechanics?: Readonly<Partial<MechanicsConfig>>;
@@ -165,8 +174,24 @@ export interface UseEncounterManagerReturn {
   mapLocs: LocWithType[] | null;
   persistEncounterMechanicsConfig: (encounterKind: string, config: MechanicsConfig) => void;
   resetEncounterMechanicsConfig: (encounterKind: string) => void;
-  /** Save `selection` (`{}`: every modifier off) as `encounterKind`'s modifiers. */
+  /**
+   * Save `selection` (`{}`: every modifier off) as `encounterKind`'s modifiers: the player's own,
+   * kept as made whatever the setup does next, even where it equals the default.
+   */
   saveEncounterModifiers: (encounterKind: string, selection: EncounterModifierSelection) => void;
+  /** Drop `encounterKind`'s saved modifiers, so its runs take the setup's default again. */
+  resetEncounterModifiers: (encounterKind: string) => void;
+  /**
+   * A new engine for restarting the active scene's run, where the restart's setup builds a
+   * different encounter than `current` was built with (the modifiers a changed Colosseum start
+   * wave resolves to); null where resetting `current` starts the same setup. `runMechanics` are a
+   * practice restart's run-only mechanics. The engine keeps `current`'s intro setting and
+   * completion ownership; its loadout and recording are the restart's to set.
+   */
+  createRestartEngine: (
+    current: SimulationEngine,
+    runMechanics?: Readonly<Partial<MechanicsConfig>>,
+  ) => SimulationEngine | null;
   saveEncounterStartingHp: (encounterKind: string, hitpoints: number) => void;
   /**
    * Reset `encounterKind`'s saved mechanics, modifiers and starting hitpoints to the defaults
@@ -202,6 +227,29 @@ export interface UseEncounterManagerReturn {
 function selectionsEqual(left: EncounterModifierSelection, right: EncounterModifierSelection): boolean {
   const leftKeys = Object.keys(left);
   return leftKeys.length === Object.keys(right).length && leftKeys.every((key) => left[key] === right[key]);
+}
+
+/**
+ * The encounter constructor options a run with `modifiers` is built with, which its recording keeps
+ * as `bootstrap.encounterConfig`: none for an empty set.
+ */
+function runOptions(modifiers: EncounterModifierSelection): { options?: { modifiers: EncounterModifierSelection } } {
+  return Object.keys(modifiers).length > 0 ? { options: { modifiers } } : {};
+}
+
+/** Whether an engine built with `options` was built with exactly {@link runOptions}(`modifiers`). */
+function builtWithModifiers(
+  options: Readonly<Record<string, unknown>> | undefined,
+  modifiers: EncounterModifierSelection,
+): boolean {
+  const expected = runOptions(modifiers).options;
+  if (options === undefined || expected === undefined) return options === expected;
+  const keys = Object.keys(options);
+  return (
+    keys.length === 1 &&
+    keys[0] === 'modifiers' &&
+    selectionsEqual(options.modifiers as EncounterModifierSelection, expected.modifiers)
+  );
 }
 
 function presetsKeyFor(kind: string): string {
@@ -328,14 +376,27 @@ export function useEncounterManager({
     [getSetupMechanics],
   );
 
-  /** Saved modifiers, else the descriptor's defaults (a tutorial always plays the defaults). */
-  const getSetupModifiers = useCallback(
-    (encounterKind: string, setup: TutorialSetup | null): EncounterModifierSelection => {
+  /**
+   * The saved modifiers, else the descriptor's default for `mechanics` (a tutorial always plays the
+   * default). The saved entry's presence is the whole rule: any saved selection is the player's.
+   */
+  const resolveSetupModifiers = useCallback(
+    (
+      encounterKind: string,
+      setup: TutorialSetup | null,
+      mechanics: Readonly<Partial<MechanicsConfig>>,
+    ): EncounterModifierSelection => {
       const descriptor = encounterRegistry.getDescriptorForKind(encounterKind);
       const saved = setup ? undefined : modifiersPerEncounter[encounterKind];
-      return filterModifierSelection(descriptor?.modifiers, saved ?? descriptor?.defaultModifierSelection);
+      return filterModifierSelection(descriptor?.modifiers, saved ?? descriptor?.defaultModifiers?.(mechanics));
     },
     [modifiersPerEncounter],
+  );
+
+  const getSetupModifiers = useCallback(
+    (encounterKind: string, setup: TutorialSetup | null): EncounterModifierSelection =>
+      resolveSetupModifiers(encounterKind, setup, getSetupMechanics(encounterKind, setup)),
+    [resolveSetupModifiers, getSetupMechanics],
   );
 
   const getSetupStartingHp = useCallback(
@@ -372,20 +433,26 @@ export function useEncounterManager({
       const mechanicsAreDefault = [...new Set([...Object.keys(mechanics), ...Object.keys(defaults)])].every(
         (key) => PLAYER_MECHANICS_TOGGLE_KEYS.has(key) || mechanics[key] === defaults[key],
       );
-      const defaultModifiers = filterModifierSelection(descriptor?.modifiers, descriptor?.defaultModifierSelection);
+      // An encounter that offers no modifiers has no selection to save, whatever an old entry holds.
+      const modifiersSaved =
+        !setup && (descriptor?.modifiers?.length ?? 0) > 0 && modifiersPerEncounter[encounterKind] !== undefined;
       return {
         kind: encounterKind,
         mode: setup ? 'tutorial' : 'saved',
         mechanics,
         modifiers,
+        modifiersSaved,
         startingHp,
-        isDefault:
-          mechanicsAreDefault &&
-          selectionsEqual(modifiers, defaultModifiers) &&
-          startingHp === variant?.startingHitpoints,
+        isDefault: mechanicsAreDefault && !modifiersSaved && startingHp === variant?.startingHitpoints,
       };
     },
-    [getEncounterDefaultMechanicsConfig, getSetupMechanics, getSetupModifiers, getSetupStartingHp],
+    [
+      getEncounterDefaultMechanicsConfig,
+      getSetupMechanics,
+      getSetupModifiers,
+      getSetupStartingHp,
+      modifiersPerEncounter,
+    ],
   );
 
   const getSavedSetup = useCallback((encounterKind: string) => getSetupView(encounterKind, null), [getSetupView]);
@@ -501,16 +568,22 @@ export function useEncounterManager({
 
       const descriptor = encounterRegistry.getDescriptorForKind(encounterKind);
       const startHp = getSetupStartingHp(encounterKind, opts.tutorial);
+      const mechanics = { ...getSetupMechanicsOverrides(encounterKind, opts.tutorial), ...opts.mechanics };
+      // The default follows the mechanics this run starts with, an entry's own included.
       const modifiers =
         opts.modifiers !== undefined
           ? filterModifierSelection(descriptor?.modifiers, opts.modifiers)
-          : getSetupModifiers(encounterKind, opts.tutorial);
+          : resolveSetupModifiers(
+              encounterKind,
+              opts.tutorial,
+              mergeMechanicsConfig(getEncounterDefaultMechanicsConfig(encounterKind), mechanics),
+            );
       const bindings = bindingsRef.current;
       return createSimulationEngineForNewRun({
         encounterConfig: {
           kind: encounterKind,
-          mechanics: { ...getSetupMechanicsOverrides(encounterKind, opts.tutorial), ...opts.mechanics },
-          ...(Object.keys(modifiers).length > 0 ? { options: { modifiers } } : {}),
+          mechanics,
+          ...runOptions(modifiers),
         },
         objTypeLoader,
         // The landing intro is a scene animation; without a viewport nothing
@@ -527,8 +600,9 @@ export function useEncounterManager({
     [
       attackStylePerCategory,
       bindingsRef,
+      getEncounterDefaultMechanicsConfig,
       getSetupMechanicsOverrides,
-      getSetupModifiers,
+      resolveSetupModifiers,
       getSetupStartingHp,
       objTypeLoader,
       playerStats,
@@ -665,6 +739,14 @@ export function useEncounterManager({
     [modifiersPerEncounter, updateModifiersPerEncounter],
   );
 
+  const resetEncounterModifiers = useCallback(
+    (encounterKind: string) => {
+      if (!(encounterKind in modifiersPerEncounter)) return;
+      updateModifiersPerEncounter(withEntry(modifiersPerEncounter, encounterKind, undefined));
+    },
+    [modifiersPerEncounter, updateModifiersPerEncounter],
+  );
+
   const saveEncounterStartingHp = useCallback(
     (encounterKind: string, hitpoints: number) => {
       updateStartingHpPerEncounter({ ...startingHpPerEncounter, [encounterKind]: hitpoints });
@@ -727,7 +809,22 @@ export function useEncounterManager({
       // A tutorial saves nothing; its run setup is its own.
       const entryMechanics = setup ? {} : { ...entryPoint.mechanics, ...options?.mechanics };
       mergeSavedMechanics(kind, entryMechanics);
-      if (options?.modifiers !== undefined && !setup) saveEncounterModifiers(kind, options.modifiers);
+      if (options?.modifiers !== undefined && !setup) {
+        // The picker submits the set it showed, edited or not. Only an edit becomes a saved set: an
+        // unchanged automatic one stays automatic, so it goes on following the setup. A saved set
+        // takes whatever is submitted, as any edit of it would.
+        const descriptor = encounterRegistry.getDescriptorForKind(kind);
+        const automatic = resolveSetupModifiers(
+          kind,
+          null,
+          mergeMechanicsConfig(getEncounterDefaultMechanicsConfig(kind), {
+            ...getSetupMechanicsOverrides(kind, null),
+            ...entryMechanics,
+          }),
+        );
+        const unchanged = selectionsEqual(filterModifierSelection(descriptor?.modifiers, options.modifiers), automatic);
+        if (kind in modifiersPerEncounter || !unchanged) saveEncounterModifiers(kind, options.modifiers);
+      }
 
       const loadout = getSetupLoadout(kind, setup);
       const encounterEquipment = loadoutOverride?.equipment ?? loadout.equipment;
@@ -757,7 +854,39 @@ export function useEncounterManager({
       bindings.targetTileRef.current = null;
       bindings.replay.resetReplay();
     },
-    [bindingsRef, buildEngineForScene, getSetupLoadout, mergeSavedMechanics, saveEncounterModifiers, setTutorial],
+    [
+      bindingsRef,
+      buildEngineForScene,
+      getEncounterDefaultMechanicsConfig,
+      getSetupLoadout,
+      getSetupMechanicsOverrides,
+      mergeSavedMechanics,
+      modifiersPerEncounter,
+      resolveSetupModifiers,
+      saveEncounterModifiers,
+      setTutorial,
+    ],
+  );
+
+  const createRestartEngine = useCallback(
+    (current: SimulationEngine, runMechanics: Readonly<Partial<MechanicsConfig>> = {}): SimulationEngine | null => {
+      if (sceneState.kind !== 'encounter') return null;
+      const scene = sceneState;
+      const kind = scene.encounterKind;
+      const setup = tutorialFor(kind);
+      // The same setup a fresh entry resolves, at the mechanics the restarted run starts with.
+      const modifiers = resolveSetupModifiers(kind, setup, { ...getSetupMechanics(kind, setup), ...runMechanics });
+      const { bootstrap, completionOwnership } = current.getRunConfig();
+      if (builtWithModifiers(bootstrap?.encounterConfig, modifiers)) return null;
+      const engine = buildEngineForScene(scene, {
+        tutorial: setup,
+        modifiers,
+        ...(bootstrap ? { enableIntro: bootstrap.enableIntro } : {}),
+      });
+      engine.setCompletionOwnership(completionOwnership);
+      return engine;
+    },
+    [buildEngineForScene, getSetupMechanics, resolveSetupModifiers, sceneState, tutorialFor],
   );
 
   const handleMechanicsConfigChange = useCallback(
@@ -868,6 +997,8 @@ export function useEncounterManager({
     persistEncounterMechanicsConfig,
     resetEncounterMechanicsConfig,
     saveEncounterModifiers,
+    resetEncounterModifiers,
+    createRestartEngine,
     saveEncounterStartingHp,
     resetSavedSetup,
     persistEquipmentEncounterKind,

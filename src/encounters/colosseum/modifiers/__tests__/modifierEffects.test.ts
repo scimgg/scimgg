@@ -2,15 +2,23 @@ import { describe, expect, it } from 'vitest';
 import type { NpcMovementInfo } from '../../../../core/encounters/types';
 import { createNpcStepOccupancyPredicate, TileOccupancy } from '../../../../core/npcOccupancy';
 import { WorldState } from '../../../../core/WorldState';
+import { COLOSSEUM_SPOTANIMS } from '../../../../npcs/colosseum/constants';
+import { findContiguousRegion } from '../../../../rs/collision/WalkabilityAnalyzer';
+import { findProjectCacheZip, loadColosseumWaveArena } from '../../../../test/helpers/colosseumCollision';
+import { REAL_CACHE_TEST_TIMEOUT_MS, skipWithoutRealCache } from '../../../../test/helpers/real-cache';
 import type { Coordinate } from '../../../../types/simulation';
 import { ColosseumRouteRunner } from '../routeRunner';
 import { createSolarflare, SOLARFLARE_DAMAGE_SOURCE, SOLARFLARE_TIMING, SolarflareDamageState } from '../solarflare';
 import {
+  VOLATILITY_GIB_LIFETIME_TICKS,
   volatilityExplosionCentre,
   volatilityExplosionDamage,
+  volatilityExplosionGraphics,
   volatilityExplosionTiles,
+  volatilityGibForNpcType,
   volatilityRingDelay,
 } from '../volatility';
+import { CAPTURED_VOLATILITY_DEATHS } from './fixtures/volatilityCapture';
 
 const corners = [
   [0, 0],
@@ -120,6 +128,95 @@ describe('Volatility footprint and ring delay', () => {
     }
     expect(volatilityExplosionTiles(position, size, 3)).toEqual(volatilityExplosionTiles(position, size, 2));
   });
+});
+
+describe('Volatility wave deaths (Run A)', () => {
+  const omittedTiles = (death: (typeof CAPTURED_VOLATILITY_DEATHS)[number]) =>
+    new Set(death.omitted.map(([dx, dy]) => `${death.position[0] + dx},${death.position[1] + dy}`));
+
+  it('covers every captured size and gib, including all four minotaur gibs', () => {
+    expect(CAPTURED_VOLATILITY_DEATHS).toHaveLength(33);
+    expect(new Set(CAPTURED_VOLATILITY_DEATHS.map(({ size }) => size))).toEqual(new Set([1, 3]));
+    expect(CAPTURED_VOLATILITY_DEATHS.filter(({ gibNpcTypeId }) => gibNpcTypeId === 12830)).toHaveLength(4);
+  });
+
+  it.each(
+    CAPTURED_VOLATILITY_DEATHS,
+  )('A:$tick: npc $npcTypeId leaves gib $gibNpcTypeId with spotanim $explosionSpotAnimId', (death) => {
+    const gib = volatilityGibForNpcType(death.npcTypeId);
+    expect(gib).toMatchObject({ npcTypeId: death.gibNpcTypeId, explosionSpotAnimId: death.explosionSpotAnimId });
+    expect(VOLATILITY_GIB_LIFETIME_TICKS).toBe(death.gibTicks);
+
+    const omitted = omittedTiles(death);
+    const graphics = volatilityExplosionGraphics({
+      npcPosition: death.position,
+      npcSize: death.size,
+      tier: death.tier,
+      explosionSpotAnimId: gib!.explosionSpotAnimId,
+      isWalkable: ([x, y]) => !omitted.has(`${x},${y}`),
+    });
+    const center = volatilityExplosionCentre(death.position, death.size);
+    expect(graphics[0]).toEqual({
+      spotAnimId: death.explosionSpotAnimId,
+      target: { kind: 'tile', position: center },
+      delayCycles: 0,
+      height: 0,
+    });
+    const impacts = graphics.slice(1);
+    const side = death.size + 2 * Math.min(death.tier, 2);
+    expect(impacts).toHaveLength(side * side - death.omitted.length);
+    for (const impact of impacts) {
+      expect(impact.spotAnimId).toBe(COLOSSEUM_SPOTANIMS.fireblastImpact);
+      if (impact.target.kind !== 'tile') throw new Error('an impact off its tile');
+      expect(omitted.has(String(impact.target.position))).toBe(false);
+      expect(impact.delayCycles).toBe(volatilityRingDelay(impact.target.position, center));
+    }
+
+    const damage = volatilityExplosionDamage(death.position, death.size, death.tier, death.playerStart);
+    expect(damage).toHaveLength(death.damage === null ? 0 : 1);
+    if (death.damage !== null) {
+      const [min, max] = damage[0]!.baseDamage as [number, number];
+      expect(death.damage).toBeGreaterThanOrEqual(min);
+      expect(death.damage).toBeLessThanOrEqual(max);
+    }
+  });
+
+  it('maps every wave species, leaving Sol and modifier actors to their own rules', () => {
+    for (const id of [12810, 12811, 12814, 12815, 12816]) expect(volatilityGibForNpcType(id)?.npcTypeId).toBe(12828);
+    expect(volatilityGibForNpcType(12818)?.npcTypeId).toBe(12829);
+    for (const id of [12812, 12813]) expect(volatilityGibForNpcType(id)?.npcTypeId).toBe(12830);
+    for (const id of [12817, 12819]) expect(volatilityGibForNpcType(id)?.npcTypeId).toBe(12831);
+    for (const id of [12821, 12823, 12825, 12826]) expect(volatilityGibForNpcType(id)).toBeNull();
+  });
+
+  it('centers a size-2 jaguar explosion on its north-east footprint tile', () => {
+    const graphics = volatilityExplosionGraphics({
+      npcPosition: [30, 30],
+      npcSize: 2,
+      tier: 1,
+      explosionSpotAnimId: 2713,
+      isWalkable: () => true,
+    });
+    expect(graphics[0]!.target).toEqual({ kind: 'tile', position: [31, 31] });
+    expect(graphics).toHaveLength(1 + 16);
+    expect(volatilityExplosionDamage([30, 30], 2, 1, [29, 32])).toHaveLength(1);
+    expect(volatilityExplosionDamage([30, 30], 2, 1, [33, 30])).toEqual([]);
+  });
+
+  it.skipIf(skipWithoutRealCache())(
+    'omits exactly the explosion tiles outside the cached wave arena floor',
+    async () => {
+      const analysis = await loadColosseumWaveArena(findProjectCacheZip()!);
+      const floor = findContiguousRegion(analysis.walkableTiles, 33, 31, analysis.collisionMap);
+      for (const death of CAPTURED_VOLATILITY_DEATHS) {
+        const blocked = volatilityExplosionTiles(death.position, death.size, death.tier)
+          .map(String)
+          .filter((tile) => !floor.has(tile));
+        expect(new Set(blocked), `A:${death.tick}`).toEqual(omittedTiles(death));
+      }
+    },
+    REAL_CACHE_TEST_TIMEOUT_MS,
+  );
 });
 
 describe('Solarflare departure damage', () => {

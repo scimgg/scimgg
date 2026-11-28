@@ -1,0 +1,160 @@
+/* The Fortis Colosseum's start wave. Drawn on the opaque encounter rail and the opaque Practice
+   pane, so nothing here paints a fill or an outer shadow of its own. It follows the Inferno's
+   start-wave form (InfernoSetup.css): the rail uses the configurer's label face, Practice the
+   pane's Plain 11 ramp. Native em throughout. */
+
+.colosseum-setup {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.colosseum-setup__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+  min-width: 0;
+}
+
+.colosseum-setup__title {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  color: var(--color-secondary);
+  font:
+    16px / 20px "RuneScape Bold 12",
+    sans-serif;
+}
+
+/* The word and its footnote mark stay one unit. */
+.colosseum-setup__title > label {
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.colosseum-setup__input .num-input__field {
+  /* Below 16px iOS Safari zooms the whole panel on focus. */
+  font-size: 16px;
+}
+
+/* `.num-input` stretches its field to a coarse pointer's 44px; the field's own min-height and
+   padding would stack on top of that. */
+@media (max-width: 720px), (pointer: coarse) {
+  .colosseum-setup__input .num-input__field {
+    min-height: 0;
+    padding-block: 0;
+    text-align: right;
+  }
+}
+
+/* ---- Rail: label column and value, as the Inferno's wave row -------------------------------- */
+
+.colosseum-setup--rail .colosseum-setup__head {
+  display: grid;
+  grid-template-columns: 104px minmax(0, 1fr);
+  gap: 12px;
+  min-height: 44px;
+}
+
+.colosseum-setup--rail .colosseum-setup__input {
+  justify-self: start;
+}
+
+.colosseum-setup__wave {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  min-width: 0;
+  color: var(--color-text-body);
+  font:
+    16px / 20px "RuneScape Plain 12",
+    sans-serif;
+  overflow-wrap: anywhere;
+}
+
+.colosseum-setup__continues {
+  color: var(--color-text-muted);
+}
+
+/* ---- Practice: the pane's tighter ramp ------------------------------------------------------ */
+
+.colosseum-setup--practice {
+  gap: 4px;
+}
+
+.colosseum-setup--practice .colosseum-setup__head {
+  justify-content: space-between;
+  gap: 0 8px;
+}
+
+.colosseum-setup--practice .colosseum-setup__title {
+  color: var(--hud-label, var(--color-secondary));
+  font:
+    16px / 16px "RuneScape Plain 11",
+    sans-serif;
+}
+
+.colosseum-setup--practice .colosseum-setup__input {
+  flex-shrink: 0;
+  min-height: 28px;
+  box-sizing: border-box;
+  box-shadow: none;
+}
+
+.colosseum-setup--practice .num-input__field {
+  box-sizing: border-box;
+  min-height: 26px;
+  padding-block: 0;
+}
+
+/* ---- Tool: the layout tool's head, as the Inferno's (InfernoSpawnSetup.css) ------------------ */
+
+.colosseum-setup--tool {
+  gap: 4px;
+}
+
+.colosseum-setup--tool .colosseum-setup__head {
+  min-height: 44px;
+  justify-content: space-between;
+}
+
+/* Room for the longest wave's line, so changing the wave never moves the map under it. */
+.colosseum-setup--tool .colosseum-setup__wave {
+  min-height: 60px;
+}
+
+.colosseum-setup__pending {
+  margin: 0;
+  color: var(--color-secondary);
+  font:
+    16px / 18px "RuneScape Plain 11",
+    sans-serif;
+}
+
+@media (max-width: 720px), (pointer: coarse) {
+  .colosseum-setup--practice .colosseum-setup__input {
+    min-height: 44px;
+  }
+
+  .colosseum-setup--practice .num-input__field {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
+
+/* The Mobile layout is a touch layout whatever the pointer reports. */
+:root[data-mobile-ui] .colosseum-setup--practice .colosseum-setup__input {
+  min-height: 44px;
+}
+
+:root[data-mobile-ui] .colosseum-setup--practice .num-input__field {
+  min-width: 44px;
+  min-height: 44px;
+}
+
+:root[data-mobile-ui] .colosseum-setup--practice .num-input__arrows {
+  display: none;
+}

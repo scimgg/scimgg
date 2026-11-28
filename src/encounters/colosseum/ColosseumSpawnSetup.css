@@ -1,0 +1,117 @@
+/* The Fortis Colosseum's Edit layout (ColosseumSpawnSetup.tsx), in the setup rail. It follows the
+   Inferno's (InfernoSpawnSetup.css): a chevron disclosure row with a muted one-line state, and the
+   shared spawn map (SpawnLayoutMap.css) under it, aligned with the column's leading edge. On the
+   opaque rail, so text keeps LCD antialiasing: no outer shadows, no translucent fills behind text. */
+
+.colosseum-layout-summary {
+  display: grid;
+  grid-template-columns: 104px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 0;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  color: var(--color-secondary);
+  font:
+    16px / 20px "RuneScape Bold 12",
+    sans-serif;
+  cursor: pointer;
+}
+
+.colosseum-layout-summary__label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.colosseum-layout-summary__state {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--color-text-muted);
+  font-family: "RuneScape Plain 11", sans-serif;
+}
+
+.colosseum-layout-summary__warning {
+  color: var(--color-warning);
+}
+
+.colosseum-layout-summary:hover,
+.colosseum-layout-summary[aria-expanded="true"] {
+  color: var(--color-accent-text);
+}
+
+.colosseum-layout-editor {
+  width: min(100%, 396px);
+  background: var(--color-bg-solid);
+}
+
+.colosseum-layout-editor .spawn-map-frame,
+.colosseum-layout-editor .spawn-progress {
+  width: 100%;
+  max-width: none;
+}
+
+.colosseum-layout-editor__caption {
+  margin: 0 0 6px;
+  min-height: 36px;
+  background: var(--color-bg-solid);
+  color: var(--color-text-muted);
+  font:
+    16px / 18px "RuneScape Plain 11",
+    sans-serif;
+}
+
+.colosseum-layout-editor__caption > span {
+  display: block;
+}
+
+/* The floor, in the quietest warm tone over the inset, its tiles outlined by the shared grid ink;
+   the pillars and the arena's edge stay the inset itself. */
+.colosseum-spawn-map__floor {
+  fill: color-mix(in srgb, var(--color-secondary) 9%, var(--color-surface-inset));
+}
+
+/* Spawn identities from the shared diagram palette (DESIGN.md), by how each attacks: the magic
+   shaman red, the ranged javelin green, the three-style manticore yellow as the Inferno's blob,
+   and the shockwave orange to keep it apart from the shaman. */
+.spawn-kind--serpentShaman {
+  --spawn-kind: var(--color-spawn-mager);
+}
+.spawn-kind--javelinColossus {
+  --spawn-kind: var(--color-spawn-ranger);
+}
+.spawn-kind--manticore {
+  --spawn-kind: var(--color-spawn-blob);
+}
+.spawn-kind--shockwaveColossus {
+  --spawn-kind: var(--color-spawn-meleer);
+}
+
+/* Beside the map, under it: what the game would not do, in the warning ink on an opaque raised
+   fill. A warning only, so no fill in the warning hue and nothing that reads as an error. */
+.colosseum-layout-warning {
+  margin-top: 8px;
+  padding: 6px 8px;
+  background: var(--color-bg-elevated);
+  border: 1px solid color-mix(in srgb, var(--color-warning) 45%, var(--color-border));
+  color: var(--color-text-body);
+  font:
+    16px / 18px "RuneScape Plain 11",
+    sans-serif;
+}
+
+.colosseum-layout-warning p {
+  margin: 0;
+}
+
+.colosseum-layout-warning .colosseum-layout-warning__title {
+  color: var(--color-warning);
+  font:
+    16px / 20px "RuneScape Bold 12",
+    sans-serif;
+}

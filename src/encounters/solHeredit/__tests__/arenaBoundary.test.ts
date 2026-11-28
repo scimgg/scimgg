@@ -12,9 +12,11 @@ const placementKey = (placement: CollisionLocPlacement): string =>
   `${placement.localX},${placement.localY},${placement.rotation},${placement.type},${placement.level}`;
 
 describe('Sol boundary warriors', () => {
-  it('includes the packet-spawned guards when baking cache collision', () => {
+  it('bakes the open waves arena and leaves the packet-spawned guards to the encounter', () => {
+    // The guards appear with Sol (A:4976, K:3998), so the bake must not include them: the encounter
+    // installs them over the bake from C (`composeSolStageArena`, `stageArenaCache.test.ts`).
     const descriptor = ENCOUNTER_CORE_MODULES.find((entry) => entry.kind === 'sol_heredit')?.descriptor;
-    expect(descriptor?.collision?.dynamicLocs).toEqual(SOL_BOUNDARY_WARRIORS);
+    expect(descriptor?.collision?.dynamicLocs).toBeUndefined();
   });
   it('reproduces all 48 K:3998 LOC identities, coordinates and rotations', () => {
     const recorded = readGuards('colosseum-sol-heredit-packet-data.txt');

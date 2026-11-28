@@ -89,8 +89,15 @@ describe('encounter entries', () => {
     };
     expect(topEntry('inferno')?.id).toBe('encounter.inferno');
     expect(topEntry('inferno')?.title).toBe('The Inferno');
-    for (const query of ['inferno', 'waves', 'tzkal'])
+    for (const query of ['inferno', 'tzkal'])
       expect(selectionOf(query)).toEqual({ kind: 'inferno', variantId: undefined });
+    // Both wave encounters answer "waves"; each is one entry.
+    expect(
+      rankQuickSearch('waves', entries, 'resizable')
+        .results.slice(0, 2)
+        .map((result) => result.entry.id)
+        .sort(),
+    ).toEqual(['encounter.inferno', 'encounter.sol_heredit']);
     // "zuk" is also the Zuk set timer plugin's word; the Inferno is still offered for it.
     expect(rankQuickSearch('zuk', entries, 'resizable').results.map((result) => result.entry.id)).toContain(
       'encounter.inferno',
@@ -222,7 +229,7 @@ describe('QuickSearch', () => {
     const titles = [...document.querySelectorAll('[role="option"] .drawer-search-result__title')].map(
       (el) => el.textContent,
     );
-    expect(titles).toEqual(['Yama', 'TzKal-Zuk', 'Sol Heredit']);
+    expect(titles).toEqual(['Yama', 'TzKal-Zuk', 'Fortis Colosseum']);
   });
 
   it('moves the selection with Up and Down, and chooses an encounter with Enter, never starting it', () => {
@@ -240,7 +247,7 @@ describe('QuickSearch', () => {
   it('wraps the selection around the list', () => {
     renderSearch();
     fireEvent.keyDown(field(), { key: 'ArrowUp' });
-    expect(selectedTitle()).toBe('Sol Heredit');
+    expect(selectedTitle()).toBe('Fortis Colosseum');
   });
 
   it('chooses a row on click, and labels its type', () => {

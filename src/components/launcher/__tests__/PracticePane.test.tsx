@@ -4,6 +4,7 @@ import { act, cleanup, fireEvent, render, renderHook, screen, within } from '@te
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { SimulationEngine } from '../../../core/SimulationEngine';
 import { encounterControlsForKind } from '../../../encounters/modules';
+import { SOL_SECTION } from '../../../encounters/solHeredit/controls';
 import { SolHereditEncounter } from '../../../encounters/solHeredit/SolHereditEncounter';
 import type { SetupContextControls } from '../../../types/setupContext';
 import { deleteSetting, loadSetting } from '../../../util/storage';
@@ -130,7 +131,9 @@ function setup() {
   vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockImplementation(function (this: HTMLElement) {
     return this.classList.contains('launcher-sections') ? 24 : 0;
   });
-  const offsets: Record<string, number> = { fightSetup: 0, mechanics: 200, assists: 400 };
+  // The Sol fixture's three stops: its fight setup, Sol's own section (as the Inferno names Zuk's),
+  // and the aids.
+  const offsets: Record<string, number> = { fightSetup: 0, [`section:${SOL_SECTION}`]: 200, assists: 400 };
   vi.spyOn(HTMLElement.prototype, 'offsetTop', 'get').mockImplementation(function (this: HTMLElement) {
     return offsets[this.dataset.practiceGroup ?? ''] ?? 0;
   });
@@ -230,7 +233,7 @@ describe('Practice Setup measurement', () => {
   it('keeps a chosen section through its own scroll and layout changes, then follows manual scrolling', () => {
     const { body, height, resize } = setup();
     const nav = within(document.querySelector('.launcher-sections') as HTMLElement);
-    const mechanics = nav.getByRole('button', { name: 'Mechanics' });
+    const mechanics = nav.getByRole('button', { name: SOL_SECTION });
     fireEvent.click(mechanics);
     expect(body.scrollTop).toBe(200);
     // The browser may clamp the requested jump before dispatching its scroll event.

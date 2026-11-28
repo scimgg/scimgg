@@ -20,14 +20,16 @@ import { z } from 'zod';
 import type { EncounterDescriptor } from '../core/encounters/encounterFactory';
 import type { Encounter, EncounterControls, MechanicsToggleInfo } from '../core/encounters/types';
 import type { MechanicsConfig } from '../types/simulation';
+import { colosseumDefaultModifiers } from './colosseum/modifiers/defaults';
+import { SOL_WAVE } from './colosseum/waves/waveTable';
 import { INFERNO_LANDING_TILE, INFERNO_MAP_SQUARE, INFERNO_MAP_SQUARE_OFFSETS, ZUK_WAVE } from './inferno/constants';
 import { buildInfernoControls, INFERNO_START_WAVE_KEY, resolveInfernoRunSetup } from './inferno/controls';
 import { InfernoEncounter } from './inferno/InfernoEncounter';
 import { INFERNO_PILLAR_COLLISION_LOCS } from './inferno/pillars';
 import { LobbyEncounter } from './lobby/LobbyEncounter';
-import { SOL_BOUNDARY_WARRIORS } from './solHeredit/arenaBoundary';
+import { LEGACY_SLUG_TO_KIND } from './slugs';
 import { SOL_MAP_SQUARE, SOL_PLAYER_START } from './solHeredit/constants';
-import { buildSolHereditControls } from './solHeredit/controls';
+import { buildSolHereditControls, COLOSSEUM_START_WAVE_KEY, resolveColosseumStartWave } from './solHeredit/controls';
 import { SOL_HEREDIT_MODIFIERS, SOL_HEREDIT_SETUP_NOTES } from './solHeredit/modifiers';
 import { SolHereditEncounter } from './solHeredit/SolHereditEncounter';
 import {
@@ -75,10 +77,22 @@ export interface EncounterCoreModule {
    */
   readonly retiredEntries?: Readonly<Record<string, Readonly<Partial<MechanicsConfig>>>>;
   /**
+   * Where entering through one of this kind's former slugs (catalog `legacySlugs`) starts, saved the
+   * way a {@link retiredEntries} setup is. `/sol-heredit` is a direct Sol start, wave 12.
+   */
+  readonly legacySlugEntries?: Readonly<Record<string, Readonly<Partial<MechanicsConfig>>>>;
+  /**
    * Opts run setups into walking to their start tile during the fight-start countdown.
    * Encounters without this hook, or whose hook returns false, keep their opening position.
    */
   readonly countdownMovement?: (mechanics: Readonly<Partial<MechanicsConfig>>) => boolean;
+  /**
+   * Whether a fresh run of this setup (an entry, Restart fight, Ctrl+R, a practice restart) counts
+   * down before its first tick, where the fight-start countdown setting is on. Defaults to true. A
+   * run that opens on a choice the player must make before anything happens is started by that
+   * choice, so it opts out. Restored boundaries (a replay takeover) count down regardless.
+   */
+  readonly fightStartCountdown?: (mechanics: Readonly<Partial<MechanicsConfig>>) => boolean;
 }
 
 /**
@@ -171,17 +185,20 @@ export const ENCOUNTER_CORE_MODULES: readonly EncounterCoreModule[] = [
     factory: createSolHereditEncounter,
     descriptor: {
       kind: 'sol_heredit',
-      displayName: 'Sol Heredit',
-      description: 'The final wave of the Fortis Colosseum.',
+      displayName: 'Fortis Colosseum',
+      description:
+        'Start from any wave. Each cleared wave offers a choice of modifier and leads into the next, through to Sol Heredit at wave 12.',
       mapSquare: SOL_MAP_SQUARE,
       playerStart: [...SOL_PLAYER_START],
       modifiers: SOL_HEREDIT_MODIFIERS,
       setupNotes: SOL_HEREDIT_SETUP_NOTES,
-      // The Sol practice setup defaults to Blasphemy III.
-      defaultModifierSelection: { blasphemy: 3 },
+      // The start wave's suggestion; a direct Sol start (wave 12) keeps Blasphemy III.
+      defaultModifiers: (mechanics) => colosseumDefaultModifiers(resolveColosseumStartWave(mechanics)),
       loadsMapLocs: true,
       isWorkInProgress: true,
-      collision: { mode: 'auto', seed: [...SOL_PLAYER_START], dynamicLocs: SOL_BOUNDARY_WARRIORS },
+      // The open waves arena; Sol's shield warriors close it from his control tick
+      // (`SolHereditEncounter.refineArenaConfig`), at once for a direct wave-12 start.
+      collision: { mode: 'auto', seed: [...SOL_PLAYER_START] },
       victory: {
         eyebrow: 'Triumphant',
         title: 'VICTORY',
@@ -190,6 +207,10 @@ export const ENCOUNTER_CORE_MODULES: readonly EncounterCoreModule[] = [
       },
     },
     controls: buildSolHereditControls(),
+    legacySlugEntries: { 'sol-heredit': { [COLOSSEUM_START_WAVE_KEY]: String(SOL_WAVE) } },
+    // A wave start (1-11) opens on its modifier choice, and the player's Continue starts the wave
+    // five ticks later; a direct Sol start opens on the fight itself, so it alone counts down.
+    fightStartCountdown: (mechanics) => resolveColosseumStartWave(mechanics) === SOL_WAVE,
   },
   {
     kind: 'inferno',
@@ -295,6 +316,11 @@ export function encounterOffersCountdownMovement(kind: string, mechanics: Readon
   return encounterModuleForKind(kind)?.countdownMovement?.(mechanics) === true;
 }
 
+/** Whether a fresh `kind` run with `mechanics` counts down before it starts (see `fightStartCountdown`). */
+export function encounterCountsDownFightStart(kind: string, mechanics: Readonly<Partial<MechanicsConfig>>): boolean {
+  return encounterModuleForKind(kind)?.fightStartCountdown?.(mechanics) ?? true;
+}
+
 /**
  * Where entering `kind` lands: a live kind enters itself; a retired one (`zuk`) enters the kind that
  * owns it with the run setup it stands for (wave 69). Undefined for a kind nothing registers.
@@ -309,4 +335,16 @@ export function resolveEncounterEntry(
     if (mechanics) return { kind: candidate.kind, mechanics };
   }
   return undefined;
+}
+
+/**
+ * Where entering through the former slug `slug` lands: the kind it now routes under, with the run
+ * setup its module gives it (`/sol-heredit` is wave 12), or none. Undefined for any other slug.
+ */
+export function resolveLegacySlugEntry(
+  slug: string,
+): { readonly kind: string; readonly mechanics: Readonly<Partial<MechanicsConfig>> } | undefined {
+  const kind = LEGACY_SLUG_TO_KIND.get(slug);
+  if (kind === undefined) return undefined;
+  return { kind, mechanics: encounterModuleForKind(kind)?.legacySlugEntries?.[slug] ?? {} };
 }

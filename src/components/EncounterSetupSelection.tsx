@@ -18,6 +18,7 @@ export function EncounterSetupSelection({
   modifiers,
   value,
   onEdit,
+  heading = 'Modifiers',
 }: {
   variants?: readonly EncounterVariant[];
   selectedKind: string;
@@ -26,6 +27,8 @@ export function EncounterSetupSelection({
   modifiers?: readonly EncounterModifierDefinition[];
   value: EncounterModifierSelection;
   onEdit?: () => void;
+  /** The modifier section's name, where an encounter qualifies it ("Modifiers going into wave 8"). */
+  heading?: string;
 }) {
   const [contractsOpen, setContractsOpen] = useState(false);
   const contractsId = useId();
@@ -118,7 +121,7 @@ export function EncounterSetupSelection({
         <section className="configurer-modifiers">
           <div className="configurer-section-head">
             <h3>
-              Modifiers
+              {heading}
               {/* A count, not part of the name. Zero is already said in full below. */}
               {shown.length > 0 && <span> ({shown.length})</span>}
             </h3>

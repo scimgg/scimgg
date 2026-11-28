@@ -1,6 +1,8 @@
 # Sol Heredit
 
-The final wave of the Fortis Colosseum, registered as `sol_heredit` and routed at `/sol-heredit`.
+The final wave of the Fortis Colosseum, registered as `sol_heredit` and routed at `/colosseum`. The former
+`/sol-heredit` link opens a direct Sol start (wave 12); see
+[Legacy slugs](../../../docs/architecture/encounters.md#legacy-slugs).
 
 **Status: playable; several mechanics are fitted or unverified.** The manifest in [`src/encounters/modules.ts`](../modules.ts) sets
 `isWorkInProgress: true`. Many rules are fitted models or simulator policy rather than recovered game
@@ -86,4 +88,24 @@ not wired: the simulation starts with him already in the arena.
 
 Varied crystal spawn tiles (each edge has one fixed spawn, including the first crystal's), the
 Volatility III sand pool, Volatility on the Quartet warbander's death, the grapple's item strip on
-failure, modifier audio, and Colosseum waves 1–11.
+failure, and modifier audio.
+
+## Fortis Colosseum waves 1–11
+
+A run can start on any wave (the **Start Wave** setup choice; 12 is a direct Sol start). The waves
+and their intermissions are owned by [`../colosseum/waves/`](../colosseum/waves/), and
+`SolWaveDirector.ts` runs Sol's stage from his control tick. A wave start's practice setup (the
+start wave's spawn layout and start tile, `colosseumSpawnLayout` and `colosseumStartTile`) is
+modeled in `../colosseum/waves/spawnLayout.ts` and resolved in `controls.ts`; like the start wave,
+both are `runStartMechanicsKeys`, so a recording keeps them. The run publishes them back as the
+snapshot's `runSetup` (what it started with, and what the wave being fought spawned on), which
+Practice compares the saved setup against and the top chrome's Edit layout tool
+(`../colosseum/ColosseumLayoutTool.tsx`) copies; that tool's Start is the `go-to-wave` practice
+restart (`planPracticeRestart`). Their evidence and rules:
+
+- [Facts spec](../../../docs/encounters/fortis-colosseum-facts-spec.md): wave structure, spawns,
+  NPCs and modifiers as captured, with sample counts and status.
+- [Policy](../../../docs/encounters/fortis-colosseum-policy.md): what the simulator does where the
+  evidence leaves a choice.
+- [Open questions](../../../docs/encounters/fortis-colosseum-open-questions.md): what is still
+  unresolved, and the recording that would settle it.

@@ -338,7 +338,7 @@ describe('useEncounterManager', () => {
         sol({ sol_heredit: { doom: 2, retired: 1 } as EncounterModifierSelection }).current.getSavedSetup('sol_heredit')
           .modifiers,
       ).toEqual({ doom: 2 });
-      expect(encounterRegistry.getDescriptor('sol_heredit')?.defaultModifierSelection).toEqual({ blasphemy: 3 });
+      expect(encounterRegistry.getDescriptor('sol_heredit')?.defaultModifiers?.({})).toEqual({ blasphemy: 3 });
     });
 
     it('saves edits and keeps them through Configure, reopening it and an ordinary entry', () => {

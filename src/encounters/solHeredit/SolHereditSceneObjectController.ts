@@ -59,6 +59,10 @@ export class SolHereditSceneObjectController implements SceneObjectController<Si
   update(context: SceneObjectFrameContext<SimulationState>): readonly SceneObjectSpec<SceneObjectLocData>[] {
     const snapshot = context.state.encounter;
     if (snapshot.kind !== 'sol_heredit') return [];
+    // The shield warriors close the open waves arena on the tick Sol is added (A:4976, K:3998). The
+    // snapshot leaves C out in recordings older than the waves, which all start on Sol (C = 0).
+    const control = snapshot.visuals.solControlTick === undefined ? 0 : snapshot.visuals.solControlTick;
+    const fenced = control !== null && context.currentTick >= control;
     const despawning = snapshot.state.sandDespawning;
     const seqId = despawning ? MOLTEN_SAND_DESPAWN_SEQ_ID : -1;
     // The despawn starts on Sol's death tick, which the recorded outcome keeps, so a replay seek to
@@ -89,6 +93,6 @@ export class SolHereditSceneObjectController implements SceneObjectController<Si
         },
       } satisfies SceneObjectSpec<SceneObjectLocData>;
     });
-    return [...this.boundary, ...pools];
+    return fenced ? [...this.boundary, ...pools] : pools;
   }
 }

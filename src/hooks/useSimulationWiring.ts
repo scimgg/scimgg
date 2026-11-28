@@ -28,7 +28,7 @@ import { resolveEquipmentItemName } from '../data/equipmentCatalog';
 import type { ItemActionOption } from '../data/itemEffects';
 import { formatLoadout } from '../debug/dumpLoadout';
 import { LobbyEncounter } from '../encounters/lobby/LobbyEncounter';
-import { encounterOffersCountdownMovement } from '../encounters/modules';
+import { encounterCountsDownFightStart, encounterOffersCountdownMovement } from '../encounters/modules';
 import { encounterPracticeSession } from '../encounters/practiceChrome';
 import { isSyntheticInput, runSyntheticInput } from '../input/inputProvenance';
 import type { FightStartCountdownPhase } from '../render/graphics/sceneObjectTypes';
@@ -136,6 +136,15 @@ interface UseSimulationWiringParams {
   /** Simulated input latency in ms (0 = instant). Only applies in auto-advance play. */
   inputLagMs: number;
   updateAttackStylePerCategory: (next: Record<string, number>) => void;
+  /**
+   * A restart's fresh engine where its setup builds a different encounter than the running one
+   * (`useEncounterManager.createRestartEngine`), else null and the running engine is reset.
+   * Omitted: every restart resets the running engine.
+   */
+  readonly createRestartEngine?: (
+    current: SimulationEngine,
+    runMechanics?: Readonly<Partial<MechanicsConfig>>,
+  ) => SimulationEngine | null;
 }
 
 /** `[hasPreview, prayer]` — mirrors `SimulationState.pendingProtectionPrayer`. */
@@ -386,6 +395,12 @@ export interface UseSimulationWiringReturn {
   fightStartCountdownPhase: FightStartCountdownPhase | null;
   /** Arrival versus restart presentation, retained after the disposable overlay finishes. */
   fightStartPresentation: 'entry' | 'restart';
+  /**
+   * The live run's identity: it changes whenever a live run starts (an entry, a Restart, a
+   * Take Over), even on the same engine and wave, and at no other time. Run-local UI (the
+   * Colosseum's modifier choice) keys its own state by it.
+   */
+  runAttempt: number;
   /** The countdown overlay with `key` has finished its exit. */
   handleFightStartCountdownFinished: (key: number) => void;
   /** Publish a post-`advanceTick()` engine state to React. Every tick-advancement path must use this. */
@@ -483,6 +498,7 @@ export function useSimulationWiring({
   speedMultiplier,
   inputLagMs,
   updateAttackStylePerCategory,
+  createRestartEngine,
 }: UseSimulationWiringParams): UseSimulationWiringReturn {
   const focusPaused = useBackgroundSuspended(pauseWhenUnfocused);
   const focusPausedRef = useRef(focusPaused);
@@ -593,7 +609,11 @@ export function useSimulationWiring({
   const selectedSpellPreview = useSentInputPreview<string | null>();
   const targetTilePreview = useSentInputPreviewRef<Coordinate | null>();
   const takeOverEngineRef = useRef(false);
+  /** A restart's fresh engine, which `resetRun` has already seeded and started recording. */
+  const restartedEngineRef = useRef<SimulationEngine | null>(null);
   const prevEngineRef = useRef<SimulationEngine | null>(null);
+  const [runAttempt, setRunAttempt] = useState(0);
+  const nextRunAttempt = useCallback(() => setRunAttempt((attempt) => attempt + 1), []);
 
   const inputLagBufferRef = useRef(new InputLagBuffer());
   /**
@@ -965,6 +985,7 @@ export function useSimulationWiring({
       onReplayUiStateChange(uiState);
       setEngine(newEngine);
       setSimulationState(newState);
+      nextRunAttempt();
       restartLiveTickSchedule();
       if (autoAdvanceRef.current) {
         setFightStartPresentation('restart');
@@ -1084,6 +1105,18 @@ export function useSimulationWiring({
    */
   const startFightStartCountdown = useCallback(
     (provenance: 'fresh' | 'restored') => {
+      const engine = engineRef.current;
+      // A fresh run whose setup is started by the player's own first choice (a Colosseum wave start's
+      // modifier offer) runs at once, as with the countdown off; any earlier run's countdown goes.
+      if (
+        provenance === 'fresh' &&
+        !encounterCountsDownFightStart(engine.getEncounterKind(), engine.getMechanicsConfig())
+      ) {
+        countdownRunRef.current = null;
+        dropStartPreparation();
+        fightStartCountdown.cancel();
+        return;
+      }
       const run: CountdownRun = {
         engine: engineRef.current,
         tick: engineRef.current.currentTick,
@@ -1106,7 +1139,7 @@ export function useSimulationWiring({
       }
       fightStartCountdown.start();
     },
-    [fightStartCountdown.start, dropStartPreparation],
+    [fightStartCountdown.start, fightStartCountdown.cancel, dropStartPreparation],
   );
   const cancelFightStartCountdown = useCallback(() => {
     countdownRunRef.current = null;
@@ -1326,6 +1359,11 @@ export function useSimulationWiring({
       // the fork exists to keep.
       return;
     }
+    if (isNewEngine && restartedEngineRef.current === currentEngine) {
+      // A restart swapped it in and has already seeded it and started its one recording.
+      restartedEngineRef.current = null;
+      return;
+    }
 
     // The loadout trio is seeded onto a NEW engine only. The refs hold the
     // loadout React last handed the engine; once a fight is running the engine
@@ -1352,6 +1390,7 @@ export function useSimulationWiring({
       currentEngine.applyPrepotEffects();
       const initState = currentEngine.getState();
       replay.startRun(currentEngine.getRunConfig(), initState, getReplayUiStateRef.current());
+      nextRunAttempt();
       restartLiveTickSchedule();
       setSimulationState(initState);
     } else {
@@ -1361,6 +1400,7 @@ export function useSimulationWiring({
     engine,
     attackStylePerCategory,
     replay.startRun,
+    nextRunAttempt,
     restartLiveTickSchedule,
     resetInstantInventoryPreview,
     resetInputPresentation,
@@ -1809,6 +1849,8 @@ export function useSimulationWiring({
    * dropped, a new recording, and the live tick restarted from now. `configure` runs on the reset
    * engine before the recording starts, so the run config the replay keeps includes what it sets.
    * `keepWornEquipment` carries the gear worn now into the new run (see {@link carriedRunLoadout}).
+   * `freshEngine` may return an engine to run it on instead (see `createRestartEngine`), which is
+   * then seeded and recorded here exactly as the reset one would be.
    */
   const resetRun = (
     loadout: RunLoadout,
@@ -1816,6 +1858,7 @@ export function useSimulationWiring({
     practiceRestart?: EncounterPracticeRestart,
     start?: Coordinate,
     keepWornEquipment = false,
+    freshEngine?: () => SimulationEngine | null,
   ): void => {
     tickTimingRef.current.reset();
     inputLagBufferRef.current.clear();
@@ -1827,6 +1870,14 @@ export function useSimulationWiring({
     liveHoldAudioPausedRef.current = false;
     // Read before the reset, which replaces the run whose gear this is.
     const worn = keepWornEquipment ? engineRef.current.getState().playerEquipment : null;
+    const fresh = freshEngine?.() ?? null;
+    if (fresh) {
+      // In the ref now, so everything below and the countdown after it act on the new run's engine;
+      // the swap's own effect then leaves it alone (`restartedEngineRef`).
+      restartedEngineRef.current = fresh;
+      engineRef.current = fresh;
+      setEngine(fresh);
+    }
     // The run's recorded start, so a replay of it opens on the same tile; omitted, the default.
     const startPosition = start ? ([...start] as Coordinate) : undefined;
     if (practiceRestart?.encounterSeeds) {
@@ -1858,6 +1909,7 @@ export function useSimulationWiring({
     const resetState = engineRef.current.getState();
     const newPos = resetState.playerPosition;
     replay.startRun(engineRef.current.getRunConfig(), resetState, getReplayUiStateRef.current());
+    nextRunAttempt();
     restartLiveTickSchedule();
     setPlayerConfig((prev) => ({ ...prev, equipment }));
     resetInstantInventoryPreview();
@@ -1879,6 +1931,7 @@ export function useSimulationWiring({
     readonly practiceRestart?: EncounterPracticeRestart;
     readonly startPosition?: Coordinate;
     readonly keepWornEquipment?: boolean;
+    readonly freshEngine?: () => SimulationEngine | null;
   }): boolean => {
     if (simulationState.introActive && !replay.replayMode) return false;
     const activeEncounter =
@@ -1897,6 +1950,7 @@ export function useSimulationWiring({
       options?.practiceRestart,
       options?.startPosition,
       options?.keepWornEquipment,
+      options?.freshEngine,
     );
     return true;
   };
@@ -1905,14 +1959,19 @@ export function useSimulationWiring({
    * Restart the fight; a practice restart (Inferno's "Retry Wave") runs with its own run mechanics,
    * which the engine records but never saves, so the next plain restart uses the player's setup.
    * Either opens where the encounter says (the Inferno: where the player stands), else its default,
-   * and keeps the gear worn now where the restarted run offers countdown movement.
+   * and keeps the gear worn now where the restarted run offers countdown movement. Where the setup
+   * now builds a different encounter (a start wave whose default modifiers differ), the run starts
+   * on a fresh engine, as an entry would build it.
    */
   const restartFight = (practiceRestart?: EncounterPracticeRestart) => {
     const startPosition = practiceRestart
       ? practiceRestart.startPosition
       : (engineRef.current.planRestartStart() ?? undefined);
+    const freshEngine = createRestartEngine
+      ? () => createRestartEngine(engineRef.current, practiceRestart?.runMechanics)
+      : undefined;
     if (
-      resetSceneRun({ practiceRestart, startPosition, keepWornEquipment: true }) &&
+      resetSceneRun({ practiceRestart, startPosition, keepWornEquipment: true, freshEngine }) &&
       sceneState.kind === 'encounter' &&
       !replay.replayMode
     ) {
@@ -2444,6 +2503,7 @@ export function useSimulationWiring({
     fightStartCountdownActive: fightStartCountdown.active,
     fightStartCountdownPhase: fightStartCountdown.holding ? 'holding' : fightStartCountdown.active ? 'released' : null,
     fightStartPresentation,
+    runAttempt,
     handleFightStartCountdownFinished: fightStartCountdown.finish,
     fastForwardTicks,
     setTutorialPaused,

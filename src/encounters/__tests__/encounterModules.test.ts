@@ -24,7 +24,9 @@ import {
   encounterControlsForKind,
   encounterEnablesIntro,
   encounterKindsOf,
+  encounterModuleForKind,
   resolveEncounterEntry,
+  resolveLegacySlugEntry,
 } from '../modules';
 import {
   DEFAULT_ORBIT_PITCH,
@@ -36,7 +38,7 @@ import {
 } from '../presentationModules';
 import { encounterRegistry } from '../registry';
 import { collectDeclaredNpcSeqIds, ENCOUNTER_RENDER_CONFIGS } from '../renderConfigs';
-import { RETIRED_SLUG_TO_KIND, SLUG_TO_KIND } from '../slugs';
+import { LEGACY_SLUG_TO_KIND, RETIRED_SLUG_TO_KIND, SLUG_TO_KIND } from '../slugs';
 import { YAMA_CONTRACTS } from '../yamaP3/contracts';
 
 /**
@@ -55,7 +57,7 @@ const YAMA_VARIANT_KINDS = [
 
 /** Every kind that owns a descriptor, i.e. is selectable in the picker in its own right. */
 const BASE_KINDS = ['yama_p3', 'lobby', 'sol_heredit', 'inferno'] as const;
-const BETA_ENCOUNTERS = [{ kind: 'sol_heredit', displayName: 'Sol Heredit', actorId: 'lobby-npc-2' }] as const;
+const BETA_ENCOUNTERS = [{ kind: 'sol_heredit', displayName: 'Fortis Colosseum', actorId: 'lobby-npc-2' }] as const;
 
 describe('encounter registration invariants', () => {
   it('registers exactly the expected kinds, with no duplicates', () => {
@@ -332,8 +334,40 @@ describe('encounter registration invariants', () => {
     expect(encounterDefaultCamera('yama_p3', { infernoStartWave: '69' })).toEqual(encounterDefaultCamera('yama_p3'));
     expect(encounterDefaultCamera('yama_p3')).toEqual({ yaw: 180, pitch: -62, zoom: 220 });
     // Sol's arena entry runs cam_forceangle(181, 0): north at 181 JAU, zoom left to the player.
-    expect(encounterDefaultCamera('sol_heredit')).toEqual({ yaw: 0, pitch: (-181 * 360) / 2048 });
+    const solView = { yaw: 0, pitch: (-181 * 360) / 2048 };
+    expect(encounterDefaultCamera('sol_heredit')).toEqual(solView);
+    // A Colosseum wave start looks east from its west-side start tile, somewhat zoomed out; a direct
+    // Sol start (12, or a start wave absent or unreadable) keeps his captured view.
+    for (const wave of ['1', '6', '11'])
+      expect(encounterDefaultCamera('sol_heredit', { colosseumStartWave: wave })).toEqual({
+        yaw: 270,
+        pitch: -50,
+        zoom: 220,
+      });
+    for (const wave of ['12', 'x', '0', '13'])
+      expect(encounterDefaultCamera('sol_heredit', { colosseumStartWave: wave })).toEqual(solView);
     expect(encounterDefaultCamera('unknown_encounter')).toEqual(FALLBACK_ENCOUNTER_CAMERA);
+  });
+
+  it('opens a real Colosseum run on the view of its start, from the snapshot Grid reads at scene entry', () => {
+    const run = (mechanics: Partial<MechanicsConfig>) =>
+      new SimulationEngine({ encounter: encounterRegistry.create('sol_heredit'), mechanics }).getState();
+    const solView = { yaw: 0, pitch: (-181 * 360) / 2048 };
+    const wavesView = { yaw: 270, pitch: -50, zoom: 220 };
+    // Every start wave the setup offers opens on the waves' view, except Sol's own.
+    const choices = encounterControlsForKind('sol_heredit')?.mechanicsToggles.find(
+      (toggle) => toggle.key === 'colosseumStartWave',
+    )?.choices;
+    expect(choices?.map((choice) => choice.value)).toEqual(Array.from({ length: 12 }, (_, index) => String(index + 1)));
+    for (const { value } of choices ?? []) {
+      const state = run({ colosseumStartWave: value });
+      expect(encounterDefaultCamera(state.encounter.kind, state.mechanicsConfig)).toEqual(
+        value === '12' ? solView : wavesView,
+      );
+    }
+    // The default start is Sol, so a run with no setup opens on his view.
+    const untouched = run({});
+    expect(encounterDefaultCamera(untouched.encounter.kind, untouched.mechanicsConfig)).toEqual(solView);
   });
 
   it('opens a real run started on wave 69 facing Zuk, from the snapshot Grid reads at scene entry', () => {
@@ -429,10 +463,31 @@ describe('encounter catalog invariants', () => {
     expect(SLUG_TO_KIND).toEqual(
       new Map([
         ['yama', 'yama_p3'],
-        ['sol-heredit', 'sol_heredit'],
+        ['colosseum', 'sol_heredit'],
         ['inferno', 'inferno'],
       ]),
     );
+  });
+
+  it('routes the Colosseum at /colosseum and enters a direct Sol start from its former /sol-heredit', () => {
+    expect(ENCOUNTER_CATALOG.find((entry) => entry.kind === 'sol_heredit')).toMatchObject({
+      slug: 'colosseum',
+      legacySlugs: ['sol-heredit'],
+    });
+    expect(LEGACY_SLUG_TO_KIND).toEqual(new Map([['sol-heredit', 'sol_heredit']]));
+    // A live kind, not an alias: nothing saved or recorded is re-keyed.
+    expect(canonicalEncounterKind('sol_heredit')).toBe('sol_heredit');
+    expect(resolveEncounterEntry('sol_heredit')).toEqual({ kind: 'sol_heredit', mechanics: {} });
+    expect(resolveLegacySlugEntry('sol-heredit')).toEqual({
+      kind: 'sol_heredit',
+      mechanics: { colosseumStartWave: '12' },
+    });
+    expect(resolveLegacySlugEntry('colosseum')).toBeUndefined();
+    expect(resolveLegacySlugEntry('zuk')).toBeUndefined();
+    // Every legacy slug's module says where it enters.
+    for (const [slug, kind] of LEGACY_SLUG_TO_KIND) {
+      expect(encounterModuleForKind(kind)?.legacySlugEntries?.[slug], slug).toBeDefined();
+    }
   });
 
   it('agrees between manifest controls defaults and each live encounter', () => {

@@ -71,7 +71,8 @@ export const LOBBY_NPC_ENCOUNTERS: Record<string, LobbyEncounterCard> = {
   },
   'lobby-npc-2': {
     encounterKind: 'sol_heredit',
-    displayName: 'Sol Heredit',
-    description: 'The final wave of the Fortis Colosseum.',
+    displayName: 'Fortis Colosseum',
+    description:
+      'Start from any wave. Each cleared wave offers a choice of modifier and leads into the next, through to Sol Heredit at wave 12.',
   },
 };

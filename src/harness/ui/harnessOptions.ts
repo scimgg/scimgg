@@ -58,6 +58,12 @@ export interface HarnessOptions {
   replayChapters: ReplayChapterFixture | null;
   replayChaptersCompact: boolean;
   replayChaptersMobile: boolean;
+  /**
+   * The Fortis Colosseum start wave (`?encounter=sol_heredit&colosseumStartWave=4`), saved before
+   * the app mounts like a player's Start wave choice, so the run opens on that wave's modifier choice.
+   * `null` for anything but a whole wave 1-12 in `sol_heredit`.
+   */
+  colosseumStartWave: number | null;
 }
 
 /**
@@ -116,6 +122,7 @@ export const HARNESS_DEFAULT_OPTIONS: HarnessOptions = {
   replayChapters: null,
   replayChaptersCompact: false,
   replayChaptersMobile: false,
+  colosseumStartWave: null,
 };
 
 /**
@@ -147,6 +154,8 @@ export function parseHarnessOptions(search: string): HarnessOptions {
   const rawRenderStatus = params.get('renderStatus');
   const rawRenderStatusHeld = params.get('renderStatusHeld');
   const rawReplayChapters = params.get('replayChapters');
+  const rawStartWave = params.get('colosseumStartWave');
+  const startWave = rawStartWave !== null && /^\d+$/.test(rawStartWave) ? Number(rawStartWave) : Number.NaN;
 
   return {
     encounter,
@@ -167,6 +176,7 @@ export function parseHarnessOptions(search: string): HarnessOptions {
     replayChapters: isReplayChapterFixture(rawReplayChapters) ? rawReplayChapters : null,
     replayChaptersCompact: boolParam(params, 'replayChaptersCompact', false),
     replayChaptersMobile: boolParam(params, 'replayChaptersMobile', false),
+    colosseumStartWave: encounter === 'sol_heredit' && startWave >= 1 && startWave <= 12 ? startWave : null,
   };
 }
 

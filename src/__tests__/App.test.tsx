@@ -395,9 +395,9 @@ describe('App', () => {
       withGame();
       render(<App />);
       fireEvent.click(screen.getByRole('button', { name: 'Encounters' }));
-      fireEvent.click(screen.getByRole('button', { name: /Sol Heredit/ }));
+      fireEvent.click(screen.getByRole('button', { name: /Fortis Colosseum/ }));
       fireEvent.click(screen.getByRole('button', { name: 'Configure' }));
-      const editor = screen.getByRole('dialog', { name: 'Sol Heredit' });
+      const editor = screen.getByRole('dialog', { name: 'Fortis Colosseum' });
 
       ctrlK();
 
@@ -585,7 +585,7 @@ describe('App preserves edited encounter loadouts', () => {
 
   function openSolPicker() {
     fireEvent.click(screen.getByRole('button', { name: 'Encounters' }));
-    fireEvent.click(screen.getByRole('button', { name: /Sol Heredit/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Fortis Colosseum/ }));
   }
 
   const storedLoadout = () => loadSetting<Record<string, unknown>>('osrs-encounter-equipment')?.sol_heredit;
@@ -657,7 +657,7 @@ describe('App encounter modifier selection', () => {
 
   function openSolPicker() {
     fireEvent.click(screen.getByRole('button', { name: 'Encounters' }));
-    fireEvent.click(screen.getByRole('button', { name: /Sol Heredit/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Fortis Colosseum/ }));
   }
 
   it('remembers modifiers through reopen, Start and Enter, an all-off choice included, and resets them', async () => {
@@ -686,7 +686,9 @@ describe('App encounter modifier selection', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Details & edit' }));
     expect(screen.getByRole('button', { name: 'Blasphemy tier III' })).toHaveAttribute('aria-pressed', 'true');
     fireEvent.click(screen.getByRole('button', { name: 'Doom tier II' }));
-    fireEvent.click(within(screen.getByRole('dialog', { name: 'Sol Heredit' })).getByRole('button', { name: 'Close' }));
+    fireEvent.click(
+      within(screen.getByRole('dialog', { name: 'Fortis Colosseum' })).getByRole('button', { name: 'Close' }),
+    );
     expect(storedSettings().modifiersPerEncounter).toEqual({ sol_heredit: { blasphemy: 3, doom: 2 } });
 
     // Reopening shows the choice; every modifier off is a choice too.
@@ -756,14 +758,14 @@ describe('App remembered encounter setup', () => {
     const harness = renderHarness();
 
     fireEvent.click(screen.getByRole('button', { name: 'Encounters' }));
-    fireEvent.click(screen.getByRole('button', { name: /Sol Heredit/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Fortis Colosseum/ }));
     fireEvent.click(screen.getByRole('button', { name: 'Configure' }));
     expect(screen.getByRole('checkbox', { name: 'Infinite Health' })).toBeChecked();
     fireEvent.click(screen.getByRole('button', { name: 'Close encounter panel' }));
     expect(storedMechanics()).toEqual(saved);
 
     fireEvent.click(screen.getByRole('button', { name: 'Encounters' }));
-    fireEvent.click(screen.getByRole('button', { name: /Sol Heredit/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Fortis Colosseum/ }));
     fireEvent.click(screen.getByRole('button', { name: 'Enter' }));
     await waitFor(() => expect(harness().sceneKind).toBe('encounter'));
     expect(harness().engine.getState().mechanicsConfig).toMatchObject(saved.sol_heredit);
@@ -774,12 +776,28 @@ describe('App remembered encounter setup', () => {
     });
     await waitFor(() => expect(harness().sceneKind).toBe('lobby'));
     act(() => {
-      window.history.replaceState(null, '', '/sol-heredit/');
+      window.history.replaceState(null, '', '/colosseum/');
       window.dispatchEvent(new PopStateEvent('popstate'));
     });
     await waitFor(() => expect(harness().sceneKind).toBe('encounter'));
     expect(harness().engine.getState().mechanicsConfig).toMatchObject(saved.sol_heredit);
     expect(storedMechanics()).toEqual(saved);
+  }, 30000);
+
+  it('opens the former /sol-heredit link on wave 12 without wiping the rest of the saved Colosseum options', async () => {
+    cacheBootstrapTestState.isFullyLoaded = true;
+    const solHeredit = { colosseumStartWave: '5', infiniteHealth: true };
+    localStorage.setItem(
+      'osrs-yama-settings',
+      JSON.stringify({ mechanicsConfigPerEncounter: { sol_heredit: solHeredit } }),
+    );
+    window.history.replaceState(null, '', '/sol-heredit/');
+    const harness = renderHarness();
+
+    await waitFor(() => expect(harness().sceneKind).toBe('encounter'));
+    expect(harness().engine.getState().mechanicsConfig).toMatchObject({ ...solHeredit, colosseumStartWave: '12' });
+    // Saved as a setup pick would be, so a reload of the canonical address stays on wave 12.
+    expect(storedMechanics()).toEqual({ sol_heredit: { ...solHeredit, colosseumStartWave: '12' } });
   }, 30000);
 
   it("applies a setup link over the saved Inferno options, and its notice's Undo puts them back", async () => {
@@ -875,7 +893,7 @@ describe('App modal hold: lobby vs fight', () => {
     closeEncounterPicker();
 
     openEncounterPicker();
-    fireEvent.click(screen.getByRole('button', { name: /Sol Heredit/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Fortis Colosseum/ }));
     fireEvent.click(screen.getByRole('button', { name: 'Enter' }));
     await waitFor(() => {
       runFor(100);
@@ -885,7 +903,7 @@ describe('App modal hold: lobby vs fight', () => {
     // The default three game ticks (1800ms at 1x) hold the fight first.
     expect(screen.getByText('Fight starts in 3 ticks')).toBeDefined();
     const arrival = document.querySelector('.encounter-arrival');
-    expect(arrival?.querySelector('.encounter-title-card-text-fill')?.textContent).toBe('Sol Heredit');
+    expect(arrival?.querySelector('.encounter-title-card-text-fill')?.textContent).toBe('Fortis Colosseum');
     expect(arrival?.querySelector('.fight-start-countdown-name')).toBeNull();
     expect(arrival?.querySelector('.fight-start-countdown')?.previousElementSibling).toHaveClass(
       'encounter-title-card',
@@ -908,7 +926,7 @@ describe('App modal hold: lobby vs fight', () => {
     expect(document.querySelector('.encounter-title-card:not(.encounter-title-card--reserved)')).toBeNull();
     expect(document.querySelector('.encounter-title-card--reserved')).toHaveAttribute('aria-hidden', 'true');
     expect(document.querySelector('.encounter-title-card-vignette')).toBeNull();
-    expect(document.querySelector('.fight-start-countdown-name')?.textContent).toBe('Sol Heredit');
+    expect(document.querySelector('.fight-start-countdown-name')?.textContent).toBe('Fortis Colosseum');
   }, 30000);
 });
 

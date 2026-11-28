@@ -171,7 +171,7 @@ describe('Inferno spawn diagram colors', () => {
     expect(contrast(ROOT['color-text-body'], ROOT['color-surface-hover'])).toBeGreaterThanOrEqual(4.5);
     const base = rgb(ROOT['color-surface-inset']);
     for (const token of tokens) {
-      // `.spawn-map__slot.is-filled` resting and hovered mixes over the inset (InfernoSpawnSetup.css).
+      // `.spawn-map__slot.is-filled` resting and hovered mixes over the inset (SpawnLayoutMap.css).
       for (const share of [0.25, 0.32]) {
         const fill = `#${rgb(ROOT[token])
           .map((channel, i) =>

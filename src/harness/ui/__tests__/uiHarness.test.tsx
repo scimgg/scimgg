@@ -121,9 +121,9 @@ describe('resolveHarnessModifierFixture', () => {
     expect(filterModifierSelection(SOL_HEREDIT_MODIFIERS, selection)).toEqual(selection);
   });
 
-  it('selects all ten canonical modifiers at their valid maximum, including one-tier choices', () => {
+  it('selects every offered modifier at its valid maximum, including one-tier choices', () => {
     const selection = resolveHarnessModifierFixture({ ...options, modifierFixture: 'sol-all' });
-    expect(Object.keys(selection ?? {})).toHaveLength(10);
+    expect(Object.keys(selection ?? {})).toHaveLength(SOL_HEREDIT_MODIFIERS.length);
     expect(selection).toMatchObject({ bees: 3, totemic: 1, quartet: 1, volatility: 3 });
     for (const { id, tiers } of SOL_HEREDIT_MODIFIERS) expect(selection?.[id]).toBe(tiers.length);
     expect(filterModifierSelection(SOL_HEREDIT_MODIFIERS, selection)).toEqual(selection);
@@ -217,9 +217,11 @@ describe('UiHarnessApp', () => {
         'Bees! III',
         'Blasphemy III',
         'Doom III',
+        'Dynamic Duo I',
         'Frailty III',
         'Myopia III',
         'Quartet I',
+        'Red Flag I',
         'Relentless III',
         'Solarflare III',
         'Totemic I',
@@ -236,7 +238,7 @@ describe('UiHarnessApp', () => {
       );
       render(<UiHarnessApp options={options} />);
       await waitFor(() => expect(document.body.dataset.harnessReady).toBe('true'), { timeout: 15000 });
-      const panel = screen.getByRole('dialog', { name: 'Sol Heredit' });
+      const panel = screen.getByRole('dialog', { name: 'Fortis Colosseum' });
       const list = within(panel).getByRole('list', { name: 'Selected modifiers' });
       expect(
         within(list)
@@ -256,14 +258,14 @@ describe('UiHarnessApp', () => {
       else expect(storedValues).not.toContain('"blasphemy":3');
 
       fireEvent.click(within(panel).getByRole('button', { name: 'Close encounter panel' }));
-      expect(screen.queryByRole('dialog', { name: 'Sol Heredit' })).toBeNull();
+      expect(screen.queryByRole('dialog', { name: 'Fortis Colosseum' })).toBeNull();
       const controls = window.uiHarness;
       if (!controls) throw new Error('Missing actual App harness controls');
       let reopened = Promise.resolve();
       act(() => {
         reopened = controls.open('encounter-panel:sol_heredit');
       });
-      await waitFor(() => expect(screen.getByRole('dialog', { name: 'Sol Heredit' })).toBeInTheDocument());
+      await waitFor(() => expect(screen.getByRole('dialog', { name: 'Fortis Colosseum' })).toBeInTheDocument());
       await reopened;
       // Reopening shows the remembered choice; without a fixture, Sol's canonical Blasphemy III.
       const reopenedList = screen.getByRole('list', { name: 'Selected modifiers' });
@@ -290,7 +292,7 @@ describe('UiHarnessApp', () => {
     await waitFor(() => expect(document.body.dataset.harnessError).toBe('true'), { timeout: 15000 });
     expect(document.body.dataset.harnessReady).toBeUndefined();
     expect(screen.getByTestId('harness-status')).toHaveTextContent(/modifierFixture/);
-    expect(screen.queryByRole('dialog', { name: 'Sol Heredit' })).toBeNull();
+    expect(screen.queryByRole('dialog', { name: 'Fortis Colosseum' })).toBeNull();
     expect(glContexts).toEqual([]);
     expect(requests).toEqual([]);
   }, 20000);

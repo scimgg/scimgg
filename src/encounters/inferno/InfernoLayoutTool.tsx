@@ -37,8 +37,10 @@ function InfernoLayoutDraft({ config, onChange, run, onClose, exportGear }: Enco
     onChange(next);
   };
   return (
-    <div className="inferno-layout-tool">
-      <InfernoSetup config={edited} onChange={change} surface="tool" />
+    <div className="spawn-layout-tool inferno-layout-tool">
+      <div className="spawn-layout-tool__setup">
+        <InfernoSetup config={edited} onChange={change} surface="tool" />
+      </div>
       <InfernoSpawnSetup
         config={edited}
         onChange={change}

@@ -21,6 +21,11 @@ import {
   SOLARFLARE_NPC_ID,
 } from '../../../npcs/colosseum/constants';
 import { GRAPPLE_TARGETS, grappleWarningMessage } from '../../../npcs/colosseum/grapple';
+import { JAGUAR_WARRIOR_NPC_ID } from '../../../npcs/colosseum/jaguarWarrior';
+import { JAVELIN_COLOSSUS_NPC_ID } from '../../../npcs/colosseum/javelinColossus';
+import { MANTICORE_NPC_ID } from '../../../npcs/colosseum/manticore';
+import { MINOTAUR_NPC_ID } from '../../../npcs/colosseum/minotaur';
+import { COLOSSEUM_SPOT_ANIM_IDS } from '../../../npcs/colosseum/visualEvents';
 import { createQueue, type NpcMesh3DCommand } from '../../../render/core/commands';
 import { FLOOR_EFFECT_DEPTH_BIAS } from '../../../render/effects/spotAnimRenderPolicy';
 import { type SceneObjectLocModelLoader, SceneObjectRenderer } from '../../../render/graphics/SceneObjectRenderer';
@@ -33,6 +38,8 @@ import { createEncounterActorOps } from '../../../test/helpers/encounterActorOps
 import { runEncounterNpcActions } from '../../../test/helpers/encounterNpcBand';
 import { createUnusedPlayerControlOps } from '../../../test/helpers/playerControlStubs';
 import type { SimulationState } from '../../../types/simulation';
+import { volatilityGibForNpcType } from '../../colosseum/modifiers/volatility';
+import { startRun } from '../../colosseum/waves/__tests__/waveRunHarness';
 import { LobbyEncounter } from '../../lobby/LobbyEncounter';
 import { SOL_BOUNDARY_WARRIORS } from '../arenaBoundary';
 import { SOL_BEAM_PREPARED_EVENT, SOL_ENTRY_MESSAGE_TICK, SOL_OPENING_TAUNT_TICK } from '../constants';
@@ -299,6 +306,33 @@ describe('Sol Heredit visual cues', () => {
   });
 });
 
+describe('Volatility gibs', () => {
+  const gibs = [JAGUAR_WARRIOR_NPC_ID, MANTICORE_NPC_ID, JAVELIN_COLOSSUS_NPC_ID, MINOTAUR_NPC_ID].map((npcTypeId) => {
+    const gib = volatilityGibForNpcType(npcTypeId);
+    if (!gib) throw new Error(`no gib for ${npcTypeId}`);
+    return gib;
+  });
+
+  it('preloads every explosion the scene and the cache trim must hold', () => {
+    expect(gibs.map((gib) => gib.explosionSpotAnimId)).toEqual([
+      COLOSSEUM_SPOTANIMS.volatilityHumanExplosion,
+      COLOSSEUM_SPOTANIMS.volatilityManticoreExplosion,
+      COLOSSEUM_SPOTANIMS.volatilityColossiExplosion,
+      COLOSSEUM_SPOTANIMS.volatilityMinotaurExplosion,
+    ]);
+    for (const gib of gibs) expect(COLOSSEUM_SPOT_ANIM_IDS).toContain(gib.explosionSpotAnimId);
+  });
+
+  it('plays each gib once from its add tick: its sequence is its spawn clip and it has no stand', () => {
+    for (const gib of gibs) {
+      expect(SOL_HEREDIT_RENDER_CONFIG.preloadNpcTypes?.find((type) => type.npcTypeId === gib.npcTypeId)).toEqual({
+        npcTypeId: gib.npcTypeId,
+        spawnSeqId: gib.sequenceId,
+      });
+    }
+  });
+});
+
 describe('molten sand pools', () => {
   it('renders all 48 collision boundary warriors from the initial frame through death with aids disabled', () => {
     const controller = new SolHereditSceneObjectController();
@@ -336,6 +370,27 @@ describe('molten sand pools', () => {
         state: { ...state, npcs: state.npcs.map((npc) => ({ ...npc, alive: false })) },
       }),
     ).toEqual(guards);
+  });
+  it('raises the fence only from C: none while waves 1-11 run, all 48 from the tick Sol is added (A:4976, K:3998)', () => {
+    const controller = new SolHereditSceneObjectController();
+    const wave = startRun(1).engine.getState();
+    if (wave.encounter.kind !== 'sol_heredit') throw new Error('wrong snapshot');
+    expect(wave.encounter.visuals.solControlTick).toBeNull();
+    const guards = (state: SimulationState, currentTick: number) =>
+      controller
+        .update({ currentTick, interpolatedTick: currentTick, state, terrainHeights: null })
+        .filter((spec) => spec.id.startsWith('sol-boundary-'));
+    expect(guards(wave, 0)).toEqual([]);
+
+    const encounter = wave.encounter;
+    const atControl = (solControlTick: number | null | undefined): SimulationState => ({
+      ...wave,
+      encounter: { ...encounter, visuals: solControlTick === undefined ? {} : { solControlTick } },
+    });
+    expect(guards(atControl(4000), 3999)).toEqual([]);
+    expect(guards(atControl(4000), 4000)).toHaveLength(48);
+    // A recording older than the waves leaves C out: it started on Sol.
+    expect(guards(atControl(undefined), 0)).toHaveLength(48);
   });
   it('renders one holy-fire LOC per pooled tile, with ids stable across frames', () => {
     const controller = new SolHereditSceneObjectController();

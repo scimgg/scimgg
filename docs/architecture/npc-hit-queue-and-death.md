@@ -196,6 +196,16 @@ which would let autocast phantom, and predates Ancient Magicks.
   through `CombatSystem.processDeathReleaseRequest`, the only path that accepts a dying source. The
   NPC still cannot start an attack; definitions return only what they had scheduled. OBSERVED for
   Jal-Ak (Inferno waves Q t1083, t3860).
+- An attack already committed and due on the killing turn is a separate contract. It is tied to
+  the kill tick, not to the death animation, which a recent step can delay. When the hit queue
+  promotes a death to its kill tick, that NPC's ordinary turn is suppressed. The engine then asks
+  the encounter's optional `releaseNpcKillTurn` once, in that turn slot and before the
+  death-animation release, while `isNpcKillTurnReleaseDue` holds (queued policy, death started on
+  this tick, not scripted). A pending death keeps its ordinary turn and is never asked. Requests
+  go through the same `processDeathReleaseRequest`, gated by the matching `'kill-turn'` timing.
+  The encounter routes the call to the owning NPC, so that NPC's own RNG stream is used. OBSERVED
+  for the Fortis Colosseum Manticore: the orb due on the kill tick launches but never lands
+  ([facts spec §6.9](../encounters/fortis-colosseum-facts-spec.md)).
 - Persistent hits use the retained source and target runtime identity (`PendingHitRuntime`), never a new actor
   with the same ID. The target must be the same registered instance.
 - Zero-impact path: emit `hit_applied` and a zero/block splat in queue order. No new rolls or procs, no

@@ -182,6 +182,8 @@ import {
   isNpcDeathAnimationDue,
   isNpcDeathDue,
   isNpcDeathReleaseDue,
+  isNpcKillTurnReleaseDue,
+  type NpcDeathReleaseTiming,
   pruneGraceStartTick,
   recordNpcLethalTransition,
   recordNpcStep,
@@ -593,7 +595,33 @@ export class SimulationEngine {
       disableProtectionPrayersUntil: (untilTick: number): void => this.disableProtectionPrayersUntil(untilTick),
       teleportPlayer: (position: Coordinate, facing: number): void => this.teleportPlayer(position, facing),
       lockPlayerActionsUntil: (unlockTick: number): void => this.lockPlayerActionsUntil(unlockTick),
+      refreshEngineRules: (): void => this.refreshEncounterRules(false),
     };
+  }
+
+  /**
+   * Re-read the encounter's rules after its run state changed them (a modifier taking effect). A
+   * changed max HP reduction applies from the base level, never compounding; mid-run it only lowers
+   * HP to the new ceiling (no heal), while at run start the player opens at the ceiling, as a fresh
+   * run of that setup would.
+   */
+  private refreshEncounterRules(atRunStart: boolean): void {
+    const before = this.encounterRules?.playerMaxHpReduction;
+    this.encounterRules = this.encounter.getEngineRules?.();
+    const reduction = this.encounterRules?.playerMaxHpReduction;
+    if (reduction === before) return;
+    const player = this.player();
+    const base = this.configuredStats.hitpoints.max;
+    player.vitals.maxHp =
+      reduction !== undefined && reduction > 0 && reduction <= 1
+        ? Math.max(1, base - Math.floor(base * reduction))
+        : base;
+    player.vitals.hp = atRunStart
+      ? this.startHp !== undefined
+        ? Math.max(1, Math.min(Math.floor(this.startHp), player.vitals.maxHp))
+        : player.vitals.maxHp
+      : Math.min(player.vitals.hp, player.vitals.maxHp);
+    this.syncVitalsToStats();
   }
 
   /** See {@link EncounterContext.teleportPlayer}. */
@@ -889,7 +917,12 @@ export class SimulationEngine {
     this.worldState.actors.set(player.id, player);
     this.worldState.occupancy.add(player);
     // Run setup first, so `createNpcs` opens the configured start (Inferno: wave 69's actors).
-    this.encounter.configureRunStart?.(this.mechanicsConfig, this.runStartContext());
+    if (this.encounter.configureRunStart) {
+      this.encounter.configureRunStart(this.mechanicsConfig, this.runStartContext());
+      // The setup can choose the run's opening stage, its arena and its modifiers.
+      this.applyEncounterArenaConfig(this.encounter);
+      this.encounterRules = this.encounter.getEngineRules?.();
+    }
     const npcs = this.encounter.createNpcs(playerStart);
     this.replayTakeoverWork?.admitNpcs(0, npcs.length);
     for (const npc of npcs) {
@@ -1056,11 +1089,26 @@ export class SimulationEngine {
 
   /** The player's mechanics. A run override from `reset` stays on top of them until the next reset. */
   public setMechanicsConfig(config: Partial<MechanicsConfig>): void {
+    const setupKeys = this.encounter.runStartMechanicsKeys ?? [];
+    const setupBefore = setupKeys.map((key) => this.mechanicsConfig[key]);
+    const openingFacingBefore = this.openingFacing();
     this.playerMechanicsConfig = { ...config };
     this.mergeMechanicsConfig();
     if (this.worldState.tick === SIMULATION_START_TICK) {
-      this.encounter.configureRunStart?.(this.mechanicsConfig, this.runStartContext());
+      if (this.encounter.configureRunStart) {
+        this.encounter.configureRunStart(this.mechanicsConfig, this.runStartContext());
+        // A changed setup can open another stage with its own arena (Sol Heredit's fence or the
+        // open waves floor); an unchanged one keeps the installed arena.
+        if (setupKeys.some((key, index) => this.mechanicsConfig[key] !== setupBefore[index])) {
+          this.applyEncounterArenaConfig(this.encounter);
+        }
+        // The setup can also change the modifiers in force.
+        this.refreshEncounterRules(true);
+      }
       this.reopenIntro();
+      // A dropped intro, or a setup with a facing of its own, turns the unstarted player to it.
+      const openingFacing = this.openingFacing();
+      if (openingFacing !== openingFacingBefore) this.player().facing = openingFacing;
     }
     // Unlock toggles are not changed mid-fight from the UI, but replay takeover applies the
     // viewer's settings to a recorded run, which can lock a prayer the recording had lit.
@@ -1092,9 +1140,7 @@ export class SimulationEngine {
       intro.message === started.message
         ? started
         : null;
-    if (kept === this.openingIntro) return;
     this.openingIntro = kept;
-    this.player().facing = this.openingFacing();
   }
 
   /**
@@ -1641,9 +1687,9 @@ export class SimulationEngine {
     }
   }
 
-  /** The facing a run opens with: the landing intro's, else north. */
+  /** The facing a run opens with: the landing intro's, else the setup's own, else north. */
   private openingFacing(): number {
-    return this.openingIntro?.facingAngle ?? 1024;
+    return this.openingIntro?.facingAngle ?? this.encounter.getDefaultPlayerFacing?.(this.mechanicsConfig) ?? 1024;
   }
 
   /**
@@ -1740,11 +1786,19 @@ export class SimulationEngine {
     npc.movementPath = [];
     npc.isMoving = false;
     npc.isRunning = false;
+    if (isNpcKillTurnReleaseDue(npc, tick)) {
+      // A promoted kill lost this turn; what it had committed to for it still launches (a Manticore's due orb).
+      for (const attack of this.encounter.releaseNpcKillTurn?.(npc, ctx, mechanics) ?? []) {
+        if (!isCurrentActorInstance(this.worldState, npc)) return;
+        this.commitNpcDeathRelease(npc, attack, 'kill-turn');
+      }
+      if (!isCurrentActorInstance(this.worldState, npc)) return;
+    }
     if (isNpcDeathReleaseDue(npc, tick)) {
       // A windup it committed to before dying still launches on its death-animation tick (Jal-Ak, Q t3860).
       for (const attack of this.npcDefinitions.releaseOnDeathAnimation(npc, this.buildNpcDefinitionContext())) {
         if (!isCurrentActorInstance(this.worldState, npc)) break;
-        this.commitNpcDeathRelease(npc, attack);
+        this.commitNpcDeathRelease(npc, attack, 'death-animation');
       }
       return;
     }
@@ -1884,7 +1938,7 @@ export class SimulationEngine {
     if (committed && !npcAttack.isContinuation) attacker.combat.lastAttackTick = tick;
   }
 
-  private commitNpcDeathRelease(attacker: NpcActor, npcAttack: NpcAttackRequest): void {
+  private commitNpcDeathRelease(attacker: NpcActor, npcAttack: NpcAttackRequest, timing: NpcDeathReleaseTiming): void {
     if (npcAttack.attackerId !== attacker.id) {
       throw new Error(`NPC '${attacker.id}' released an attack for '${npcAttack.attackerId}' as it died`);
     }
@@ -1894,6 +1948,7 @@ export class SimulationEngine {
       this.worldState,
       { attacker, target, attack: npcAttack },
       this.buildCombatBridge({ enablePendingHits: true }),
+      timing,
     );
   }
 
@@ -3659,6 +3714,11 @@ export class SimulationEngine {
    *
    * Ordering is load-bearing: these all feed `initializeWorld`/`createPlayerActor`, so a caller
    * that applies them after `reset()` gets a world built from the wrong baseline.
+   *
+   * The mechanics are merged, not applied through `setMechanicsConfig`: its tick-zero run setup
+   * edit would configure the opening against the outgoing world, which `initializeWorld` then
+   * clears, leaving the encounter believing its opening actors exist. `initializeWorld` configures
+   * the run start once, against the new world.
    */
   private applyRunBootstrap(bootstrap: EngineRunBootstrap): void {
     this.configuredStats = cloneBaseStats(bootstrap.baseStats);
@@ -3666,7 +3726,8 @@ export class SimulationEngine {
     this._introEnabled = bootstrap.enableIntro;
     this._attackStylePerCategory = { ...bootstrap.attackStylePerCategory };
     this.seedCombatRandom(bootstrap.combatSeed);
-    this.setMechanicsConfig(bootstrap.mechanicsConfig);
+    this.playerMechanicsConfig = { ...bootstrap.mechanicsConfig };
+    this.mergeMechanicsConfig();
   }
 
   private rebuildActivePrayers(): void {

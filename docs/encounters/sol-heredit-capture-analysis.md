@@ -11,7 +11,8 @@ Where a later section narrows a K/M conclusion, it says so.
 
 Capture citation aliases used throughout, including in tables and data blocks:
 
-- **K** = `colosseum-sol-heredit-packet-data.txt`, ticks 3959..4237, control **3998**.
+- **K** = `colosseum-sol-heredit-packet-data.txt`, ticks 3959..4237, control **3998**; wave 12 of
+  wave capture C's run.
 - **M** = `colosseum-sol-heredit-solar-flare-doom-volatility-packet-data.txt`, ticks 8266..8537, control **8273**.
 - **N** = `colosseum-sol-heredit-packet-data-2.txt`, ticks 7279..7796, control **7302**, Sol npc index 41843.
 - **L** = `colosseum-sol-heredit-long-fight-packet-data-3.txt`, ticks 3422..5848, contiguous, control **3451**, Sol death **5833**; Relentless II is explicit at L:3440.

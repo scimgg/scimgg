@@ -9,15 +9,27 @@
  * other per-encounter manifests do.
  */
 import type React from 'react';
+import type { PlayInterfaceSound } from '../audio/interfaceSounds';
 import type { InfoBoxData } from '../components/InfoBox/infoboxTypes';
 import type { LauncherGlyph } from '../components/launcher/launcherIcons';
 import type { EncounterCommand } from '../core/encounters/commands';
-import type { EncounterSnapshot } from '../core/encounters/snapshot';
+import type { EncounterModifierSelection } from '../core/encounters/encounterFactory';
+import { type EncounterSnapshot, isSolHereditSnapshot } from '../core/encounters/snapshot';
 import type { ReplayDisplayFrame } from '../core/ReplayRecorder';
 import type { ReplayChapterSet } from '../core/replayTimeline';
+import type { OsmFrame } from '../layout/osmFrame';
+import type { Rect } from '../layout/osrsClientLayout';
 import type { PracticeSessionState } from '../types/practiceSession';
 import type { MechanicsConfig } from '../types/simulation';
 import { baseEncounterKind } from './catalog';
+import { ColosseumIntermission } from './colosseum/ColosseumIntermission';
+import { ColosseumLayoutTool } from './colosseum/ColosseumLayoutTool';
+import { COLOSSEUM_SETUP_KEYS, ColosseumSetup, colosseumSetupSummary } from './colosseum/ColosseumSetup';
+import { intermissionScenePlacement, intermissionSheetPlacement } from './colosseum/intermissionPlacement';
+import { colosseumCurrentSetup, colosseumRunStartedWith, colosseumWaveInfobox } from './colosseum/runChrome';
+import { colosseumModifierHeading, colosseumModifierResetLabel } from './colosseum/setupModifiers';
+import { colosseumRunState } from './colosseum/waves/snapshot';
+import { SOL_WAVE } from './colosseum/waves/waveTable';
 import { INFERNO_KIND, ZUK_WAVE } from './inferno/constants';
 import { InfernoLayoutTool } from './inferno/InfernoLayoutTool';
 import { INFERNO_SETUP_KEYS, InfernoSetup, infernoSetupSummary } from './inferno/InfernoSetup';
@@ -69,6 +81,12 @@ export interface EncounterToolProps {
 export interface EncounterTool {
   readonly label: string;
   readonly icon: LauncherGlyph;
+  /**
+   * Whether this run offers the tool at all, read from its snapshot; absent, every run does. A run
+   * that can never use it (a Colosseum run started on Sol) leaves its launcher out of the row.
+   */
+  readonly offered?: (snapshot: EncounterSnapshot) => boolean;
+  /** Why the offered tool cannot open now (a fixed wave), shown on its disabled launcher. */
   readonly disabledReason: (run: EncounterSetupRun | undefined) => string | undefined;
   readonly render: (props: EncounterToolProps) => React.ReactNode;
 }
@@ -80,10 +98,21 @@ const ENCOUNTER_TOOLS: Readonly<Record<string, EncounterTool>> = {
     disabledReason: (run) => (run?.stage === ZUK_WAVE ? 'Wave 69 has a fixed layout.' : undefined),
     render: (props) => <InfernoLayoutTool {...props} />,
   },
+  // The same tool and rules as the Inferno's, for the start wave's layout. Sol's arena is fixed: a
+  // wave run reaching him disables it, as wave 69 does, and a direct Sol start never offers it.
+  sol_heredit: {
+    label: 'Edit layout',
+    icon: 'layout',
+    offered: (snapshot) => isSolHereditSnapshot(snapshot) && colosseumRunState(snapshot.state).startWave < SOL_WAVE,
+    disabledReason: (run) => (run?.stage === SOL_WAVE ? `Wave ${SOL_WAVE} has a fixed layout.` : undefined),
+    render: (props) => <ColosseumLayoutTool {...props} />,
+  },
 };
 
-export function encounterToolForKind(kind: string | undefined): EncounterTool | undefined {
-  return kind === undefined ? undefined : ENCOUNTER_TOOLS[baseEncounterKind(kind)];
+/** The tool the run's encounter offers it, where it has one (`EncounterTool.offered`). */
+export function encounterToolFor(snapshot: EncounterSnapshot): EncounterTool | undefined {
+  const tool = ENCOUNTER_TOOLS[baseEncounterKind(snapshot.kind)];
+  return tool && (tool.offered?.(snapshot) ?? true) ? tool : undefined;
 }
 
 export interface EncounterSetupControlsProps {
@@ -118,12 +147,24 @@ export interface EncounterSetupControls {
    * The setup about to be committed, in the encounter's own terms ("Wave 35"), for the pre-fight
    * footer's line beside Start. Absent where the encounter's phase metadata already says it.
    */
-  readonly summary?: (config: MechanicsConfig) => string;
+  readonly summary?: (config: MechanicsConfig, modifiers: EncounterModifierSelection) => string;
   /** Reserve a configurer footer destination only for encounters that use it. */
   readonly hasFooterActions?: boolean;
   readonly render: (props: EncounterSetupControlsProps) => React.ReactNode;
   /** What Practice's Options disclosure holds for this run, replacing the generic summary. */
   readonly optionsSummary?: (props: EncounterSetupControlsProps) => string;
+  /**
+   * How the configurer names run modifiers whose default follows this setup (a Colosseum start
+   * wave's). The default itself is the descriptor's `defaultModifiers`.
+   */
+  readonly modifierLabels?: EncounterModifierLabels;
+}
+
+export interface EncounterModifierLabels {
+  /** The configurer's name for the set ("Modifiers going into wave 8"), in place of "Modifiers". */
+  readonly heading: (config: MechanicsConfig) => string;
+  /** The action that drops the saved set for the setup's default ("Reset to wave 8 default"). */
+  readonly resetLabel: (config: MechanicsConfig) => string;
 }
 
 const SETUP_CONTROLS: Readonly<Record<string, EncounterSetupControls>> = {
@@ -135,6 +176,16 @@ const SETUP_CONTROLS: Readonly<Record<string, EncounterSetupControls>> = {
     hasFooterActions: true,
     render: (props) => <InfernoSetup {...props} />,
     optionsSummary: ({ run }) => (run?.stage === ZUK_WAVE ? 'Zuk & aids' : 'Practice aids'),
+  },
+  sol_heredit: {
+    keys: COLOSSEUM_SETUP_KEYS,
+    railSection: 'Wave & modifiers',
+    practiceSection: 'Start wave',
+    summary: colosseumSetupSummary,
+    render: (props) => <ColosseumSetup {...props} />,
+    // Sol's section shows in Practice only once the run reaches him, as Zuk's does at wave 69.
+    optionsSummary: ({ run }) => (run?.stage === SOL_WAVE ? 'Sol & aids' : 'Practice aids'),
+    modifierLabels: { heading: colosseumModifierHeading, resetLabel: colosseumModifierResetLabel },
   },
 };
 
@@ -148,17 +199,19 @@ export function encounterSetupControlsForKind(kind: string | undefined): Encount
  * Hosts memoize their {@link EncounterSetupRun} on it, so it must stay a primitive.
  */
 export function encounterSetupStage(snapshot: EncounterSnapshot): number | null {
+  if (isSolHereditSnapshot(snapshot)) return colosseumRunState(snapshot.state).wave;
   return infernoCurrentWave(snapshot);
 }
 
 /** The run's own {@link EncounterSetupRun.startedWith} key. A primitive, for the same reason. */
 export function encounterSetupStartedWith(snapshot: EncounterSnapshot): string {
+  if (isSolHereditSnapshot(snapshot)) return colosseumRunStartedWith(snapshot);
   return infernoRunStartedWith(snapshot);
 }
 
 /** Hosts memoize this small encounter-owned payload on its serialized value, not snapshot identity. */
 export function encounterCurrentSetup(snapshot: EncounterSnapshot): Partial<MechanicsConfig> | undefined {
-  return infernoCurrentSetup(snapshot);
+  return infernoCurrentSetup(snapshot) ?? colosseumCurrentSetup(snapshot);
 }
 
 /**
@@ -174,7 +227,52 @@ export function encounterPracticeSession(
 
 /** The run-state tile an encounter publishes to the infobox strip, or null for most of them. */
 export function encounterInfobox(snapshot: EncounterSnapshot): InfoBoxData | null {
-  return infernoWaveInfobox(snapshot);
+  return infernoWaveInfobox(snapshot) ?? colosseumWaveInfobox(snapshot);
+}
+
+/**
+ * The run's own in-fight prompt, where it has one: the Fortis Colosseum's choice of modifier between
+ * waves. `execute` is the app's command route, so the choice is queued and recorded like any other
+ * encounter command. Mount it only for a live fight, never over a replay.
+ */
+export function EncounterRunPrompt({
+  snapshot,
+  attempt,
+  currentTick,
+  execute,
+  mobileLayout,
+  mobileFrame,
+  sceneRect,
+  playSound,
+}: {
+  readonly snapshot: EncounterSnapshot;
+  /** The live run's identity (`useSimulationWiring.runAttempt`): a restart is a new attempt. */
+  readonly attempt: number;
+  readonly currentTick: number;
+  readonly execute: (command: EncounterCommand) => boolean | undefined;
+  readonly mobileLayout?: boolean;
+  /** The Mobile layout's gameframe, which places a prompt clear of its native chrome. */
+  readonly mobileFrame?: OsmFrame | null;
+  /** A desktop's visible scene in window CSS pixels (Grid's), which a prompt centers on. */
+  readonly sceneRect?: Rect | null;
+  /** The client's interface sounds for the prompt's own presses; live fights only, never a replay. */
+  readonly playSound?: PlayInterfaceSound;
+}): React.ReactNode {
+  if (!isSolHereditSnapshot(snapshot)) return null;
+  const run = colosseumRunState(snapshot.state);
+  if (run.stage !== 'intermission' || run.offer === null) return null;
+  return (
+    <ColosseumIntermission
+      run={run}
+      attempt={attempt}
+      currentTick={currentTick}
+      execute={execute}
+      mobileLayout={mobileLayout}
+      sheetPlacement={mobileLayout && mobileFrame ? intermissionSheetPlacement(mobileFrame) : undefined}
+      scenePlacement={!mobileLayout && sceneRect ? intermissionScenePlacement(sceneRect) : undefined}
+      playSound={playSound}
+    />
+  );
 }
 
 /** Derives the chapters a replay is navigated by from its display frames, in one pass. */

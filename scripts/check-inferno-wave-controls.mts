@@ -159,7 +159,7 @@ async function capture(page: Page, name: string) {
 
 /** Include gear on -> off must not move any footer box. */
 async function checkSharing(page: Page, name: string, rail: boolean) {
-  const footer = page.locator(rail ? '.encounter-panel-footer' : '.inferno-layout-tool__footer');
+  const footer = page.locator(rail ? '.encounter-panel-footer' : '.spawn-layout-tool__footer');
   const checkbox = footer.getByRole('checkbox', { name: 'Include gear', exact: true });
   if ((await checkbox.getAttribute('aria-checked')) !== 'true') failures.push(`${name}: gear not enabled by default`);
   const geometry = () =>
@@ -365,7 +365,7 @@ async function editorGeometry(page: Page) {
       '.spawn-progress',
       '.inferno-arena-summary',
       '.configurer-encounter-setup + .rail-section',
-      '.inferno-layout-tool__footer',
+      '.spawn-layout-tool__footer',
     ];
     const positions = selectors.map((selector) => {
       const el = [...document.querySelectorAll<HTMLElement>(selector)].find(
@@ -414,7 +414,7 @@ async function checkContainer(page: Page, name: string, rail: boolean) {
   const windowFits = await page.locator(rail ? '.inferno-layout-editor' : '.encounter-workbench').evaluate((el) => {
     const b = el.getBoundingClientRect();
     const children = [
-      ...el.querySelectorAll('.spawn-map,.spawn-progress,.inferno-layout-tool__footer,.inferno-arena__caption'),
+      ...el.querySelectorAll('.spawn-map,.spawn-progress,.spawn-layout-tool__footer,.inferno-arena__caption'),
     ];
     const fits =
       b.left >= 0 &&

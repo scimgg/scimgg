@@ -5,7 +5,7 @@ import {
   encounterCurrentSetup,
   encounterSetupStage,
   encounterSetupStartedWith,
-  encounterToolForKind,
+  encounterToolFor,
 } from '../../encounters/practiceChrome';
 import type { MechanicsConfig, SimulationState } from '../../types/simulation';
 
@@ -27,7 +27,7 @@ export function useEncounterTool(
   replaying = false,
 ) {
   const encounter = props.simulationState.encounter;
-  const definition = encounterToolForKind(encounter.kind);
+  const definition = encounterToolFor(encounter);
   const stage = encounterSetupStage(encounter);
   const startedWith = encounterSetupStartedWith(encounter);
   const currentKey = JSON.stringify(encounterCurrentSetup(encounter));

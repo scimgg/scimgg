@@ -71,7 +71,7 @@ describe('discoverCacheUsage', () => {
     }
     const report = await discoverCacheUsage(root);
     const effects = Object.values(COLOSSEUM_SPOTANIMS).flat();
-    expect(effects).toHaveLength(23);
+    expect(effects).toHaveLength(41);
     expect([...report.spotAnimIds].sort((left, right) => left - right)).toEqual(
       [...effects].sort((left, right) => left - right),
     );

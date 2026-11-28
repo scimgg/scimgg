@@ -64,6 +64,44 @@ import {
 import { useIsMobileDevice } from './useIsMobileDevice';
 
 const STORAGE_KEY = 'osrs-yama-settings';
+/** The persisted settings blob's key, for the dev UI harness's saved-setup fixtures. */
+export const PERSISTED_SETTINGS_KEY = STORAGE_KEY;
+
+/**
+ * What a saved `modifiersPerEncounter` entry means. Version 1: an entry is always the player's own
+ * choice, and a kind without one plays its setup's default.
+ */
+export const MODIFIER_SETTINGS_VERSION = 1;
+
+/**
+ * Entries cleared once, on the way to version 1. Before it, Sol Heredit's default (Blasphemy III)
+ * was saved like a choice whenever a selection was saved unchanged, so a saved Blasphemy III and the
+ * same set picked on purpose cannot be told apart. Both are read as the default, which now follows
+ * the Fortis Colosseum's start wave; a deliberate Blasphemy III saved since then is kept.
+ */
+const LEGACY_SAVED_DEFAULT_MODIFIERS: Readonly<Record<string, EncounterModifierSelection>> = {
+  sol_heredit: { blasphemy: 3 },
+};
+
+/**
+ * `settings` migrated from the stored `version` (absent: before versioning) to
+ * {@link MODIFIER_SETTINGS_VERSION}. Idempotent: the result is at the current version, which a
+ * second pass leaves alone. Every other entry and encounter is kept as saved.
+ */
+function migrateModifierSettings(settings: PersistedSettings, version: unknown): PersistedSettings {
+  if (typeof version === 'number' && version >= MODIFIER_SETTINGS_VERSION) return settings;
+  const modifiersPerEncounter = { ...settings.modifiersPerEncounter };
+  for (const [kind, legacy] of Object.entries(LEGACY_SAVED_DEFAULT_MODIFIERS)) {
+    const saved = modifiersPerEncounter[kind];
+    if (saved !== undefined && sameModifierSelection(saved, legacy)) delete modifiersPerEncounter[kind];
+  }
+  return { ...settings, modifiersPerEncounter, modifierSettingsVersion: MODIFIER_SETTINGS_VERSION };
+}
+
+function sameModifierSelection(left: EncounterModifierSelection, right: EncounterModifierSelection): boolean {
+  const keys = Object.keys(left);
+  return keys.length === Object.keys(right).length && keys.every((key) => left[key] === right[key]);
+}
 
 /**
  * The context's anti-aliasing. An explicit On or Off always wins; Auto, the default, turns it off
@@ -248,11 +286,14 @@ export interface PersistedSettings {
    */
   startingHpPerEncounter: Record<string, number>;
   /**
-   * The run modifiers last chosen per encounter kind (keyed like {@link mechanicsConfigPerEncounter}).
-   * An entry is the player's whole selection, so `{}` means every modifier off; a kind with no
-   * entry takes its descriptor's `defaultModifierSelection`.
+   * The run modifiers the player chose per encounter kind (keyed like {@link mechanicsConfigPerEncounter}).
+   * An entry is the player's whole selection, kept as made, so `{}` means every modifier off and one
+   * equal to the default stays theirs; a kind with no entry takes its descriptor's `defaultModifiers`
+   * for the run's setup. Only a reset removes an entry.
    */
   modifiersPerEncounter: Record<string, EncounterModifierSelection>;
+  /** The {@link MODIFIER_SETTINGS_VERSION} {@link modifiersPerEncounter} was last migrated to. */
+  modifierSettingsVersion: number;
   logLevel: 'none' | 'error' | 'warn' | 'info' | 'debug' | 'trace';
   gamePanelPosition: UIPosition;
   minimapPosition: UIPosition;
@@ -697,6 +738,8 @@ export const PERSISTED_SETTINGS_DEFAULTS: PersistedSettings = {
   mechanicsConfigPerEncounter: {},
   startingHpPerEncounter: {},
   modifiersPerEncounter: {},
+  // Nothing saved yet has nothing to migrate.
+  modifierSettingsVersion: MODIFIER_SETTINGS_VERSION,
   gamePanelPosition: DEFAULT_GAME_PANEL_POSITION,
   minimapPosition: DEFAULT_MINIMAP_POSITION,
   compactOrbsPosition: DEFAULT_COMPACT_ORBS_POSITION,
@@ -1151,6 +1194,7 @@ const PersistedSettingsShape = {
   mechanicsConfigPerEncounter: z.unknown().transform(parseMechanicsConfigPerEncounter),
   startingHpPerEncounter: z.unknown().transform(normalizeStartingHpPerEncounter),
   modifiersPerEncounter: z.unknown().transform(parseModifiersPerEncounter),
+  modifierSettingsVersion: z.number().int().nonnegative().catch(0),
   logLevel: z.enum(['none', 'error', 'warn', 'info', 'debug', 'trace']).catch(PERSISTED_SETTINGS_DEFAULTS.logLevel),
   gamePanelPosition: z
     .unknown()
@@ -1371,7 +1415,11 @@ const PersistedSettingsSchema = z.object(PersistedSettingsShape);
 export function normalizeSettings(stored: unknown): PersistedSettings {
   const parsedSource = UnknownRecordSchema.safeParse(stored);
   const source = parsedSource.success ? parsedSource.data : {};
-  const settings = PersistedSettingsSchema.parse({ ...PERSISTED_SETTINGS_DEFAULTS, ...source });
+  // The stored version, not the merged one: the defaults carry the current version for a fresh start.
+  const settings = migrateModifierSettings(
+    PersistedSettingsSchema.parse({ ...PERSISTED_SETTINGS_DEFAULTS, ...source }),
+    source.modifierSettingsVersion,
+  );
   if (settings.mobileOverrides !== undefined) return settings;
   const { mobileOverrides: _, ...withoutEmptyOverrides } = settings;
   return withoutEmptyOverrides;

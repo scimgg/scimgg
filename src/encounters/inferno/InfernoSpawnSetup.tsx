@@ -2,20 +2,29 @@ import type React from 'react';
 import { useEffect, useId, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { UndoButton } from '../../components/ResetToDefaults';
+import {
+  SpawnLayoutMap,
+  type SpawnMapObstacle,
+  type SpawnMapSpot,
+  type SpawnMapTileBox,
+} from '../../components/SpawnLayoutMap';
 import { CloseButton } from '../../components/ui/CloseButton';
 import { DisclosureChevron } from '../../components/ui/DisclosureChevron';
 import { HoverHintButton } from '../../components/ui/HoverHintControl';
 import { OsrsButton } from '../../components/ui/OsrsButton';
 import { OsrsCheckbox } from '../../components/ui/OsrsCheckbox';
+import { infernoIdentity } from '../../npcs/inferno/actors';
 import type { Coordinate, MechanicsConfig } from '../../types/simulation';
-import { INFERNO_SPAWN_SLOTS, LAST_PILLAR_WAVE } from './constants';
+import { ZUK_PLAYER_START } from '../zuk/constants';
+import { INFERNO_ARENA_MAP_IMAGE } from './arenaMapImage';
+import { INFERNO_ARENA_BOUNDS, INFERNO_LANDING_TILE, INFERNO_SPAWN_SLOTS, LAST_PILLAR_WAVE } from './constants';
 import {
   INFERNO_DESTROYED_PILLAR_KEYS,
   INFERNO_SPAWN_LAYOUT_KEY,
   INFERNO_START_TILE_KEY,
   resolveInfernoRunSetup,
 } from './controls';
-import { SpawnLayoutMap } from './SpawnLayoutMap';
+import { INFERNO_PILLARS, PILLAR_SIZE, type PillarKey } from './pillars';
 import { dismissInfernoSetupLinkNotice, useInfernoSetupLinkNotice } from './setupLinkNotice';
 import {
   buildInfernoSetupUrl,
@@ -30,9 +39,82 @@ import {
   startTileApplies,
   validateInfernoStartTile,
 } from './startTile';
+import { WAVE_NPC_NAMES } from './waveInfo';
 import './InfernoSpawnSetup.css';
 
 const EMPTY_SLOTS: readonly (SlotKind | null)[] = INFERNO_SPAWN_SLOTS.map(() => null);
+
+const SLOT_NAMES = [
+  'North-west',
+  'West',
+  'South-west',
+  'Inner south-west',
+  'South',
+  'South-east',
+  'Center',
+  'East',
+  'North-east',
+];
+const SPAWN_SPOTS: readonly SpawnMapSpot[] = INFERNO_SPAWN_SLOTS.map((position, index) => ({
+  name: SLOT_NAMES[index]!,
+  position,
+}));
+/** Every Inferno spot holds a 4x4 footprint; smaller monsters sit in its south-west corner. */
+const SPOT_SIZE = 4;
+const ARENA_WIDTH = INFERNO_ARENA_BOUNDS.maxX - INFERNO_ARENA_BOUNDS.minX + 1;
+const ARENA_HEIGHT = INFERNO_ARENA_BOUNDS.maxY - INFERNO_ARENA_BOUNDS.minY + 1;
+const GRID_PATH = [
+  ...Array.from({ length: ARENA_WIDTH + 1 }, (_, x) => `M${x} 0V${ARENA_HEIGHT}`),
+  ...Array.from({ length: ARENA_HEIGHT + 1 }, (_, y) => `M0 ${y}H${ARENA_WIDTH}`),
+].join('');
+
+export function kindLabel(kind: SlotKind): string {
+  const name = WAVE_NPC_NAMES[kind].one;
+  return name.charAt(0).toUpperCase() + name.slice(1);
+}
+
+const kindSize = (kind: SlotKind) =>
+  infernoIdentity(kind === 'mager' || kind === 'ranger' ? { kind, variant: 'ordinary' } : kind).size;
+
+// The diagram includes two tiles of terrain beyond the playable bounds, so edge pillars
+// sit inside the arena picture rather than being mistaken for part of its frame.
+const arenaTerrain = (tileBox: SpawnMapTileBox) => (
+  <>
+    <img
+      className="spawn-map__terrain"
+      src={INFERNO_ARENA_MAP_IMAGE.url}
+      width={INFERNO_ARENA_MAP_IMAGE.width}
+      height={INFERNO_ARENA_MAP_IMAGE.height}
+      crossOrigin="anonymous"
+      alt=""
+      aria-hidden="true"
+      draggable={false}
+    />
+    <span className="spawn-map__terrain-wash" aria-hidden="true" />
+    <svg
+      className="spawn-map__grid"
+      style={tileBox([INFERNO_ARENA_BOUNDS.minX, INFERNO_ARENA_BOUNDS.minY], ARENA_WIDTH, ARENA_HEIGHT)}
+      viewBox={`0 0 ${ARENA_WIDTH} ${ARENA_HEIGHT}`}
+      preserveAspectRatio="none"
+      shapeRendering="crispEdges"
+      aria-hidden="true"
+    >
+      <path d={GRID_PATH} vectorEffect="non-scaling-stroke" />
+    </svg>
+  </>
+);
+
+function pillarObstacles(wave: number, destroyed: Readonly<Record<PillarKey, boolean>>): SpawnMapObstacle[] {
+  if (wave > LAST_PILLAR_WAVE) return [];
+  return INFERNO_PILLARS.map((pillar) => ({
+    key: pillar.key,
+    position: pillar.position,
+    size: PILLAR_SIZE,
+    ariaLabel: `${pillar.key === 'northEast' ? 'North-east' : pillar.key === 'west' ? 'West' : 'South'} pillar`,
+    label: destroyed[pillar.key] ? 'Down' : 'Pillar',
+    down: destroyed[pillar.key],
+  }));
+}
 
 export interface InfernoSpawnSetupProps {
   readonly config: MechanicsConfig;
@@ -182,18 +264,27 @@ export function InfernoSpawnSetup({
     );
   };
   const arena = (
-    <div className="inferno-arena" id={arenaId}>
+    <div className={surface === 'tool' ? 'inferno-arena spawn-layout-tool__arena' : 'inferno-arena'} id={arenaId}>
       <SpawnLayoutMap
         key={startWave}
-        wave={startWave}
+        bounds={INFERNO_ARENA_MAP_IMAGE.bounds}
+        terrain={arenaTerrain}
+        spots={SPAWN_SPOTS}
+        spotSize={SPOT_SIZE}
         kinds={kinds}
         slots={slots}
-        playerTile={startTile}
-        destroyedPillars={destroyedPillars}
+        kindLabel={kindLabel}
+        kindSize={kindSize}
+        obstacles={pillarObstacles(startWave, destroyedPillars)}
+        onObstacleToggle={(key) => {
+          const pillar = key as PillarKey;
+          onChange({ ...config, [INFERNO_DESTROYED_PILLAR_KEYS[pillar]]: !destroyedPillars[pillar] });
+        }}
+        playerTile={startWave === 1 ? INFERNO_LANDING_TILE : startWave === 69 ? ZUK_PLAYER_START : startTile}
+        startMovable={startTileApplies(startWave)}
         onSlotsChange={setSlots}
         onStartChange={pickStart}
-        onPillarChange={(key) => onChange({ ...config, [INFERNO_DESTROYED_PILLAR_KEYS[key]]: !destroyedPillars[key] })}
-        caption={<p className="inferno-arena__caption">{arenaCaption()}</p>}
+        caption={<p className="inferno-arena__caption spawn-layout-tool__caption">{arenaCaption()}</p>}
         actions={
           <>
             <button
@@ -256,16 +347,16 @@ export function InfernoSpawnSetup({
           {editable ? (
             arena
           ) : (
-            <div className="inferno-arena">
+            <div className="inferno-arena spawn-layout-tool__arena">
               <div className="spawn-progress" />
               <div className="spawn-map-frame">
                 <div className="spawn-map__tools" />
-                <p className="inferno-arena__caption">Spawns and your start are fixed.</p>
+                <p className="inferno-arena__caption spawn-layout-tool__caption">Spawns and your start are fixed.</p>
                 <div className="spawn-map-space">This wave has a fixed layout.</div>
               </div>
             </div>
           )}
-          <footer className="inferno-layout-tool__footer">
+          <footer className="spawn-layout-tool__footer">
             {copyControls}
             {onStart && (
               <OsrsButton variant="primary" onClick={onStart}>

@@ -1,0 +1,719 @@
+/* The Fortis Colosseum's choice between waves (ColosseumIntermission.tsx).
+
+   A Scim-owned surface that takes presses, so it is opaque on --color-bg-solid with a hairline and
+   no outer shadow, like the launcher panes (DESIGN.md, the Opacity and Shadow Sibling rules): its
+   text keeps LCD antialiasing. It is fixed to the window on its own, with no wrapper (Veto 3 in the
+   subpixel-aa skill), placed within the visible viewport (App's --ui-inset-*). A desktop draws it in
+   the middle of the visible scene, where the game draws its own; Mobile draws a compact sheet along
+   the top. No transforms: the panel is placed by its insets and margins, so its text stays on
+   whole pixels. Native 16px type throughout; pointer and touch only, so no focus styles. */
+
+.colosseum-intermission {
+  /* Clear of the launcher row at the top, and of the window's bottom edge. */
+  --intermission-top: max(56px, calc(var(--safe-top, 0px) + 8px));
+  --intermission-bottom: max(8px, var(--safe-bottom, 0px));
+  position: fixed;
+  /* Under the top chrome's items (68) and the drawers (70): an opened pane draws over it. */
+  z-index: 67;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  margin: 0 auto;
+  background: var(--color-bg-solid);
+  border: 1px solid var(--color-border);
+  border-radius: 2px;
+  color: var(--color-text-body);
+  font:
+    16px / 20px "RuneScape Plain 12",
+    sans-serif;
+  text-align: left;
+}
+
+/* ---- Desktop: centered over the game view ------------------------------------------------------ */
+
+/* Four insets and auto margins center a fit-content box both ways without a transform. */
+.colosseum-intermission--center {
+  inset: var(--intermission-top) var(--ui-inset-right, 0px) var(--intermission-bottom) var(--ui-inset-left, 0px);
+  margin: auto;
+  width: min(400px, calc(100% - var(--ui-inset-left, 0px) - var(--ui-inset-right, 0px) - 16px));
+  height: fit-content;
+  max-height: calc(100% - var(--intermission-top) - var(--intermission-bottom));
+}
+
+/* On the visible scene Grid reports (intermissionScenePlacement), which in the Fixed client is not
+   the window's middle. The panel's left and width are placed whole; it still centers vertically
+   between the scene's edges, below the launcher row. */
+.colosseum-intermission--center.colosseum-intermission--in-scene {
+  inset: max(var(--intermission-top), var(--scene-top)) auto
+    max(var(--intermission-bottom), calc(100% - var(--scene-bottom))) var(--panel-left);
+  margin: auto 0;
+  width: var(--panel-width);
+  max-height: calc(
+    100% -
+    max(var(--intermission-top), var(--scene-top)) -
+    max(var(--intermission-bottom), calc(100% - var(--scene-bottom)))
+  );
+}
+
+/* ---- Hidden: one line at the top, out of the play area's middle -------------------------------- */
+
+/* Fitted to its words: `auto` on a fixed box with both insets would stretch it across them. */
+.colosseum-intermission--bar {
+  top: var(--intermission-top);
+  left: var(--ui-inset-left, 0px);
+  right: var(--ui-inset-right, 0px);
+  width: fit-content;
+  max-width: calc(100% - var(--ui-inset-left, 0px) - var(--ui-inset-right, 0px) - 16px);
+  min-height: 28px;
+  padding: 3px 12px;
+  justify-content: center;
+  color: var(--color-accent-text);
+  font:
+    16px / 20px "RuneScape Bold 12",
+    sans-serif;
+  cursor: pointer;
+}
+
+.colosseum-intermission--bar-mobile {
+  top: max(6px, var(--safe-top, 0px));
+}
+
+.colosseum-intermission--bar.colosseum-intermission--in-scene {
+  top: max(var(--intermission-top), var(--scene-top));
+  left: var(--scene-left);
+  right: calc(100% - var(--scene-right));
+  max-width: calc(var(--scene-right) - var(--scene-left) - 16px);
+}
+
+.colosseum-intermission--bar:hover {
+  background: var(--color-surface-hover);
+  border-color: var(--color-primary-structure);
+  color: var(--color-primary-hover);
+}
+
+/* ---- Header ---------------------------------------------------------------------------------- */
+
+.colosseum-intermission__head {
+  flex: none;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 8px 8px 12px;
+  background: var(--color-bg-elevated);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.colosseum-intermission__heading {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.colosseum-intermission__head h2 {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  color: var(--color-heading);
+  font:
+    16px / 20px "RuneScape Bold 12",
+    sans-serif;
+}
+
+.colosseum-intermission__heading p {
+  margin: 0;
+  color: var(--color-text-muted);
+  font:
+    16px / 18px "RuneScape Plain 11",
+    sans-serif;
+}
+
+.colosseum-intermission__hide {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 2px;
+  color: var(--color-secondary);
+  cursor: pointer;
+}
+
+.colosseum-intermission__hide svg {
+  width: 10px;
+  height: 10px;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  fill: none;
+}
+
+.colosseum-intermission__hide:hover {
+  background: var(--color-surface-hover);
+  border-color: var(--color-primary-structure);
+  color: var(--color-accent-text);
+}
+
+.colosseum-modifier-tier {
+  color: var(--color-accent-text);
+  font-family: "RuneScape Bold 12", sans-serif;
+}
+
+/* ---- Desktop: the three options as full-width rows ------------------------------------------- */
+
+/* The options and the owned list: the one region that scrolls when the scene is short (the Fixed
+   client's is 334px), so it paints its own opaque fill (Veto 2). The header and Continue stay put.
+   A visible thumb, not the overlay one, shows there is more below. */
+.colosseum-intermission__body {
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  background: var(--color-bg-solid);
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-primary-structure) var(--color-bg-solid);
+}
+
+.colosseum-intermission__options {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px;
+}
+
+/* The configurer's single-choice recipe: resting surface and hairline, structure edge on hover,
+   the accent well and edge once chosen (DESIGN.md, Interaction rhythm). */
+.colosseum-option,
+.colosseum-other,
+.colosseum-tile {
+  box-sizing: border-box;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 2px;
+  color: var(--color-secondary);
+  font: inherit;
+  cursor: pointer;
+  transition:
+    color 0.15s ease,
+    border-color 0.15s ease,
+    background-color 0.15s ease;
+}
+
+.colosseum-option {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  align-items: start;
+  column-gap: 10px;
+  row-gap: 2px;
+  width: 100%;
+  min-height: 56px;
+  padding: 7px 8px;
+  text-align: left;
+}
+
+/* Hover only where a pointer can hover: a tap leaves Chrome's :hover on the tapped control, which
+   would keep a cleared option looking pressed. */
+@media (hover: hover) {
+  .colosseum-option:hover:not(:disabled),
+  .colosseum-other:hover:not(:disabled),
+  .colosseum-tile:hover:not(:disabled) {
+    background: var(--color-surface-hover);
+    border-color: var(--color-primary-structure);
+  }
+}
+
+/* Selected survives hover (the Sticky Active Rule). */
+.colosseum-option.is-selected,
+.colosseum-option.is-selected:hover:not(:disabled),
+.colosseum-other.is-selected,
+.colosseum-other.is-selected:hover:not(:disabled),
+.colosseum-tile.is-selected,
+.colosseum-tile.is-selected:hover:not(:disabled) {
+  background: var(--primary-dim);
+  border-color: var(--color-primary);
+}
+
+.colosseum-option:disabled,
+.colosseum-other:disabled,
+.colosseum-tile:disabled {
+  cursor: default;
+}
+
+/* 40x40 outer = 1px border around a 38x38 box, so each icon renders 1:1 (ModifierSelector.css). */
+.colosseum-option__slot {
+  grid-row: 1 / span 2;
+  box-sizing: border-box;
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  background: var(--color-surface-inset);
+  border: 1px solid var(--color-border);
+  border-radius: 2px;
+  /* Keeps the canvas's painting inside its slot, so the text beside it keeps LCD AA. */
+  contain: paint;
+}
+
+.colosseum-option.is-selected .colosseum-option__slot {
+  border-color: var(--color-primary-structure);
+}
+
+.colosseum-option__name {
+  min-width: 0;
+  color: var(--color-secondary);
+  font:
+    16px / 20px "RuneScape Bold 12",
+    sans-serif;
+  overflow-wrap: anywhere;
+}
+
+.colosseum-tile__name {
+  min-width: 0;
+  color: var(--color-secondary);
+  font:
+    16px / 18px "RuneScape Bold 12",
+    sans-serif;
+  overflow-wrap: anywhere;
+}
+
+@media (hover: hover) {
+  .colosseum-option:hover:not(:disabled) .colosseum-option__name,
+  .colosseum-tile:hover:not(:disabled) .colosseum-tile__name {
+    color: var(--color-text-body);
+  }
+}
+
+.colosseum-option.is-selected .colosseum-option__name,
+.colosseum-tile.is-selected .colosseum-tile__name {
+  color: var(--color-heading);
+}
+
+/* "from I": the owned tier the pick would raise, quieter than the tier it gives. */
+.colosseum-option__from,
+.colosseum-intermission__from {
+  color: var(--color-text-muted);
+  font:
+    16px / 18px "RuneScape Plain 11",
+    sans-serif;
+}
+
+.colosseum-option__effect {
+  grid-column: 2;
+  min-width: 0;
+  color: var(--color-text-muted);
+  font:
+    16px / 18px "RuneScape Plain 11",
+    sans-serif;
+  overflow-wrap: anywhere;
+}
+
+.colosseum-option.is-selected .colosseum-option__effect {
+  color: var(--color-text-body);
+}
+
+/* ---- Desktop: "Choose another", the rest of the eligible picks -------------------------------- */
+
+/* Secondary to the three: a quiet disclosure line, the picks as compact name rows in two columns,
+   and the chosen one's effect under them. All inside the scrolling body, on its opaque fill. */
+.colosseum-intermission__more {
+  padding: 0 8px 8px;
+}
+
+.colosseum-others-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  padding: 0 4px;
+  background: transparent;
+  border: 0;
+  color: var(--color-secondary);
+  font:
+    16px / 20px "RuneScape Bold 12",
+    sans-serif;
+  cursor: pointer;
+}
+
+.colosseum-others-toggle[aria-expanded="true"] {
+  color: var(--color-accent-text);
+}
+
+@media (hover: hover) {
+  .colosseum-others-toggle:hover:not(:disabled) {
+    color: var(--color-accent-text);
+  }
+}
+
+.colosseum-others-toggle:disabled {
+  cursor: default;
+}
+
+.colosseum-others-toggle__count {
+  color: var(--color-text-muted);
+  font:
+    16px / 18px "RuneScape Plain 11",
+    sans-serif;
+}
+
+.colosseum-intermission__others {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px;
+  padding-top: 4px;
+}
+
+.colosseum-other {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  align-items: center;
+  column-gap: 6px;
+  min-height: 30px;
+  padding: 4px 6px;
+  text-align: left;
+}
+
+.colosseum-other__icon {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  contain: paint;
+}
+
+.colosseum-other__name {
+  min-width: 0;
+  color: var(--color-secondary);
+  font:
+    16px / 18px "RuneScape Bold 12",
+    sans-serif;
+  overflow-wrap: anywhere;
+}
+
+@media (hover: hover) {
+  .colosseum-other:hover:not(:disabled) .colosseum-other__name {
+    color: var(--color-text-body);
+  }
+}
+
+.colosseum-other.is-selected .colosseum-other__name {
+  color: var(--color-heading);
+}
+
+/* Two lines reserved, so choosing one never moves the owned list below. */
+.colosseum-intermission__other-effect {
+  min-height: 36px;
+  margin: 4px 4px 0;
+  color: var(--color-text-body);
+  font:
+    16px / 18px "RuneScape Plain 11",
+    sans-serif;
+}
+
+/* ---- Desktop: what is owned, and where each tier came from ---------------------------------- */
+
+.colosseum-intermission__owned {
+  padding: 6px 12px 8px;
+  border-top: 1px solid var(--color-border);
+}
+
+.colosseum-intermission__owned h3 {
+  margin: 0 0 2px;
+  color: var(--color-text-muted);
+  font:
+    16px / 18px "RuneScape Plain 11",
+    sans-serif;
+}
+
+.colosseum-intermission__owned ul {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.colosseum-intermission__owned li {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-height: 22px;
+  color: var(--color-secondary);
+}
+
+.colosseum-owned__icon,
+.colosseum-chip__icon {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  contain: paint;
+}
+
+.colosseum-owned__source {
+  color: var(--color-text-muted);
+  font:
+    16px / 18px "RuneScape Plain 11",
+    sans-serif;
+}
+
+/* ---- Footer ---------------------------------------------------------------------------------- */
+
+.colosseum-intermission__foot {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px;
+  background: var(--color-bg-elevated);
+  border-top: 1px solid var(--color-border);
+}
+
+.colosseum-intermission--center .colosseum-intermission__continue {
+  flex: 1 1 auto;
+}
+
+/* ---- Mobile: a compact sheet along the top ---------------------------------------------------- */
+
+.colosseum-intermission--mobile {
+  top: max(6px, var(--safe-top, 0px));
+  left: var(--ui-inset-left, 0px);
+  right: var(--ui-inset-right, 0px);
+  width: min(380px, calc(100% - var(--ui-inset-left, 0px) - var(--ui-inset-right, 0px) - 16px));
+  max-height: calc(100% - max(6px, var(--safe-top, 0px)) - var(--intermission-bottom));
+}
+
+/* Clear of the native chrome: beside the minimap in landscape, below it in portrait. The bar keeps
+   its fitted width, centered on the sheet's place. */
+.colosseum-intermission--placed {
+  top: var(--sheet-top);
+  left: var(--sheet-left);
+  right: auto;
+}
+.colosseum-intermission--mobile.colosseum-intermission--placed {
+  width: var(--sheet-width);
+  max-height: calc(100% - var(--sheet-top) - var(--intermission-bottom));
+}
+.colosseum-intermission--bar.colosseum-intermission--placed {
+  left: var(--sheet-left);
+  right: calc(100% - var(--sheet-left) - var(--sheet-width));
+  max-width: var(--sheet-width);
+}
+
+.colosseum-intermission--mobile .colosseum-intermission__head {
+  align-items: center;
+  padding: 0 0 0 8px;
+}
+
+.colosseum-intermission--mobile .colosseum-intermission__hide {
+  width: 44px;
+  height: 44px;
+}
+
+/* The tiles and the other picks: the one part of the sheet that gives up height, scrolling on its
+   own opaque fill (Veto 2) while the header, the detail line and Continue stay put. At least the
+   tile row stays in view. Its scroll never chains into the page behind. */
+.colosseum-intermission__scroll {
+  flex: 0 1 auto;
+  min-height: 70px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: var(--color-bg-solid);
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-primary-structure) var(--color-bg-solid);
+}
+
+/* The three tiles and, where the run accepts more, a narrow "+N more" tile closing the row: the
+   other picks cost the sheet no height until they are opened. */
+.colosseum-intermission__offer {
+  flex: none;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 4px;
+  padding: 6px 6px 0;
+}
+
+.colosseum-intermission__offer.has-others {
+  grid-template-columns: minmax(0, 1fr) 48px;
+}
+
+.colosseum-intermission__tiles {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+  min-width: 0;
+}
+
+.colosseum-tile.colosseum-tile--others {
+  gap: 0;
+  padding: 4px 0;
+  border-style: dashed;
+  border-color: var(--color-primary-structure);
+}
+
+.colosseum-tile--others[aria-expanded="true"],
+.colosseum-tile--others[aria-expanded="true"]:hover:not(:disabled) {
+  background: var(--color-surface-hover);
+  border-style: solid;
+  border-color: var(--color-primary-structure);
+}
+
+.colosseum-tile__count {
+  color: var(--color-accent-text);
+  font:
+    16px / 18px "RuneScape Bold 12",
+    sans-serif;
+}
+
+.colosseum-tile__more {
+  color: var(--color-text-muted);
+  font:
+    16px / 16px "RuneScape Plain 11",
+    sans-serif;
+}
+
+/* The other picks as icon chips, the owned chips' size; the detail line names the one tapped. */
+.colosseum-intermission--mobile .colosseum-intermission__others {
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 4px 6px 0;
+}
+
+.colosseum-tile.colosseum-other-chip {
+  flex-direction: row;
+  gap: 2px;
+  min-width: 44px;
+  min-height: 44px;
+  height: 44px;
+  padding: 0 6px;
+  color: var(--color-accent-text);
+  font:
+    16px / 16px "RuneScape Bold 12",
+    sans-serif;
+}
+
+.colosseum-intermission__detail-name {
+  color: var(--color-heading);
+  font-family: "RuneScape Bold 12", sans-serif;
+}
+
+.colosseum-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-width: 0;
+  min-height: 64px;
+  padding: 4px 2px;
+  text-align: center;
+}
+
+.colosseum-tile__icon {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  contain: paint;
+}
+
+.colosseum-intermission__detail {
+  flex: none;
+  min-height: 36px;
+  margin: 4px 8px;
+  color: var(--color-text-body);
+  font:
+    16px / 18px "RuneScape Plain 11",
+    sans-serif;
+}
+
+.colosseum-intermission__prompt {
+  color: var(--color-text-muted);
+}
+
+.colosseum-intermission--mobile .colosseum-intermission__foot {
+  padding: 6px;
+}
+
+.colosseum-intermission__chips {
+  flex: 1 1 auto;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.colosseum-intermission__none {
+  color: var(--color-text-muted);
+  font:
+    16px / 18px "RuneScape Plain 11",
+    sans-serif;
+}
+
+/* An owned modifier: its icon and tier; tapping it names it and its source in the detail line.
+   Dashed is the configured set, solid a pick made in this run. */
+.colosseum-chip {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 44px;
+  min-width: 44px;
+  padding: 0 6px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 2px;
+  color: var(--color-accent-text);
+  font:
+    16px / 16px "RuneScape Bold 12",
+    sans-serif;
+  cursor: pointer;
+}
+
+.colosseum-chip--set {
+  border-style: dashed;
+  border-color: var(--color-primary-structure);
+}
+
+.colosseum-chip.is-inspected {
+  background: var(--color-surface-hover);
+  border-color: var(--color-primary);
+}
+
+.colosseum-intermission--mobile .colosseum-intermission__continue {
+  flex: none;
+  min-height: 44px;
+  padding-inline: 16px;
+}
+
+/* ---- Touch: every target at 44px -------------------------------------------------------------- */
+
+@media (pointer: coarse) {
+  .colosseum-intermission__hide {
+    width: 44px;
+    height: 44px;
+  }
+
+  .colosseum-intermission__continue,
+  .colosseum-intermission--bar,
+  .colosseum-others-toggle,
+  .colosseum-other {
+    min-height: 44px;
+  }
+}
+
+:root[data-mobile-ui] :is(.colosseum-intermission__continue, .colosseum-intermission--bar) {
+  min-height: 44px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .colosseum-option,
+  .colosseum-other,
+  .colosseum-tile {
+    transition: none;
+  }
+}

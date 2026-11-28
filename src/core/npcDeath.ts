@@ -173,6 +173,30 @@ export function isNpcDeathReleaseDue(npc: NpcActor, tick: TickNumber): boolean {
   return npc.death?.status === 'started' && npc.death.causeStage !== 'scripted' && npc.deathAnimationTick === tick;
 }
 
+/**
+ * The kill turn a promoted death took away: a `queued` NPC whose death processing started on its own kill
+ * tick (the hit queue's promotion) gets no ordinary turn on it, unlike a pending one. An attack it had already
+ * committed to that falls due on that turn still launches (`Encounter.releaseNpcKillTurn`); nothing new
+ * starts, and a scripted death releases nothing. Separate from the death-animation release, which the
+ * last-step floor can put ticks later.
+ */
+export function isNpcKillTurnReleaseDue(npc: NpcActor, tick: TickNumber): boolean {
+  const death = npc.death;
+  return (
+    death?.status === 'started' &&
+    death.causeStage !== 'scripted' &&
+    death.killTick === tick &&
+    npcDeathPolicy(npc) === 'queued'
+  );
+}
+
+/** When a dying NPC may launch an attack it committed to before dying; each has its own gate. */
+export type NpcDeathReleaseTiming = 'kill-turn' | 'death-animation';
+
+export function isNpcDeathReleaseDueAt(npc: NpcActor, tick: TickNumber, timing: NpcDeathReleaseTiming): boolean {
+  return timing === 'kill-turn' ? isNpcKillTurnReleaseDue(npc, tick) : isNpcDeathReleaseDue(npc, tick);
+}
+
 export function isNpcDeathDue(npc: NpcActor, tick: TickNumber): boolean {
   return npc.death?.status === 'pending' && npc.death.processTick <= tick;
 }

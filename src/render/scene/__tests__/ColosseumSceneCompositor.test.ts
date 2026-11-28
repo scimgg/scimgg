@@ -1,20 +1,29 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AudioEngine, FrameSoundTracker } from '../../../audio';
 import { getArenaAllowUnboundedFallback, getArenaConfig, setArenaConfig } from '../../../core/constants';
+import { isSolHereditSnapshot } from '../../../core/encounters/snapshot';
 import type { EncounterVisualEvent } from '../../../core/events/encounterVisual';
 import type { GameEvent } from '../../../core/events/types';
 import { type ReplayDisplayFrame, ReplayRecorder, type ReplayRecorderData } from '../../../core/ReplayRecorder';
 import { SimulationEngine } from '../../../core/SimulationEngine';
+import { startRun } from '../../../encounters/colosseum/waves/__tests__/waveRunHarness';
 import { SOL_HEREDIT_RENDER_CONFIG } from '../../../encounters/solHeredit/renderConfig';
 import { SolHereditEncounter } from '../../../encounters/solHeredit/SolHereditEncounter';
 import {
+  BEES_NPC_ID,
   COLOSSEUM_SPOTANIMS,
+  HEALING_TOTEM_NPC_ID,
   HEALING_TOTEM_PROJECTILE,
   SOL_ACTOR_ID,
   SOL_NPC_ID,
+  SOLARFLARE_NPC_ID,
   WARBAND_BERSERKER_NPC_ID,
 } from '../../../npcs/colosseum/constants';
-import { COLOSSEUM_SPOT_ANIM_IDS, colosseumBeamGraphics } from '../../../npcs/colosseum/visualEvents';
+import {
+  COLOSSEUM_SPOT_ANIM_IDS,
+  type ColosseumHeldOrb,
+  colosseumBeamGraphics,
+} from '../../../npcs/colosseum/visualEvents';
 import { ReplayPresentationStateSchema } from '../../../replay/format/presentationFormat';
 import { SeqType } from '../../../rs/config/seqtype/SeqType';
 import { encounterScene } from '../../../test/helpers/encounterScene';
@@ -31,13 +40,13 @@ import {
   VIEWPORT,
 } from '../../../test/helpers/sceneObservation';
 import type { RestoredPresentation } from '../../../types/restoredPresentation';
-import type { Coordinate } from '../../../types/simulation';
+import type { Coordinate, NpcState, SimulationState } from '../../../types/simulation';
 import { perfFlags } from '../../../util/PerfFlags';
 import type { Projection2D } from '../../core/camera';
 import type { NpcMesh3DCommand } from '../../core/commands';
 import { createSpotAnimMeshParts } from '../../effects/spotAnimMeshParts';
 import { FLOOR_EFFECT_DEPTH_BIAS } from '../../effects/spotAnimRenderPolicy';
-import { seed } from '../../npc/__tests__/npcFacingTestHarness';
+import { registerType, seed } from '../../npc/__tests__/npcFacingTestHarness';
 import type { FrameClipRef, NpcAnimationSet } from '../../npc/animationTypes';
 import { NpcAnimationController } from '../../npc/NpcAnimationController';
 import { PRIMARY_NPC_ACTOR_ID } from '../../npc/NpcInstanceManager';
@@ -1475,5 +1484,136 @@ describe('legacy colosseum_visual recording: continuous playback versus direct s
       [tile],
       [],
     ]);
+  });
+});
+
+describe('Colosseum waves 1-11 presentation', () => {
+  /** A frame of a run started on wave 5: no Sol, plus the wave's modifier actors as `ColosseumWaveModifiers` names them. */
+  function waveFrame(state: SimulationState): SimulationState {
+    const run = startRun(5).engine.getState();
+    const template = state.npcs.find((npc) => npc.id === SOL_ACTOR_ID);
+    if (!template) throw new Error('Sol did not spawn');
+    const actor = (id: string, npcTypeId: number, position: Coordinate): NpcState => ({
+      ...template,
+      id,
+      npcTypeId,
+      role: 'npc',
+      size: 1,
+      position,
+      previousPosition: position,
+    });
+    return {
+      ...run,
+      npcs: [
+        ...run.npcs,
+        actor('colosseum_w5_solarflare_0', SOLARFLARE_NPC_ID, [38, 40]),
+        actor('colosseum_w5_bees_0', BEES_NPC_ID, [30, 30]),
+        actor('colosseum_w5_totem_0', HEALING_TOTEM_NPC_ID, [33, 36]),
+      ],
+    };
+  }
+
+  it("draws no Sol before he is added, draws the wave modifiers' actors, and rebuilds Sol at C", () => {
+    const { scene, manager, draw, state } = fixture();
+    for (const npcTypeId of [SOLARFLARE_NPC_ID, BEES_NPC_ID, HEALING_TOTEM_NPC_ID])
+      registerType(manager, npcTypeId, 1, 32);
+    const instances = () => [...manager['instanceRegistry'].keys()].sort();
+    expect(instances()).toContain(PRIMARY_NPC_ACTOR_ID);
+
+    const wave = waveFrame(state);
+    expect(wave.npcs.some((npc) => npc.id === SOL_ACTOR_ID)).toBe(false);
+    draw(3, { simulationState: { ...wave, currentTick: 3 } });
+    expect(instances()).toEqual(['colosseum_w5_bees_0', 'colosseum_w5_solarflare_0', 'colosseum_w5_totem_0']);
+    expect(manager.getAllHitTestData().map(({ actorId }) => actorId)).not.toContain(PRIMARY_NPC_ACTOR_ID);
+
+    draw(4, { simulationState: { ...state, currentTick: 4 } });
+    expect(instances()).toContain(PRIMARY_NPC_ACTOR_ID);
+    expect(scene['npcInstanceManager'].getModelMatrix(PRIMARY_NPC_ACTOR_ID)).not.toBeNull();
+  });
+
+  describe('held Manticore orbs', () => {
+    const MAGIC: ColosseumHeldOrb = {
+      actorId: SOL_ACTOR_ID,
+      spotAnimId: COLOSSEUM_SPOTANIMS.manticoreMagicOrb,
+      height: 300,
+    };
+    const RANGED: ColosseumHeldOrb = {
+      actorId: SOL_ACTOR_ID,
+      spotAnimId: COLOSSEUM_SPOTANIMS.manticoreRangedOrb,
+      height: 400,
+    };
+
+    function holding(state: SimulationState, tick: number, heldOrbs: readonly ColosseumHeldOrb[] | undefined) {
+      const snapshot = state.encounter;
+      if (!isSolHereditSnapshot(snapshot)) throw new Error('not a Sol snapshot');
+      const visuals = { ...snapshot.visuals, ...(heldOrbs ? { heldOrbs } : {}) };
+      if (!heldOrbs) delete (visuals as { heldOrbs?: unknown }).heldOrbs;
+      return { ...state, currentTick: tick, encounter: { ...snapshot, visuals } };
+    }
+
+    function mocked(scene: ColosseumSceneCompositor) {
+      const renderer = scene['spotAnimRenderer'];
+      vi.spyOn(renderer, 'isLoaded').mockReturnValue(true);
+      // Cache 2772: each orb's sequence (10327-10329) is 20 frames over 60 cycles.
+      vi.spyOn(renderer, 'getFrameLengths').mockReturnValue(Array(20).fill(3));
+      return { upsert: vi.spyOn(renderer, 'upsert'), despawn: vi.spyOn(renderer, 'despawn') };
+    }
+
+    const startOf = (upsert: ReturnType<typeof mocked>['upsert'], id: string) =>
+      upsert.mock.calls.filter(([request]) => request.instanceId === id).at(-1)?.[0].lifecycle;
+
+    it('redraws each listed orb from the start of every tick it is held, above its actor', () => {
+      const { scene, manager, draw, state } = fixture();
+      const { upsert, despawn } = mocked(scene);
+      const id = (orb: ColosseumHeldOrb) => `colosseum-held-${orb.actorId}-${orb.height}`;
+
+      draw(10.5, { simulationState: holding(state, 10, [MAGIC]) });
+      expect(startOf(upsert, id(MAGIC))).toMatchObject({ kind: 'oneShot', startTick: 10 });
+      const source = upsert.mock.lastCall?.[0].transform;
+      const matrix = manager.getModelMatrix(PRIMARY_NPC_ACTOR_ID);
+      expect(source?.kind === 'dynamic' ? source.resolve(10, 10.5, null)?.position : null).toEqual(
+        matrix && [matrix[12], matrix[13], matrix[14] + 300 / 128],
+      );
+
+      // The 60-cycle orb is re-sent before it ends, so it restarts rather than running on (A:2662).
+      draw(11.75, { simulationState: holding(state, 11, [MAGIC, RANGED]) });
+      expect(startOf(upsert, id(MAGIC))).toMatchObject({ startTick: 11 });
+      expect(startOf(upsert, id(RANGED))).toMatchObject({ startTick: 11 });
+
+      // Launched, or the snapshot omits the list: nothing held is left over.
+      despawn.mockClear();
+      draw(12.25, { simulationState: holding(state, 12, [RANGED]) });
+      expect(despawn).toHaveBeenCalledWith(id(MAGIC));
+      draw(13.25, { simulationState: holding(state, 13, undefined) });
+      expect(despawn).toHaveBeenCalledWith(id(RANGED));
+      expect(scene['heldOrbRequests'].size).toBe(0);
+    });
+
+    it('shows a replay seek the frame play shows', () => {
+      const frames = [10, 11, 12].map((tick) => ({
+        state: holding(fixture().state, tick, [MAGIC, RANGED]),
+        events: [],
+      }));
+      const played = fixture();
+      const playedUpsert = mocked(played.scene).upsert;
+      for (const [index, frame] of frames.entries()) {
+        played.draw(frame.state.currentTick + 0.5, {
+          simulationState: frame.state,
+          replayHistory: { frames, throughFrameIndex: index },
+        });
+      }
+      const sought = fixture();
+      const soughtUpsert = mocked(sought.scene).upsert;
+      sought.draw(12.5, {
+        simulationState: frames[2]!.state,
+        replayHistory: { frames, throughFrameIndex: 2 },
+        timeline: { timelineKey: 'replay', paused: true },
+      });
+      for (const orb of [MAGIC, RANGED]) {
+        const id = `colosseum-held-${orb.actorId}-${orb.height}`;
+        expect(startOf(soughtUpsert, id)).toEqual(startOf(playedUpsert, id));
+        expect(startOf(soughtUpsert, id)).toMatchObject({ startTick: 12 });
+      }
+    });
   });
 });

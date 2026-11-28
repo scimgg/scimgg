@@ -1,5 +1,7 @@
 import type { EncounterModifierSelection } from '../../core/encounters/encounterFactory';
+import type { ColosseumHeldOrb } from '../../npcs/colosseum/visualEvents';
 import type { Coordinate } from '../../types/simulation';
+import type { ColosseumRunPublicState, ColosseumRunSetupState } from '../colosseum/waves/snapshot';
 
 /**
  * Plain, readonly, `structuredClone`-safe fight state. No functions, class instances, Maps or
@@ -32,6 +34,22 @@ export interface SolHereditPublicState {
   /** Ticks a triple attack's remaining hits land on. */
   readonly tripleHitTicks: readonly number[];
   readonly crystalCount: number;
+  /** The Fortis Colosseum run around the fight; see `colosseumRunState`. */
+  readonly run?: ColosseumRunPublicState;
+  /** A wave run's practice setup; absent for a direct Sol start and in older recordings. */
+  readonly runSetup?: ColosseumRunSetupState;
 }
 
-export type SolHereditVisuals = Record<string, never>;
+export interface SolHereditVisuals {
+  /**
+   * C, the tick Sol and his shield-warrior fence appear; null while waves 1-11 run. Absent in older
+   * recordings, which are direct starts (C = 0).
+   */
+  readonly solControlTick?: number | null;
+  /**
+   * Manticore orbs held over their heads after this tick's turns (`manticoreHeldOrbs`), drawn from
+   * the tick's start: the server re-sends each every tick until its launch (A:2661-2670). Absent
+   * means none.
+   */
+  readonly heldOrbs?: readonly ColosseumHeldOrb[];
+}

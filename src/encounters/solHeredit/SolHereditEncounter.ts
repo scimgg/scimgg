@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type { NpcActor } from '../../core/actors/NpcActor';
 import type { ArenaConfig } from '../../core/arena/ArenaConfig';
+import { getArenaAllowUnboundedFallback, setArenaConfig } from '../../core/constants';
 import type { EncounterCommand } from '../../core/encounters/commands';
 import type { EncounterModifierSelection } from '../../core/encounters/encounterFactory';
 import type { EncounterOutcome } from '../../core/encounters/outcome';
@@ -14,97 +15,92 @@ import type {
   EncounterEngineRules,
   EncounterInput,
   EncounterNpcDefeat,
+  EncounterPracticeRestart,
+  EncounterRunStartContext,
   EncounterTickResult,
   EnvironmentalDamage,
+  NpcAttackRequest,
   NpcMovementRequest,
 } from '../../core/encounters/types';
-import { emitEncounterVisual, encounterVisual } from '../../core/events/encounterVisual';
-import { CHAT_HIGHLIGHT_COLORS } from '../../core/events/gameMessages';
-import type { EmittableGameEvent } from '../../core/events/TickEvents';
-import type { OverheadTextSegment } from '../../core/events/types';
 import { NpcDefinitionCollection } from '../../core/npcs';
 import { mulberry32 } from '../../core/rng';
-import { solAttackReady, solGroundTiles } from '../../npcs/colosseum/attackScheduler';
-import {
-  BEAM_CRYSTAL_ACTOR_PREFIX,
-  COLOSSEUM_SPOTANIMS,
-  SOL_ACTOR_ID,
-  SOL_CHAT_NAME,
-} from '../../npcs/colosseum/constants';
-import { createCrystal, crystalBeamDirection, crystalDefinition } from '../../npcs/colosseum/crystal';
-import {
-  acceptsSolParry,
-  GRAPPLE_TAUNT_COLOR,
-  type GrappleTarget,
-  grappleTauntSegments,
-  grappleWarningMessage,
-} from '../../npcs/colosseum/grapple';
-import {
-  cancelSolAttacks,
-  clearSolAbilities,
-  consumeSolParryReward,
-  createSol,
-  launchSolIfReady,
-  resetSolForPreset,
-  resolveSolParries,
-  type SolActor,
-  solDefinition,
-  solLaunchesThisTick,
-} from '../../npcs/colosseum/sol';
-import { isInsideArena, type SolAttackStyle } from '../../npcs/colosseum/solAttacks';
-import { colosseumBeamGraphics } from '../../npcs/colosseum/visualEvents';
+import { BEAM_CRYSTAL_ACTOR_PREFIX } from '../../npcs/colosseum/constants';
+import { crystalDefinition } from '../../npcs/colosseum/crystal';
+import { manticoreDefinition, manticoreHeldOrbs } from '../../npcs/colosseum/manticore';
+import { solDefinition } from '../../npcs/colosseum/sol';
+import { isInsideArena } from '../../npcs/colosseum/solAttacks';
 import { warbanderDefinition } from '../../npcs/colosseum/warband';
 import type { Coordinate, MechanicsConfig } from '../../types/simulation';
 import { beesDefinition } from '../colosseum/modifiers/bees';
 import { ColosseumModifierState } from '../colosseum/modifiers/rules';
 import { solarflareDefinition } from '../colosseum/modifiers/solarflare';
 import { healingTotemDefinition } from '../colosseum/modifiers/totemic';
-import { SolBeamRounds } from './beams';
+import { colosseumWaveArenaPlaceholder } from '../colosseum/waves/arena';
+import { ColosseumWaveRun } from '../colosseum/waves/ColosseumWaveRun';
+import { VOLATILITY_GIB_ACTOR_PREFIX, volatilityGibDefinition } from '../colosseum/waves/gibs';
+import { type ColosseumRunPublicState, DIRECT_SOL_RUN_STATE } from '../colosseum/waves/snapshot';
+import { colosseumWaveSpeciesRegistrations } from '../colosseum/waves/species';
+import { COLOSSEUM_MODIFIER_CONFIRMED_EVENT, FIRST_COLOSSEUM_WAVE, SOL_WAVE } from '../colosseum/waves/waveTable';
+import { composeSolStageArena } from './arenaBoundary';
+import type { SolBeamRounds } from './beams';
+import { SOL_ARENA, SOL_PLAYER_START, SOL_QUARTET_ACTOR_ID, SOL_SOLARFLARE_ACTOR_PREFIX } from './constants';
 import {
-  ENRAGE_SAND_BATCH_SIZE,
-  ENRAGE_SAND_FIRST_SINGLE_DELAY_TICKS,
-  ENRAGE_SAND_INTERVAL_TICKS,
-  SAND_BATCH_SIZE,
-  SOL_ARENA,
-  SOL_BEAM_PREPARED_EVENT,
-  SOL_DEATH_CLEANUP_DELAY_TICKS,
-  SOL_DEATH_SAND_REMOVAL_DELAY_TICKS,
-  SOL_ENTRY_MESSAGE_TICK,
-  SOL_FIRST_ATTACK_TICK,
-  SOL_OPENING_HOLD_UNTIL_TICK,
-  SOL_OPENING_TAUNT_TICK,
-  SOL_PLAYER_START,
-  SOL_QUARTET_ACTOR_ID,
-  SOL_SOLARFLARE_ACTOR_PREFIX,
-  SOL_START_POSITION,
-  SOL_VICTORY_COMPLETION_DELAY_TICKS,
-  TRANSITION_ATTACK_RESUME_TICKS,
-  TRANSITION_CRYSTAL_DELAY_TICKS,
-  TRANSITION_SAND_DELAY_TICKS,
-} from './constants';
-import { buildSolHereditControls, SOL_HEREDIT_ATTACK_STYLE_KEY } from './controls';
-import { SolModifierEffects } from './modifierEffects';
-import { MoltenSand, type SandStrike } from './moltenSand';
-import {
-  isEnraged,
-  phaseForHp,
-  SOL_OPENING_TAUNT,
-  SOL_PHASE_TRANSITIONS,
-  type SolPhase,
-  solVictoryTaunt,
-} from './phases';
+  buildSolHereditControls,
+  COLOSSEUM_SPAWN_LAYOUT_KEY,
+  COLOSSEUM_START_TILE_KEY,
+  COLOSSEUM_START_WAVE_KEY,
+  resolveColosseumPlayerStart,
+  resolveColosseumSpawnLayout,
+  resolveColosseumStartWave,
+} from './controls';
+import { isSolStageCommand, SOL_ENTRY_MESSAGE, type SolStagePublicState, SolWaveDirector } from './SolWaveDirector';
 
 const seedsSchema = z.object({ encounterSeed: z.number().int().min(0).max(0xffffffff) }).strict();
 type SpawnContext = Pick<EncounterContext, 'tick' | 'world' | 'spawnNpc' | 'despawnNpc'> & {
   tickEvents?: EncounterContext['tickEvents'];
 };
 
+/**
+ * Policy (maintainer's choice): a start on waves 1-11 faces east, from its start tile on the west side
+ * of the arena by default (`COLOSSEUM_WAVE_START_TILE`; docs/encounters/fortis-colosseum-policy.md).
+ */
+const WAVE_START_FACING = 1536;
+
+/** Sol's stage before he arrives: nothing of his fight is on the floor. */
+const NO_SOL_STAGE: SolStagePublicState = {
+  phase: 0,
+  solarflareTiles: [],
+  beeTiles: [],
+  dangerTiles: [],
+  beamTiles: [],
+  beamFiredTiles: [],
+  sandTiles: [],
+  sandDespawning: false,
+  grapple: null,
+  tripleHitTicks: [],
+  crystalCount: 0,
+};
+
+/**
+ * One Fortis Colosseum run: waves 1-11 (`ColosseumWaveRun`) flowing into Sol Heredit's wave 12
+ * (`SolWaveDirector`), or Sol alone for a direct start (`colosseumStartWave` 12, the default), which
+ * keeps the preset modifiers, spawn, seeded stream and timing it always had (C = 0).
+ */
 export class SolHereditEncounter implements Encounter {
   readonly kind = 'sol_heredit';
+  readonly runStartMechanicsKeys = [
+    COLOSSEUM_START_WAVE_KEY,
+    COLOSSEUM_SPAWN_LAYOUT_KEY,
+    COLOSSEUM_START_TILE_KEY,
+  ] as const;
+  /**
+   * The run's configured modifier set, one for every start wave: in force from tick 0 for a direct
+   * start, and from the start wave's T0 for a wave run, which adds its live picks to it.
+   */
+  readonly modifiers: EncounterModifierSelection;
   private encounterSeed: number;
+  /** Sol's seeded stream. Wave runs draw everything else from their own per-wave streams. */
   private random: () => number;
-  private outcome: EncounterOutcome = { phase: 'active' };
-  private boss: SolActor | null = null;
   private readonly definitions = new NpcDefinitionCollection([
     solDefinition.register({ arena: SOL_ARENA }),
     crystalDefinition.register(undefined),
@@ -112,39 +108,66 @@ export class SolHereditEncounter implements Encounter {
     beesDefinition.register(undefined),
     warbanderDefinition.register(undefined),
     healingTotemDefinition.register(undefined),
+    volatilityGibDefinition.register(undefined),
+    ...colosseumWaveSpeciesRegistrations(),
   ]);
-  private readonly sand = new MoltenSand();
-  private readonly beams = new SolBeamRounds();
-  private phase: SolPhase = 0;
-  /** Last tick's Sol Attacks toggle; switching it off cancels his attacks in flight. */
-  private attacksWereEnabled = true;
-  private nextEnrageSandTick: number | null = null;
-  /** World tick a raw HP set last started the drip; a preset applied on that tick reuses its roll. */
-  private rawEnrageArmTick: number | null = null;
-  private pendingTransitions: { readonly tick: number; readonly kind: 'sand' | 'crystal' }[] = [];
-  private deathCleanupTick: number | null = null;
-  /** From Sol's death the pools play their despawn until they are removed on this tick. */
-  private sandRemovalTick: number | null = null;
-  readonly modifiers: EncounterModifierSelection;
-  private readonly modifierState: ColosseumModifierState;
-  private readonly modifierEffects: SolModifierEffects;
+  private modifierState: ColosseumModifierState;
+  private startWave = SOL_WAVE;
+  private run: ColosseumWaveRun | null = null;
+  private director: SolWaveDirector | null = null;
+  /** Set once `createNpcs` has put the opening in the world; a start-wave change after it is an edit. */
+  private openingInstalled = false;
+  /** The arena the engine installed, before Sol's fence; wave 12 encloses it at C. */
+  private arenaBase: ArenaConfig | null = null;
 
   constructor(encounterSeed = Math.floor(Math.random() * 0x100000000), modifiers: EncounterModifierSelection = {}) {
     this.encounterSeed = seedsSchema.parse({ encounterSeed }).encounterSeed;
     this.random = mulberry32(this.encounterSeed);
     this.modifierState = new ColosseumModifierState(modifiers);
     this.modifiers = this.modifierState.selection;
-    this.modifierEffects = new SolModifierEffects(this.modifiers);
+    this.director = this.createDirector(0);
   }
 
-  configureRunStart(mechanics: Readonly<Partial<MechanicsConfig>>): void {
+  /** Sol's beam rounds, for tests that stage a round; only while his stage runs. */
+  get beams(): SolBeamRounds {
+    if (!this.director) throw new Error('Sol Heredit has not arrived');
+    return this.director.beams;
+  }
+  /** When Sol's enrage drip next strikes, for tests; null before he arrives. */
+  get nextEnrageSandTick(): number | null {
+    return this.director?.nextEnrageSandTick ?? null;
+  }
+
+  /**
+   * A changed start wave (tick 0 only) swaps the opening: Sol for a wave run's first choice, or back.
+   * An edit of an installed opening that crosses between the waves and Sol opens on the new start's
+   * tile, as a fresh start would. The setup applied before `createNpcs` is not an edit: the run keeps
+   * the tile it was given (a replay bootstrap's included). A changed start tile alone moves no one, as
+   * in the Inferno: it applies from the next fresh start. The spawn layout is the run's from here.
+   */
+  configureRunStart(mechanics: Readonly<Partial<MechanicsConfig>>, ctx?: EncounterRunStartContext): void {
+    const startWave = resolveColosseumStartWave(mechanics);
+    if (startWave !== this.startWave) {
+      const crossesToOrFromSol = (startWave === SOL_WAVE) !== (this.startWave === SOL_WAVE);
+      if (this.director?.sol) ctx?.despawnNpc(this.director.sol.id);
+      this.startWave = startWave;
+      this.openRun();
+      if (this.director) ctx?.spawnNpc(this.director.createSol());
+      ctx?.world.occupancy.reconcile(ctx.world.actors.values());
+      if (this.openingInstalled && crossesToOrFromSol) ctx?.placePlayer(this.getDefaultPlayerStart(mechanics));
+    }
+    this.run?.configureSetup(resolveColosseumSpawnLayout(mechanics), resolveColosseumPlayerStart(mechanics));
+    this.director?.configureRunStart(mechanics);
     this.modifierState.configureRunStart(mechanics);
-    // A run that starts with his attacks off has nothing to cancel on its first tick.
-    this.attacksWereEnabled = mechanics.solHereditAttacks !== false;
   }
 
-  getDefaultPlayerStart(): Coordinate {
-    return [...SOL_PLAYER_START];
+  /** Sol's start for a direct start; a wave start's chosen tile (`colosseumStartTile`) or its default. */
+  getDefaultPlayerStart(mechanics: Readonly<Partial<MechanicsConfig>>): Coordinate {
+    return resolveColosseumPlayerStart(mechanics);
+  }
+  /** A wave start faces east; a direct Sol start keeps the engine's north. */
+  getDefaultPlayerFacing(mechanics: Readonly<Partial<MechanicsConfig>>): number | undefined {
+    return resolveColosseumStartWave(mechanics) === SOL_WAVE ? undefined : WAVE_START_FACING;
   }
   getIntroConfig(): null {
     return null;
@@ -152,42 +175,64 @@ export class SolHereditEncounter implements Encounter {
   getNpcDefinitions(): NpcDefinitionCollection {
     return this.definitions;
   }
+  /** A start-wave edit that already added Sol (`configureRunStart`) leaves nothing to add. */
   createNpcs(): NpcActor[] {
-    this.boss = createSol({
-      id: SOL_ACTOR_ID,
-      position: SOL_START_POSITION,
-      targetId: 'player',
-      addedTick: 0,
-      firstAttackTick: SOL_FIRST_ATTACK_TICK,
-      holdUntilTick: SOL_OPENING_HOLD_UNTIL_TICK,
-      relentless: this.modifiers.relentless ?? 0,
-    });
-    return [this.boss];
+    this.openingInstalled = true;
+    return this.director && !this.director.sol ? [this.director.createSol()] : [];
   }
   getSeeds(): Record<string, unknown> {
     return { encounterSeed: this.encounterSeed };
   }
   reset(seeds?: Record<string, unknown>): void {
-    this.modifierState.reset();
-    this.modifierEffects.reset();
     this.encounterSeed = seedsSchema.parse(
       seeds ?? { encounterSeed: Math.floor(Math.random() * 0x100000000) },
     ).encounterSeed;
     this.random = mulberry32(this.encounterSeed);
-    this.outcome = { phase: 'active' };
-    this.boss = null;
-    this.sand.clear();
-    this.beams.reset();
-    this.phase = 0;
-    this.attacksWereEnabled = true;
-    this.nextEnrageSandTick = null;
-    this.rawEnrageArmTick = null;
-    this.pendingTransitions = [];
-    this.deathCleanupTick = null;
-    this.sandRemovalTick = null;
+    this.openingInstalled = false;
+    this.openRun();
   }
 
+  /** The run the current start wave opens: Sol at C = 0 with the set, or a wave run's first choice. */
+  private openRun(): void {
+    if (this.startWave === SOL_WAVE) {
+      this.modifierState = new ColosseumModifierState(this.modifiers);
+      this.run = null;
+      this.director = this.createDirector(0);
+      return;
+    }
+    this.modifierState = new ColosseumModifierState();
+    this.director = null;
+    this.run = new ColosseumWaveRun({
+      encounterSeed: this.encounterSeed,
+      startWave: this.startWave,
+      configured: this.modifiers,
+      modifierState: this.modifierState,
+      definitions: this.definitions,
+      onSolControl: (ctx, controlTick) => this.startSol(ctx, controlTick),
+    });
+  }
+
+  private createDirector(controlTick: number): SolWaveDirector {
+    return new SolWaveDirector({
+      controlTick,
+      encounterSeed: this.encounterSeed,
+      // Read through the field, so the stream is the encounter's own whatever replaces it.
+      random: () => this.random(),
+      modifiers: this.modifierState.selection,
+      definitions: this.definitions,
+    });
+  }
+
+  /** Wave 12's control tick: Sol is added with the modifiers now owned, and the fence closes. */
+  private startSol(ctx: EncounterContext, controlTick: number): void {
+    this.director = this.createDirector(controlTick);
+    ctx.spawnNpc(this.director.createSol());
+    setArenaConfig(this.refineArenaConfig(this.arenaBase ?? this.getArenaConfig()), getArenaAllowUnboundedFallback());
+  }
+
+  /** Before the cache bake: Sol's floor once his fence stands, else the waves arena's. */
   getArenaConfig(): ArenaConfig {
+    if (this.director === null) return colosseumWaveArenaPlaceholder();
     const walkableTiles = new Set<string>();
     for (let x = SOL_ARENA.minX; x <= SOL_ARENA.maxX; x++) {
       for (let y = SOL_ARENA.minY; y <= SOL_ARENA.maxY; y++) {
@@ -196,452 +241,140 @@ export class SolHereditEncounter implements Encounter {
     }
     return { bounds: { ...SOL_ARENA, width: 14, height: 14 }, walkableTiles, collisionMap: null };
   }
+  /** The descriptor bakes the open waves arena; Sol's fence encloses it from C (A:4976, K:3998). */
+  refineArenaConfig(base: ArenaConfig): ArenaConfig {
+    this.arenaBase = base;
+    return this.director ? composeSolStageArena(base) : base;
+  }
   getNpcDamageSourceLabel(sourceId?: string): string {
-    return sourceId === SOL_QUARTET_ACTOR_ID ? 'FremennikWarbandAttack' : 'SolHereditAttack';
+    if (sourceId === SOL_QUARTET_ACTOR_ID) return 'FremennikWarbandAttack';
+    return this.run?.damageLabel(sourceId) ?? 'SolHereditAttack';
   }
   getDefaultMechanicsConfig(): Partial<MechanicsConfig> {
     return buildSolHereditControls().defaultMechanicsConfig;
   }
   getOutcome(): EncounterOutcome {
-    return this.outcome;
+    return this.director?.getOutcome() ?? { phase: 'active' };
   }
   getEngineRules(): EncounterEngineRules {
     return {
       ...this.modifierState.getEngineRules(),
       validateAttack: (_kind, targetId) =>
-        targetId.startsWith(BEAM_CRYSTAL_ACTOR_PREFIX) || targetId.startsWith(SOL_SOLARFLARE_ACTOR_PREFIX)
+        targetId.startsWith(BEAM_CRYSTAL_ACTOR_PREFIX) ||
+        targetId.startsWith(SOL_SOLARFLARE_ACTOR_PREFIX) ||
+        targetId.startsWith(VOLATILITY_GIB_ACTOR_PREFIX)
           ? false
           : null,
-      consumePlayerGuaranteedMaxHit: (ctx) => this.boss !== null && consumeSolParryReward(this.boss, ctx.tick),
+      consumePlayerGuaranteedMaxHit: (ctx) => this.director?.consumePlayerGuaranteedMaxHit(ctx.tick) ?? false,
     };
   }
   acceptsInput(input: EncounterInput): boolean {
-    return input.kind === 'equipmentSlotClick' && this.boss !== null && acceptsSolParry(this.boss.state.grapple);
+    return this.director?.acceptsInput(input) ?? false;
   }
 
-  /*
-   * NPC band. Sol is created first, so he takes the first turn: his own hits land before his turn
-   * decides the beam hold, which therefore still precedes every crystal's step. Everything else he
-   * owns (phases, transitions, beams, parries, his attacks, totems, Bees' stings, Solarflare,
-   * Volatility and the death cleanup) stays in `completeNpcBand`, after every NPC's damage has
-   * landed, in the order it always ran. The Quartet warbander alone acts in its own turn.
-   */
   prepareNpcBand(ctx: EncounterContext, mechanics: Partial<MechanicsConfig>): void {
-    // A round switched off is canceled before anything moves, Sol or no Sol.
-    if (mechanics.solHereditBeams === false) this.beams.cancelRound(this.crystals(ctx.world));
+    this.director?.prepareNpcBand(ctx, mechanics);
+    this.run?.prepareNpcBand(ctx, SOL_ENTRY_MESSAGE, SOL_PLAYER_START);
+  }
+  removeNpcIfDue(actor: NpcActor, ctx: EncounterContext): void {
+    this.run?.removeNpcIfDue(actor, ctx);
   }
   moveNpc(actor: NpcActor, ctx: EncounterContext, mechanics: Partial<MechanicsConfig>): NpcMovementRequest[] {
-    const context = { ...ctx, random: this.random };
-    const boss = this.boss && ctx.world.actors.get(this.boss.id) === this.boss ? this.boss : null;
-    if (actor === boss) {
-      const phasePending = phaseForHp(boss.vitals.hp, boss.vitals.maxHp) > this.phase;
-      // A pending transition's taunt takes Sol's attack slot, so no warning goes out on that tick
-      // (M 8501: enrage taunt where the warning was due, crystals keep patrolling). Asked from the tile
-      // Sol starts his turn on, before his own step.
-      const crystals = this.crystals(ctx.world);
-      if (
-        mechanics.solHereditBeams !== false &&
-        !phasePending &&
-        this.beams.isReady(crystals, ctx.tick) &&
-        this.solAttacks(boss, ctx, mechanics)
-      )
-        this.beams.holdForWarning(crystals);
-      // Capture analysis section 9: hold a pending phase without moving its processing stage.
-      return phasePending ? [] : this.definitions.move(boss, context);
-    }
-    if (crystalDefinition.isActor(actor)) return this.definitions.move(actor, context);
-    if (solarflareDefinition.isActor(actor)) {
-      return this.modifierEffects.shouldMoveOrbs(ctx.tick) ? this.definitions.move(actor, context) : [];
-    }
-    if (beesDefinition.isActor(actor) || warbanderDefinition.isActor(actor)) {
-      return boss?.alive ? this.definitions.move(actor, context) : [];
-    }
-    return [];
+    return this.director?.moveNpc(actor, ctx, mechanics) ?? this.run?.moveNpc(actor, ctx) ?? [];
   }
-  /** Like Bees' stings, the Quartet warbander only attacks while Sol is alive. */
   processNpcTick(actor: NpcActor, ctx: EncounterContext): EncounterTickResult {
-    if (!warbanderDefinition.isActor(actor) || this.boss?.alive !== true) return { environmentalDamages: [] };
-    return this.definitions.tick(actor, { ...ctx, random: this.random });
+    if (this.director) return this.director.processNpcTick(actor, ctx);
+    return this.run?.processNpcTick(actor, ctx) ?? { environmentalDamages: [] };
+  }
+  releaseNpcKillTurn(actor: NpcActor, ctx: EncounterContext): readonly NpcAttackRequest[] {
+    return this.run?.releaseNpcKillTurn(actor, ctx) ?? [];
   }
   resolveHazards(ctx: EncounterContext, mechanics: Partial<MechanicsConfig>): EnvironmentalDamage[] {
     // Refresh practice aids before any tick damage, including when toggled during a run.
     this.modifierState.configureRunStart(mechanics);
-    this.modifierEffects.advanceRespawns(ctx);
-    // Sand checks the tile the player starts the tick on, so it resolves before movement. Switched
-    // off, the pools keep forming out of sight and burn again once it is back on.
-    this.sand.advance(ctx.tick);
-    if (mechanics.solHereditSand === false || !this.boss?.alive || ctx.world.actors.get(this.boss.id) !== this.boss)
-      return [];
-    return this.sand.resolve(ctx);
+    if (this.director) return this.director.resolveHazards(ctx, mechanics);
+    return this.run?.resolveHazards(ctx) ?? [];
   }
   completeNpcBand(ctx: EncounterContext, mechanics: Partial<MechanicsConfig>): EnvironmentalDamage[] {
-    const attacksEnabled = mechanics.solHereditAttacks !== false;
-    // Switching his attacks off stops their damage at once; one queued while they were off is kept.
-    if (this.attacksWereEnabled && !attacksEnabled && this.boss) cancelSolAttacks(this.boss);
-    this.attacksWereEnabled = attacksEnabled;
-    // D+9 modifier damage must resolve before post-tick decides whether the player won.
-    const bossAlive = this.boss?.alive === true;
-    const environmentalDamages = this.modifierEffects.processTick(ctx, bossAlive, this.random);
-    // A heal lands before this tick's phase check, so HP healed back above a threshold Sol is still
-    // waiting to announce defers that transition; one already announced never repeats.
-    this.modifierEffects.advanceTotemic(ctx, bossAlive ? this.boss : null);
-    const context = { ...ctx, random: this.random };
-    if (this.deathCleanupTick !== null && ctx.tick >= this.deathCleanupTick) {
-      this.deathCleanupTick = null;
-      for (const crystal of ctx.world.getNpcs().filter(crystalDefinition.isActor)) ctx.despawnNpc(crystal.id);
-      this.modifierEffects.cleanupNpcs(ctx);
-      this.say(ctx, solVictoryTaunt(this.encounterSeed));
-    }
-    if (this.sandRemovalTick !== null && ctx.tick >= this.sandRemovalTick) {
-      this.sandRemovalTick = null;
-      this.sand.clear();
-    }
-    const boss = this.boss;
-    if (!boss?.alive || ctx.world.actors.get(boss.id) !== boss) return environmentalDamages;
-    if (ctx.tick === SOL_ENTRY_MESSAGE_TICK)
-      ctx.tickEvents.emit({ type: 'game_message', kind: 'game', segments: SOL_ENTRY_MESSAGE });
-    if (ctx.tick === SOL_OPENING_TAUNT_TICK) this.say(ctx, SOL_OPENING_TAUNT);
-    this.advancePhase(ctx, boss);
-    this.runTransitionSchedule(ctx, mechanics);
-    this.runEnrageSand(ctx, mechanics);
-    environmentalDamages.push(...this.runBeams(ctx, mechanics));
-    environmentalDamages.push(...resolveSolParries(boss, ctx, this.random));
-    environmentalDamages.push(...this.definitions.resolveLocalEffects(boss, context));
-    const launch = launchSolIfReady(boss, ctx, {
-      phase: this.phase,
-      random: this.random,
-      enabled: attacksEnabled,
-      stylePin: solHereditStylePin(mechanics),
-    });
-    const grappleTarget = boss.state.grapple.pending?.target;
-    if (launch.taunt !== null && grappleTarget) {
-      ctx.tickEvents.emit(this.grappleTauntEvent(grappleTarget));
-      ctx.tickEvents.emit({ type: 'game_message', kind: 'game', segments: grappleWarningMessage(grappleTarget) });
-    } else if (launch.taunt !== null) this.say(ctx, launch.taunt);
-    // With his attacks switched off there is no telegraph to key to, so a ready round warns at once.
-    if (mechanics.solHereditBeams !== false && (launch.launched || !attacksEnabled)) {
-      const fireInTicks = this.beams.prepare(this.crystals(ctx.world), ctx.tick, isEnraged(this.phase));
-      if (fireInTicks !== null) ctx.tickEvents.emit({ type: SOL_BEAM_PREPARED_EVENT, fireInTicks });
-    }
-    return environmentalDamages;
+    const damages = this.run?.completeNpcBand(ctx) ?? [];
+    if (this.director) damages.push(...this.director.completeNpcBand(ctx, mechanics));
+    return damages;
   }
   processPostTick(ctx: EncounterContext): EnvironmentalDamage[] {
-    // NPC-phase explosion damage, Doom and player timers have all resolved by this point.
-    // A lethal D+9 blast therefore loses the reward (Wiki Strategies oldid=15354864).
-    if (this.outcome.phase === 'resolving' && ctx.tick >= this.outcome.completionTick && ctx.world.getPlayer()?.alive) {
-      this.outcome = { ...this.outcome, phase: 'victory' };
-    }
+    this.run?.processPostTick(ctx);
+    this.director?.processPostTick(ctx);
     return [];
   }
-
   onNpcDefeated(defeat: EncounterNpcDefeat, ctx: EncounterContext, ownership: EncounterCompletionOwnership): void {
-    this.modifierEffects.onNpcDefeated(defeat, ctx.world);
-    if (defeat.npcId !== SOL_ACTOR_ID) return;
-    if (this.boss) this.modifierEffects.onSolDefeated(defeat.tick, this.boss.position, this.boss.size);
-    if (this.boss) clearSolAbilities(this.boss);
-    // Stop attacks immediately; the retained pools/crystals are harmless behind the alive guards.
-    this.beams.reset();
-    // The crystals play their despawn on the death tick and are removed at the cleanup tick.
-    emitEncounterVisual(ctx.tickEvents, {
-      projectiles: [],
-      animations: this.crystals(ctx.world).map((crystal) => ({
-        actorId: crystal.id,
-        clipId: 'despawn',
-        delayCycles: 0,
-      })),
-      graphics: [],
-    });
-    this.deathCleanupTick = defeat.tick + SOL_DEATH_CLEANUP_DELAY_TICKS;
-    this.sand.stopForming(defeat.tick);
-    this.sandRemovalTick = defeat.tick + SOL_DEATH_SAND_REMOVAL_DELAY_TICKS;
-    this.nextEnrageSandTick = null;
-    this.pendingTransitions = [];
-    if (ownership !== 'encounter-owned') return;
-    this.outcome = {
-      phase: 'resolving',
-      decisiveTick: defeat.tick,
-      completionTick: defeat.tick + SOL_VICTORY_COMPLETION_DELAY_TICKS,
-      primaryActorId: SOL_ACTOR_ID,
-      completionActorIds: [SOL_ACTOR_ID],
-    };
+    this.director?.onNpcDefeated(defeat, ctx, ownership);
   }
 
   getSnapshot(ctx: EncounterSnapshotContext): SolHereditSnapshot {
-    const state = this.boss ? solDefinition.getState(this.boss) : null;
-    const grapple = state?.grapple.pending;
-    const player = ctx.world.getPlayer();
+    const tiles = (npcs: readonly NpcActor[]) => npcs.map((npc) => [...npc.position] as Coordinate);
+    const sol = this.director?.getSnapshotState(ctx) ?? {
+      ...NO_SOL_STAGE,
+      solarflareTiles: tiles(ctx.world.getNpcs().filter(solarflareDefinition.isActor)),
+      beeTiles: tiles(ctx.world.getNpcs().filter(beesDefinition.isActor)),
+    };
+    const heldOrbs = ctx.world
+      .getNpcs()
+      .filter(manticoreDefinition.isActor)
+      .flatMap((manticore) => manticoreHeldOrbs(manticore, ctx.tick));
     return {
       kind: 'sol_heredit',
       state: {
-        phase: this.phase,
-        modifiers: this.modifiers,
+        ...sol,
+        modifiers: this.modifierState.selection,
         doomStacks: this.modifierState.doomStacks,
-        solarflareTiles: this.modifierEffects.orbs(ctx.world).map((orb) => [...orb.position] as Coordinate),
-        beeTiles: this.modifierEffects.bees(ctx.world).map((bee) => [...bee.position] as Coordinate),
-        // Previews where the pending attack would land from the player's current tile; spears only
-        // pick their direction on the landing tick.
-        dangerTiles:
-          state?.scheduler.pendingGround && this.boss && player
-            ? solGroundTiles(state.scheduler.pendingGround, {
-                position: this.boss.position,
-                target: player.position,
-                arena: SOL_ARENA,
-              }).tiles.map(([x, y]): Coordinate => [x, y])
-            : [],
-        beamTiles: this.beams.getChargingLines().map(([x, y]): Coordinate => [x, y]),
-        beamFiredTiles: this.beams.getFiredLines(ctx.tick).map(([x, y]): Coordinate => [x, y]),
-        sandTiles: ctx.mechanics.solHereditSand === false ? [] : this.sand.getActivePools(),
-        sandDespawning: this.sandRemovalTick !== null,
-        grapple: grapple
-          ? { slot: grapple.target.slot, taunt: grapple.target.taunt, resolveTick: grapple.startTick + 4 }
-          : null,
-        tripleHitTicks: state?.scheduler.pendingTriple.map((hit) => hit.tick) ?? [],
-        crystalCount: this.crystals(ctx.world).length,
+        run: this.runState(),
+        // Omitted for a direct Sol start, so its snapshots stay as they were.
+        ...(this.run ? { runSetup: this.run.getSetupState() } : {}),
       },
-      visuals: {},
+      visuals: {
+        solControlTick: this.director?.controlTick ?? null,
+        // Omitted while no orb is held, so a direct Sol start's snapshots stay as they were.
+        ...(heldOrbs.length > 0 ? { heldOrbs } : {}),
+      },
     };
   }
+  private runState(): ColosseumRunPublicState {
+    return this.run?.getPublicState() ?? DIRECT_SOL_RUN_STATE;
+  }
+
   executeCommand(
     command: EncounterCommand,
     ctx: EncounterCommandContext,
     mechanics: Readonly<Partial<MechanicsConfig>>,
   ): EncounterCommandResult | undefined {
     if (command.encounter !== 'sol_heredit') return undefined;
-    if (!this.boss?.alive || ctx.world.actors.get(this.boss.id) !== this.boss) return {};
-    switch (command.type) {
-      case 'spawn-crystal':
-        this.addCrystal(ctx);
-        break;
-      // Queued for his next ready, in-reach slot so the special keeps his real cadence, telegraph and
-      // bookkeeping and never overlaps an attack in flight. The latest request replaces a queued one.
-      case 'trigger-grapple':
-        this.boss.state.scheduler.forcedSpecial = 'grapple';
-        break;
-      case 'trigger-triple':
-        this.boss.state.scheduler.forcedSpecial = 'triple';
-        break;
-      case 'strike-sand': {
-        const strike = this.sand.strike(ctx.playerPos, SAND_BATCH_SIZE, ctx.tick, this.random);
-        return { gameEvents: mechanics.solHereditSand === false ? [] : [sandVisualEvent(strike)] };
-      }
-      case 'clear-sand':
-        this.sand.clear();
-        break;
-      default:
-        return assertNever(command);
+    if (command.type === 'confirm-modifier') {
+      const accepted = this.run?.confirm(command, ctx.tick) ?? false;
+      // The game's confirm sound (synth 8010) plays on Tk for every accepted choice, never a rejected one.
+      return accepted ? { gameEvents: [{ type: COLOSSEUM_MODIFIER_CONFIRMED_EVENT, wave: command.wave }] } : {};
     }
-    return {};
+    if (!isSolStageCommand(command) || !this.director) return {};
+    return this.director.executeCommand(command, ctx, mechanics);
+  }
+  /**
+   * The layout tool's Start (`go-to-wave`): a fresh run of the saved setup from the wave it names, on
+   * the setup's own start tile. As the Inferno's Go, the wave being fought again keeps the run's seed,
+   * so an edited layout is tried against the same wave (its warband, reinforcements, offer and the rest
+   * of a partial layout); another wave is a new attempt with new seeds. A plain restart (Restart fight,
+   * Ctrl+R) always draws new seeds, so a saved layout repeats and random spawns stay random.
+   */
+  planPracticeRestart(command: EncounterCommand): EncounterPracticeRestart | undefined {
+    if (command.encounter !== 'sol_heredit' || command.type !== 'go-to-wave') return undefined;
+    const wave = Math.min(SOL_WAVE, Math.max(FIRST_COLOSSEUM_WAVE, Math.round(command.wave)));
+    const current = this.run?.getPublicState().wave ?? SOL_WAVE;
+    return {
+      ...(wave === current ? { encounterSeeds: { encounterSeed: this.encounterSeed } } : {}),
+      runMechanics: { [COLOSSEUM_START_WAVE_KEY]: String(wave) },
+    };
   }
   syncBossHp(hp: number, ctx: Pick<EncounterContext, 'world'>): void {
-    if (!this.boss) return;
-    this.phase = phaseForHp(hp, this.boss.vitals.maxHp);
-    // Entering enrage starts the drip as a preset does; a drip already running keeps its rhythm.
-    if (!isEnraged(this.phase) || hp <= 0) this.nextEnrageSandTick = null;
-    else if (this.nextEnrageSandTick === null) {
-      this.nextEnrageSandTick = ctx.world.tick + this.rollFirstEnrageSandDelay();
-      this.rawEnrageArmTick = ctx.world.tick;
-      this.beams.enrage(ctx.world.tick);
-    }
+    this.director?.syncBossHp(hp, ctx);
   }
   enterBossHpPhase(hp: number, ctx: SpawnContext): void {
-    if (!this.boss?.alive || hp <= 0) return;
-    this.phase = phaseForHp(hp, this.boss.vitals.maxHp);
-    resetSolForPreset(this.boss, ctx.tick + TRANSITION_ATTACK_RESUME_TICKS);
-    this.pendingTransitions = [];
-    this.sand.clear();
-    for (const crystal of ctx.world.getNpcs().filter(crystalDefinition.isActor)) ctx.despawnNpc(crystal.id);
-    this.modifierEffects.resetTotemic(ctx);
-    this.beams.reset();
-    const count = SOL_PHASE_TRANSITIONS.slice(0, this.phase).filter((transition) => transition.addsCrystal).length;
-    for (let index = 0; index < count; index++) this.addCrystal(ctx);
-    // The engine syncs the HP first. A drip that sync started on this tick is already a fresh preset
-    // roll; any other running drip is restarted so the same preset always lands on the same state.
-    if (!isEnraged(this.phase)) this.nextEnrageSandTick = null;
-    else if (this.nextEnrageSandTick === null || this.rawEnrageArmTick !== ctx.tick)
-      this.nextEnrageSandTick = ctx.tick + this.rollFirstEnrageSandDelay();
+    this.director?.enterBossHpPhase(hp, ctx);
   }
-
-  /** Every taunt is also NPC public chat (`npc_say` "Sol Heredit|<text>" at L's phase and death taunts). */
-  private say(ctx: Pick<EncounterContext, 'tickEvents'>, text: string): void {
-    ctx.tickEvents.emit(this.tauntEvent(text));
-    ctx.tickEvents.emit({ type: 'game_message', kind: 'public', speaker: SOL_CHAT_NAME, segments: [{ text }] });
-  }
-  private tauntEvent(text: string): EmittableGameEvent {
-    return {
-      type: 'overhead_text',
-      anchor: { kind: 'actor', actorId: SOL_ACTOR_ID },
-      overheadText: text,
-      overheadCycle: 5,
-    };
-  }
-  private grappleTauntEvent(target: GrappleTarget): EmittableGameEvent {
-    return {
-      ...this.tauntEvent(target.taunt),
-      overheadTextColor: GRAPPLE_TAUNT_COLOR,
-      overheadTextSegments: grappleTauntSegments(target),
-    };
-  }
-  /**
-   * A crossed HP threshold waits for Sol's next attack slot: the attack in flight still lands, then
-   * the taunt takes the slot an attack would have used and the next attack follows seven ticks
-   * later. All 15 captured transitions fall exactly on the previous telegraph plus its cooldown
-   * (e.g. K shield 4100 -> taunt 4105; M long triple 8489 -> 8501 after its 8499 hit; analysis
-   * section 11). The player was in reach at every one, so whether reach gates it is unrecorded;
-   * here it does not. PROVISIONAL: two thresholds crossed at once take consecutive slots.
-   */
-  private advancePhase(ctx: EncounterContext, boss: SolActor): void {
-    if (
-      phaseForHp(boss.vitals.hp, boss.vitals.maxHp) <= this.phase ||
-      boss.state.grapple.pending !== null ||
-      !solAttackReady(boss.state.scheduler, ctx.tick)
-    )
-      return;
-    const transition = SOL_PHASE_TRANSITIONS[this.phase];
-    const phases = [0, 1, 2, 3, 4, 5] as const;
-    this.phase = phases[this.phase + 1];
-    this.say(ctx, transition.taunt);
-    // PROVISIONAL overlap policy: preserve longer locks (capture analysis section 9).
-    boss.state.immobileUntilTick = Math.max(boss.state.immobileUntilTick, ctx.tick + 5);
-    boss.state.scheduler.nextAttackTick = ctx.tick + TRANSITION_ATTACK_RESUME_TICKS;
-    boss.state.scheduler.forceSpearNext = true;
-    this.pendingTransitions.push({ tick: ctx.tick + TRANSITION_SAND_DELAY_TICKS, kind: 'sand' });
-    if (transition.addsCrystal)
-      this.pendingTransitions.push({ tick: ctx.tick + TRANSITION_CRYSTAL_DELAY_TICKS, kind: 'crystal' });
-    if (isEnraged(this.phase)) {
-      this.nextEnrageSandTick = ctx.tick + TRANSITION_SAND_DELAY_TICKS + this.rollFirstEnrageSandDelay();
-      this.beams.enrage(ctx.tick);
-    }
-  }
-  private runTransitionSchedule(ctx: EncounterContext, mechanics: Partial<MechanicsConfig>): void {
-    const due = this.pendingTransitions.filter((entry) => entry.tick === ctx.tick);
-    this.pendingTransitions = this.pendingTransitions.filter((entry) => entry.tick > ctx.tick);
-    for (const entry of due) {
-      switch (entry.kind) {
-        case 'sand':
-          this.strikeSand(
-            ctx,
-            mechanics,
-            this.sand.strike(
-              ctx.playerPos,
-              isEnraged(this.phase) ? ENRAGE_SAND_BATCH_SIZE : SAND_BATCH_SIZE,
-              ctx.tick,
-              this.random,
-            ),
-          );
-          break;
-        case 'crystal':
-          if (mechanics.solHereditBeams !== false) this.addCrystal(ctx);
-          break;
-        default:
-          assertNever(entry.kind);
-      }
-    }
-  }
-  private rollFirstEnrageSandDelay(): number {
-    const [min, max] = ENRAGE_SAND_FIRST_SINGLE_DELAY_TICKS;
-    return min + Math.floor(this.random() * (max - min + 1));
-  }
-  private runEnrageSand(ctx: EncounterContext, mechanics: Partial<MechanicsConfig>): void {
-    if (this.nextEnrageSandTick === null || ctx.tick < this.nextEnrageSandTick) return;
-    this.nextEnrageSandTick = ctx.tick + ENRAGE_SAND_INTERVAL_TICKS;
-    this.strikeSand(ctx, mechanics, this.sand.strike(ctx.playerPos, 1, ctx.tick, this.random, false));
-  }
-  /**
-   * Strikes roll and form whatever the Molten Sand toggle says, so switching it never shifts the
-   * seeded stream; switched off, only the bolt is hidden (the snapshot hides the pools).
-   */
-  private strikeSand(ctx: EncounterContext, mechanics: Partial<MechanicsConfig>, strike: SandStrike): void {
-    if (mechanics.solHereditSand !== false) ctx.tickEvents.emit(sandVisualEvent(strike));
-  }
-  private crystals(world: EncounterContext['world']) {
-    return world
-      .getNpcs()
-      .filter(crystalDefinition.isActor)
-      .filter((actor) => actor.alive)
-      .sort((left, right) => left.state.index - right.state.index);
-  }
-  /** Whether Sol attacks this tick, asked before his launch runs; see `solLaunchesThisTick`. */
-  private solAttacks(boss: SolActor, ctx: EncounterContext, mechanics: Partial<MechanicsConfig>): boolean {
-    return mechanics.solHereditAttacks === false || solLaunchesThisTick(boss, ctx, boss.position);
-  }
-  private runBeams(ctx: EncounterContext, mechanics: Partial<MechanicsConfig>): EnvironmentalDamage[] {
-    const crystals = this.crystals(ctx.world);
-    if (mechanics.solHereditBeams === false) {
-      this.beams.cancelRound(crystals);
-      return [];
-    }
-    // Last tick's fire tested the tile the player started that tick on; its hit lands now.
-    const damages = this.beams.takeHitIfDue(ctx.tick, ctx.playerPos, {
-      random: this.random,
-      relentless: this.modifiers.relentless ?? 0,
-    });
-    const charging = this.beams.startChargeIfDue(crystals, ctx.tick);
-    if (charging)
-      emitEncounterVisual(ctx.tickEvents, {
-        projectiles: [],
-        animations: charging.lines.map((line) => ({ actorId: line.actorId, clipId: 'charge', delayCycles: 0 })),
-        graphics: charging.lines.flatMap((line) =>
-          colosseumBeamGraphics(crystalBeamDirection(line.index), line.tiles, 'charge'),
-        ),
-      });
-    const fired = this.beams.fireIfDue(crystals, {
-      tick: ctx.tick,
-      playerPos: ctx.playerPos,
-      phase: this.phase,
-      random: this.random,
-    });
-    if (fired)
-      emitEncounterVisual(ctx.tickEvents, {
-        projectiles: [],
-        animations: fired.round.lines.map((line) => ({ actorId: line.actorId, clipId: 'attack', delayCycles: 0 })),
-        graphics: fired.round.lines.flatMap((line) =>
-          colosseumBeamGraphics(crystalBeamDirection(line.index), line.tiles, 'fire'),
-        ),
-      });
-    return damages;
-  }
-  private addCrystal(ctx: SpawnContext): void {
-    const existing = ctx.world.getNpcs().filter(crystalDefinition.isActor);
-    const index = [0, 1, 2, 3].find((candidate) => existing.every((actor) => actor.state.index !== candidate));
-    if (index === undefined) return;
-    const actor = createCrystal({
-      id: `${BEAM_CRYSTAL_ACTOR_PREFIX}_${index}`,
-      index,
-      tick: ctx.tick,
-      charging: this.beams.isHolding(),
-    });
-    this.beams.enroll(ctx.tick);
-    ctx.spawnNpc(actor);
-    if (ctx.tickEvents)
-      emitEncounterVisual(ctx.tickEvents, {
-        projectiles: [],
-        animations: [{ actorId: actor.id, clipId: 'spawn', delayCycles: 0 }],
-        graphics: [],
-      });
-  }
-}
-
-function assertNever(value: never): never {
-  throw new TypeError(`Unknown Sol Heredit action: ${JSON.stringify(value)}`);
-}
-/** The Attack Style practice pin; anything but a known style (including a stale stored value) is random. */
-function solHereditStylePin(mechanics: Readonly<Partial<MechanicsConfig>>): SolAttackStyle | undefined {
-  const pin = mechanics[SOL_HEREDIT_ATTACK_STYLE_KEY];
-  return pin === 'spear' || pin === 'shield' ? pin : undefined;
-}
-const SOL_ENTRY_MESSAGE: readonly OverheadTextSegment[] = [
-  { text: `${SOL_CHAT_NAME} jumps down from his seat...`, color: CHAT_HIGHLIGHT_COLORS.red },
-];
-/** A sand strike's lightning on each struck tile; emitted even when it struck none, as it always was. */
-function sandVisualEvent(strike: SandStrike): EmittableGameEvent {
-  return encounterVisual({
-    animations: [],
-    projectiles: [],
-    graphics: strike.tiles.map(([x, y]) => ({
-      spotAnimId: COLOSSEUM_SPOTANIMS.sunfireLightning,
-      target: { kind: 'tile', position: [x, y] },
-      delayCycles: 30,
-      height: 0,
-    })),
-  });
 }

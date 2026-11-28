@@ -15,6 +15,7 @@ import {
   isCurrentActorInstance,
   isNpcDeathDue,
   isNpcDeathReleaseDue,
+  isNpcKillTurnReleaseDue,
   markNpcDead,
   promoteHitQueueDeath,
   pruneGraceStartTick,
@@ -324,9 +325,9 @@ describe('death-animation release hook', () => {
     const request = { attacker: actor, target: player, attack: windupAttack(actor.id) };
     world.tick = 3;
     expect(combat.processAttackRequest(world, request, bridge)).toBe(false);
-    expect(combat.processDeathReleaseRequest(world, request, bridge)).toBe(true);
+    expect(combat.processDeathReleaseRequest(world, request, bridge, 'death-animation')).toBe(true);
     world.tick = 4;
-    expect(combat.processDeathReleaseRequest(world, request, bridge)).toBe(false);
+    expect(combat.processDeathReleaseRequest(world, request, bridge, 'death-animation')).toBe(false);
   });
 
   it('releases nothing for a scripted death', () => {
@@ -334,5 +335,157 @@ describe('death-animation release hook', () => {
     markNpcDead(actor, 5);
     expect(actor.deathAnimationTick).toBe(5);
     expect(isNpcDeathReleaseDue(actor, 5)).toBe(false);
+  });
+});
+
+describe('kill-turn release hook', () => {
+  type CommittedState = { releaseTick: number | null; turns: number[]; animationReleases: number[] };
+  const committed = createNpcDefinition<CommittedState, undefined>({
+    id: 'test-committed',
+    deathPolicy: 'queued',
+    move: false,
+    // Commits to an attack 3 ticks after its first turn and launches it then.
+    tick: ({ actor, context }) => {
+      actor.state.turns.push(context.tick);
+      actor.state.releaseTick ??= context.tick + 3;
+      if (context.tick !== actor.state.releaseTick) return { environmentalDamages: [] };
+      return { environmentalDamages: [], npcAttacks: [committedAttack(actor.id)] };
+    },
+    // The other contract: asked on the death-animation tick, with nothing of its own to release.
+    releaseOnDeathAnimation: ({ actor, context }) => {
+      actor.state.animationReleases.push(context.tick);
+      return [];
+    },
+  });
+
+  function committedAttack(attackerId: string): NpcAttackRequest {
+    return {
+      attackerId,
+      targetId: 'player',
+      style: 'magic',
+      attackKind: 'magic_fire',
+      rolledDamage: 5,
+      accuracySucceeded: true,
+      impactDelayTicks: 2,
+      sourceDeathPolicy: 'persist',
+    };
+  }
+
+  /** Killed on 4, the tick its committed attack is due; a trailing hit on 4 promotes the death to K. */
+  function fixture(options: { readonly promoted: boolean; readonly steppedOn?: number }) {
+    const actor = committed.createActor(npc({ id: 'committed', vitals: { hp: 10, maxHp: 10 }, spawnTick: 0 }), {
+      releaseTick: null,
+      turns: [],
+      animationReleases: [],
+    });
+    const definitions = new NpcDefinitionCollection([committed.register(undefined)]);
+    const killTurns: number[] = [];
+    class Fixture extends LobbyEncounter {
+      override createNpcs() {
+        return [actor];
+      }
+      getNpcDefinitions() {
+        return definitions;
+      }
+      processNpcTick(npcActor: NpcActor, ctx: EncounterContext) {
+        return definitions.tick(npcActor, { ...ctx, random: () => 0.5 });
+      }
+      releaseNpcKillTurn(npcActor: NpcActor, ctx: EncounterContext) {
+        killTurns.push(ctx.tick);
+        const state = committed.getState(npcActor);
+        return state?.releaseTick === ctx.tick ? [committedAttack(npcActor.id)] : [];
+      }
+    }
+    const engine = new SimulationEngine({ encounter: new Fixture(), startPos: [31, 25] });
+    engine.setMechanicsConfig({ infiniteHealth: true });
+    actor.position = [31, 27];
+    const hit = (rolledDamage: number) =>
+      enqueueEnginePendingHit(engine, {
+        sourceId: 'player',
+        targetId: actor.id,
+        style: 'range',
+        attackKind: 'range_arrow',
+        launchTick: 0,
+        impactTick: 4,
+        rolledDamage,
+        accuracySucceeded: true,
+      });
+    hit(10);
+    if (options.promoted) hit(1);
+    for (let tick = 1; tick <= 8; tick++) {
+      if (tick === options.steppedOn) recordNpcStep(actor, tick);
+      engine.advanceTick([31, 25]);
+    }
+    const playerHits = engine.getDamageHistory().filter((entry) => entry.targetId === 'player');
+    return { actor, killTurns, playerHits };
+  }
+
+  it('leaves a pending death its ordinary kill turn, never asking the hook', () => {
+    const { actor, killTurns, playerHits } = fixture({ promoted: false });
+    expect(actor.death).toMatchObject({ killTick: 4, processTick: 5 });
+    expect(actor.state.turns).toEqual([1, 2, 3, 4]);
+    expect(killTurns).toEqual([]);
+    expect(playerHits).toMatchObject([{ tick: 6, baseDamage: 5 }]);
+  });
+
+  it('asks the encounter once for a promoted kill and launches the attack due on that turn', () => {
+    const { actor, killTurns, playerHits } = fixture({ promoted: true });
+    expect(actor.death).toMatchObject({ killTick: 4, processTick: 4, status: 'started' });
+    expect(actor.state.turns).toEqual([1, 2, 3]);
+    expect(killTurns).toEqual([4]);
+    expect(playerHits).toMatchObject([{ tick: 6, baseDamage: 5 }]);
+    // The death-animation release is its own contract, asked on its own tick.
+    expect(actor.state.animationReleases).toEqual([4]);
+  });
+
+  it('releases on the kill turn when a recent step puts the death animation later', () => {
+    const { actor, killTurns, playerHits } = fixture({ promoted: true, steppedOn: 3 });
+    expect(actor.deathAnimationTick).toBe(6);
+    expect(killTurns).toEqual([4]);
+    expect(playerHits).toMatchObject([{ tick: 6, baseDamage: 5 }]);
+    expect(actor.state.animationReleases).toEqual([6]);
+  });
+
+  it('is due only on the kill tick of a started, non-scripted queued death', () => {
+    const pending = npc({ deathPolicy: 'queued' });
+    recordNpcLethalTransition(pending, 5, 'hit-queue');
+    expect(isNpcKillTurnReleaseDue(pending, 5)).toBe(false);
+
+    const promoted = npc({ deathPolicy: 'queued' });
+    recordNpcLethalTransition(promoted, 5, 'hit-queue');
+    promoteHitQueueDeath(promoted, 5);
+    startNpcDeath(promoted);
+    expect([4, 5, 6].map((tick) => isNpcKillTurnReleaseDue(promoted, tick))).toEqual([false, true, false]);
+
+    const scripted = npc({ deathPolicy: 'queued' });
+    markNpcDead(scripted, 5);
+    expect(isNpcKillTurnReleaseDue(scripted, 5)).toBe(false);
+
+    const immediate = npc();
+    recordNpcLethalTransition(immediate, 5, 'hit-queue');
+    startNpcDeath(immediate);
+    expect(isNpcKillTurnReleaseDue(immediate, 5)).toBe(false);
+  });
+
+  it('commits a kill-turn release only on its own gate and only against a living target', () => {
+    const { actor } = fixture({ promoted: true, steppedOn: 3 });
+    const engine = new SimulationEngine({ encounter: new LobbyEncounter() });
+    const world = engine['worldState'];
+    const combat = engine['combatSystem'];
+    const bridge = engine['buildCombatBridge']({ enablePendingHits: true });
+    const player = world.getPlayer();
+    if (!player) throw new TypeError('Missing player');
+    world.actors.set(actor.id, actor);
+    const request = { attacker: actor, target: player, attack: committedAttack(actor.id) };
+    world.tick = 4;
+    expect(combat.processAttackRequest(world, request, bridge)).toBe(false);
+    // On K the animation (6) is not due, so only the kill-turn gate opens.
+    expect(combat.processDeathReleaseRequest(world, request, bridge, 'death-animation')).toBe(false);
+    player.alive = false;
+    expect(combat.processDeathReleaseRequest(world, request, bridge, 'kill-turn')).toBe(false);
+    player.alive = true;
+    expect(combat.processDeathReleaseRequest(world, request, bridge, 'kill-turn')).toBe(true);
+    world.tick = 5;
+    expect(combat.processDeathReleaseRequest(world, request, bridge, 'kill-turn')).toBe(false);
   });
 });

@@ -9,25 +9,19 @@
  * `pixelsPerTile` wide. The bounds are the arena's (`INFERNO_ARENA_BOUNDS`, 17-45 x 17-46) and two
  * tiles beyond, so its walls and edges show.
  */
+import { fitSpawnMapTileSize, spawnMapTileBox } from '../../components/spawnMapGeometry';
+
 const BOUNDS = { minX: 15, maxX: 47, minY: 15, maxY: 48 } as const;
 const PIXELS_PER_TILE = 8;
 
 /** Pixel projection for this image's north-up plane. Positions are southwest tile anchors. */
-export function arenaTileBox([x, y]: readonly [number, number], size: number, tileSize: number, height = size) {
-  return {
-    left: (x - BOUNDS.minX) * tileSize,
-    top: (BOUNDS.maxY + 1 - y - height) * tileSize,
-    width: size * tileSize,
-    height: height * tileSize,
-  };
+export function arenaTileBox(position: readonly [number, number], size: number, tileSize: number, height = size) {
+  return spawnMapTileBox(BOUNDS, position, size, tileSize, height);
 }
 
 /** Fit one square, integer CSS-pixel tile scale; never stretch the two axes independently. */
 export function fitArenaTileSize(width: number, height: number) {
-  return Math.max(
-    1,
-    Math.floor(Math.min(width / (BOUNDS.maxX - BOUNDS.minX + 1), height / (BOUNDS.maxY - BOUNDS.minY + 1))),
-  );
+  return fitSpawnMapTileSize(BOUNDS, width, height);
 }
 
 export const INFERNO_ARENA_MAP_IMAGE = {

@@ -682,6 +682,139 @@
   },
   {
     "ids": [
+      12810
+    ],
+    "name": "Jaguar warrior",
+    "size": 2,
+    "levels": {
+      "hitpoints": 125,
+      "attack": 200,
+      "strength": 330,
+      "defence": 125,
+      "magic": 100,
+      "ranged": 160
+    },
+    "offensive": {
+      "attack": 0,
+      "strength": 25,
+      "magic": 0,
+      "magicDamage": 0,
+      "ranged": 0,
+      "rangedStrength": 0
+    },
+    "defensive": {
+      "stab": 30,
+      "slash": 30,
+      "crush": 30,
+      "magic": 15,
+      "ranged": 0,
+      "rangedLight": 45,
+      "rangedStandard": 45,
+      "rangedHeavy": 45,
+      "flatArmour": 0
+    },
+    "attributes": [],
+    "attackSpeed": 5,
+    "immunities": {
+      "burn": null,
+      "cannon": false,
+      "thrall": false,
+      "poison": 100,
+      "venom": 100,
+      "freeze": 0
+    }
+  },
+  {
+    "ids": [
+      12811
+    ],
+    "name": "Serpent shaman",
+    "size": 1,
+    "levels": {
+      "hitpoints": 125,
+      "attack": 100,
+      "strength": 90,
+      "defence": 90,
+      "magic": 220,
+      "ranged": 160
+    },
+    "offensive": {
+      "attack": 0,
+      "strength": 0,
+      "magic": 50,
+      "magicDamage": 15,
+      "ranged": 0,
+      "rangedStrength": 0
+    },
+    "defensive": {
+      "stab": 30,
+      "slash": 30,
+      "crush": 30,
+      "magic": 15,
+      "ranged": 0,
+      "rangedLight": 50,
+      "rangedStandard": 50,
+      "rangedHeavy": 50,
+      "flatArmour": 0
+    },
+    "attributes": [],
+    "attackSpeed": 5,
+    "immunities": {
+      "burn": null,
+      "cannon": false,
+      "thrall": false,
+      "poison": 100,
+      "venom": 100,
+      "freeze": 0
+    }
+  },
+  {
+    "ids": [
+      12812,
+      12813
+    ],
+    "name": "Minotaur",
+    "size": 3,
+    "levels": {
+      "hitpoints": 225,
+      "attack": 300,
+      "strength": 360,
+      "defence": 190,
+      "magic": 250,
+      "ranged": 120
+    },
+    "offensive": {
+      "attack": 15,
+      "strength": 64,
+      "magic": 0,
+      "magicDamage": 0,
+      "ranged": 0,
+      "rangedStrength": 0
+    },
+    "defensive": {
+      "stab": 0,
+      "slash": 0,
+      "crush": 0,
+      "magic": 0,
+      "ranged": 0,
+      "rangedLight": 12,
+      "rangedStandard": 12,
+      "rangedHeavy": 12,
+      "flatArmour": 0
+    },
+    "attributes": [],
+    "attackSpeed": 5,
+    "immunities": {
+      "burn": null,
+      "cannon": false,
+      "thrall": false,
+      "poison": 100,
+      "venom": 100,
+      "freeze": 0
+    }
+  },
+  {
+    "ids": [
       12814
     ],
     "name": "Fremennik warband archer",
@@ -803,6 +936,138 @@
     },
     "attributes": [],
     "attackSpeed": 6,
+    "immunities": {
+      "burn": null,
+      "cannon": false,
+      "thrall": false,
+      "poison": 100,
+      "venom": 100,
+      "freeze": 0
+    }
+  },
+  {
+    "ids": [
+      12817
+    ],
+    "name": "Javelin Colossus",
+    "size": 3,
+    "levels": {
+      "hitpoints": 220,
+      "attack": 200,
+      "strength": 300,
+      "defence": 190,
+      "magic": 225,
+      "ranged": 360
+    },
+    "offensive": {
+      "attack": 0,
+      "strength": 0,
+      "magic": 0,
+      "magicDamage": 0,
+      "ranged": 25,
+      "rangedStrength": 20
+    },
+    "defensive": {
+      "stab": 15,
+      "slash": 15,
+      "crush": 15,
+      "magic": 20,
+      "ranged": 0,
+      "rangedLight": 30,
+      "rangedStandard": 30,
+      "rangedHeavy": 30,
+      "flatArmour": 0
+    },
+    "attributes": [],
+    "attackSpeed": 5,
+    "immunities": {
+      "burn": null,
+      "cannon": false,
+      "thrall": false,
+      "poison": 100,
+      "venom": 100,
+      "freeze": 0
+    }
+  },
+  {
+    "ids": [
+      12818
+    ],
+    "name": "Manticore",
+    "size": 3,
+    "levels": {
+      "hitpoints": 250,
+      "attack": 300,
+      "strength": 300,
+      "defence": 250,
+      "magic": 300,
+      "ranged": 350
+    },
+    "offensive": {
+      "attack": 0,
+      "strength": 0,
+      "magic": 0,
+      "magicDamage": 0,
+      "ranged": 0,
+      "rangedStrength": 0
+    },
+    "defensive": {
+      "stab": 0,
+      "slash": 0,
+      "crush": 0,
+      "magic": 10,
+      "ranged": 0,
+      "rangedLight": 25,
+      "rangedStandard": 25,
+      "rangedHeavy": 25,
+      "flatArmour": 0
+    },
+    "attributes": [],
+    "attackSpeed": 10,
+    "immunities": {
+      "burn": null,
+      "cannon": false,
+      "thrall": false,
+      "poison": 100,
+      "venom": 100,
+      "freeze": 0
+    }
+  },
+  {
+    "ids": [
+      12819
+    ],
+    "name": "Shockwave Colossus",
+    "size": 3,
+    "levels": {
+      "hitpoints": 125,
+      "attack": 120,
+      "strength": 190,
+      "defence": 150,
+      "magic": 350,
+      "ranged": 220
+    },
+    "offensive": {
+      "attack": 0,
+      "strength": 0,
+      "magic": 55,
+      "magicDamage": 35,
+      "ranged": 0,
+      "rangedStrength": 0
+    },
+    "defensive": {
+      "stab": 15,
+      "slash": 15,
+      "crush": 15,
+      "magic": 5,
+      "ranged": 0,
+      "rangedLight": 35,
+      "rangedStandard": 35,
+      "rangedHeavy": 35,
+      "flatArmour": 0
+    },
+    "attributes": [],
+    "attackSpeed": 5,
     "immunities": {
       "burn": null,
       "cannon": false,

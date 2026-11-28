@@ -1,3 +1,4 @@
+import type { MechanicsConfig } from '../../types/simulation';
 import type { EncounterCollisionSpec } from '../arena/collisionSpec';
 import type { EncounterMapSquareOffsets } from './mapFootprint';
 import type { EncounterSetupNoteRule } from './setupNotes';
@@ -40,8 +41,12 @@ export interface EncounterDescriptor {
   readonly modifiers?: readonly EncounterModifierDefinition[];
   /** Advisory rules that inspect the saved loadout and selected modifiers before a run. */
   readonly setupNotes?: readonly EncounterSetupNoteRule[];
-  /** Pre-selected modifiers until the player saves their own selection (an empty one included). */
-  readonly defaultModifierSelection?: EncounterModifierSelection;
+  /**
+   * The modifiers a run of `mechanics` starts with while the player has saved no selection of their
+   * own (any saved one, an empty one included, replaces it). Omitted: none. A function of the run
+   * setup because a default can follow it (a Fortis Colosseum start wave's).
+   */
+  readonly defaultModifiers?: (mechanics: Readonly<Partial<MechanicsConfig>>) => EncounterModifierSelection;
   isWorkInProgress?: boolean;
   readonly victory?: EncounterVictoryDescriptor;
 }

@@ -110,3 +110,24 @@ export const ResetToDefaultsControl: React.FC<{
     </div>
   );
 };
+
+/**
+ * Back to the modifiers the setup suggests (a Colosseum start wave's), in the modifier editor's
+ * heading: the Reset to defaults recipe, with the glyph before a label naming those defaults.
+ */
+export function ModifierDefaultsReset({ label, reset }: { readonly label: string; readonly reset: () => void }) {
+  return (
+    <div className="reset-defaults configurer-modifier-reset">
+      <button
+        type="button"
+        tabIndex={-1}
+        className="reset-defaults__action"
+        onMouseDown={(event) => event.preventDefault()}
+        onClick={reset}
+      >
+        <PixelSprite src={RESET_BUTTON.enabled} width={15} height={14} alt="" aria-hidden="true" />
+        {label}
+      </button>
+    </div>
+  );
+}

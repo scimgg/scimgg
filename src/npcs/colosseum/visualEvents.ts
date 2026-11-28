@@ -12,28 +12,26 @@ import type { CardinalDirection } from './solAttacks';
  * clips, `map_anim` lines for the tiles); see `docs/encounters/sol-heredit-capture-analysis.md`.
  *
  * Sol himself throws nothing (no projectile record in any Sol capture); the projectiles are the
- * warband's and the healing totems'. Tile effects take a `tile` target; effects on an actor ride it
- * (`attached`), as the client draws a spotanim on an entity.
+ * warband's, the healing totems' and the wave species'. Tile effects take a `tile` target; effects on
+ * an actor ride it (`attached`), as the client draws a spotanim on an entity. Held Manticore orbs are
+ * not one-shots: see {@link ColosseumHeldOrb}.
  */
 
 /** Every spotanim this encounter can spawn, for preloading. */
-export const COLOSSEUM_SPOT_ANIM_IDS: readonly number[] = [
-  ...COLOSSEUM_SPOTANIMS.solMelee,
-  COLOSSEUM_SPOTANIMS.solLand,
-  COLOSSEUM_SPOTANIMS.solDeath,
-  COLOSSEUM_SPOTANIMS.tripleTelegraphShort,
-  COLOSSEUM_SPOTANIMS.tripleTelegraphLong,
-  ...COLOSSEUM_SPOTANIMS.crystalCharge,
-  ...COLOSSEUM_SPOTANIMS.crystalFire,
-  COLOSSEUM_SPOTANIMS.crystalImpact,
-  COLOSSEUM_SPOTANIMS.sunfireLightning,
-  COLOSSEUM_SPOTANIMS.finalBossExplosion,
-  COLOSSEUM_SPOTANIMS.fireblastImpact,
-  COLOSSEUM_SPOTANIMS.warbandArrow,
-  COLOSSEUM_SPOTANIMS.warbandFireblast,
-  COLOSSEUM_SPOTANIMS.totemProjectile,
-  COLOSSEUM_SPOTANIMS.totemImpact,
-];
+export const COLOSSEUM_SPOT_ANIM_IDS: readonly number[] = Object.values(COLOSSEUM_SPOTANIMS).flat();
+
+/**
+ * A graphic an actor holds for as long as the snapshot lists it: a Manticore's charged orbs. The
+ * server re-sends each held orb every tick until its launch tick (A:2661-2670, slots 1-3 at heights
+ * 300/400/500), so the scene draws it from the start of every tick it is listed on, and a replay
+ * seek shows the same frame as play does.
+ */
+export interface ColosseumHeldOrb {
+  readonly actorId: string;
+  readonly spotAnimId: number;
+  /** OSRS height above the actor; also tells its slots apart. */
+  readonly height: number;
+}
 
 // Direction of travel, not the crystal's edge (K:4032 south, K:4073 west).
 // visualEvents.test.ts checks all four against all three colosseum-sol-heredit captures.

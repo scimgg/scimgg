@@ -14,6 +14,10 @@ const WITHOUT_WIKI_ENTRY: Readonly<Record<number, string>> = {
   12824: 'unnamed Colosseum NPC',
   12826: 'unnamed Colosseum NPC',
   12827: 'Sol Heredit, seated',
+  12828: 'Volatility gib (unnamed Colosseum NPC)',
+  12829: 'Volatility gib (unnamed Colosseum NPC)',
+  12830: 'Volatility gib (unnamed Colosseum NPC)',
+  12831: 'Volatility gib (unnamed Colosseum NPC)',
 };
 
 describe('monsterData', () => {

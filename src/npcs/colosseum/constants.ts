@@ -220,6 +220,26 @@ export const COLOSSEUM_SPOTANIMS = {
   warbandFireblast: 130, // no-sol t1461: FIREBLAST_TRAVEL, the seer's projectile
   totemProjectile: 2687, // A:946: VFX_COLOSSEUM_TOTEM_PROJECTILE_01
   totemImpact: 2688, // A:947: VFX_COLOSSEUM_TOTEM_IMPACT_01, on the healed NPC as the heal lands
+  // Waves 1-11. The emitting species and Volatility read these; keep them literal so the cache trim
+  // (`scripts/discoverCacheUsage.ts`) finds them, as it finds nothing in tables that only reference them.
+  javelinSpearhead: 2673, // NPC_COLOSSI_JAVELIN_01_SPEARHEAD, the ranged projectile
+  javelinArtilleryFire: 2676, // NPC_COLOSSI_JAVELIN_01_ARTILLERY_FIRE, on the colossus as it casts
+  javelinArtilleryFalling: 2674, // NPC_COLOSSI_JAVELIN_01_ARTILLERY_SLOW, the falling javelin on its tile
+  javelinArtilleryShadow: 1446, // GARGBOSS_DEBRIS_SHADOW_90, the warning beside it
+  javelinArtilleryBlast: 2265, // WILD_FALLOFF_METEOR_BLAST_RED, the landing
+  shockwaveProjectile: 2520, // VFX_VARDORVIS_HEAD_PROJECTILE_MAGIC_01
+  shockwaveImpact: 2254, // AKKHA_MAGIC_IMPACT
+  manticoreMagicOrb: 2681, // VFX_MANTICORE_01_PROJECTILE_MAGIC_01, held and thrown
+  manticoreRangedOrb: 2683, // VFX_MANTICORE_01_PROJECTILE_RANGED_01
+  manticoreMeleeOrb: 2685, // VFX_MANTICORE_01_PROJECTILE_MELEE_01
+  shamanCasting: 1458, // WATERSURGE_CASTING
+  shamanTravel: 1459, // WATERSURGE_TRAVEL
+  shamanImpact: 1460, // WATERSURGE_IMPACT
+  minotaurHeal: 444, // TZHAAR_HEAL, on the healed NPC (C:2478)
+  volatilityHumanExplosion: 2713, // VFX_COLOSSEUM_*_EXPLOSION_01 on a Volatility death, by gib
+  volatilityManticoreExplosion: 2721,
+  volatilityColossiExplosion: 2722,
+  volatilityMinotaurExplosion: 2723,
 } as const;
 
 /**
