@@ -32,7 +32,8 @@ const PURGING_STAFF_IDS: ReadonlySet<number> = new Set([29594]);
 const SCORCHING_BOW_IDS: ReadonlySet<number> = new Set([29591]);
 const BURNING_CLAWS_IDS: ReadonlySet<number> = new Set([29577]);
 const ABYSSAL_BLUDGEON_IDS: ReadonlySet<number> = new Set([13263]);
-const DRAGONBANE_WEAPON_IDS: ReadonlySet<number> = new Set([21012, 22978, 25916, 25918, 30070]);
+/** Unmodeled dragonbane weapons that still fail closed against dragons (Dragon hunter wand spell passive). */
+const DRAGONBANE_WEAPON_IDS: ReadonlySet<number> = new Set([30070]);
 const ECLIPSE_ATLATL_IDS: ReadonlySet<number> = new Set([29000, 29851]);
 const RUBY_BOLT_IDS: ReadonlySet<number> = new Set([9242, 21944]);
 const DIAMOND_BOLT_IDS: ReadonlySet<number> = new Set([9243, 21946]);
@@ -315,6 +316,8 @@ export type PlayerAttackProfileSelectionInput = {
   readonly combatStyle?: CombatStyle | undefined;
   /** Chebyshev tiles to the target's nearest footprint tile; unknown leaves out distance modifiers. */
   readonly targetDistance?: number | undefined;
+  /** Optional Twisted bow Magic scaling cap (250 outside raids, 350 in Chambers of Xeric). */
+  readonly twistedBowMagicCap?: number | undefined;
 };
 
 export function selectPlayerAttackProfile(selection: PlayerAttackProfileSelectionInput): PlayerAttackProfile | null {
@@ -614,6 +617,7 @@ function toOrdinaryModifierInput(input: PlayerAttackProfileSelectionInput): Ordi
     targetMagicAttackBonus: input.targetMagicAttackBonus ?? 0,
     markOfDarknessActive: input.markOfDarknessActive ?? false,
     demonbaneVulnerability: input.demonbaneVulnerability ?? 1,
+    twistedBowMagicCap: input.twistedBowMagicCap,
   };
 }
 

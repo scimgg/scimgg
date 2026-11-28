@@ -628,16 +628,67 @@ describe('selectPlayerAttackProfile', () => {
     );
   });
 
-  it('fails closed only for an unmodeled dragonbane weapon against a dragon', () => {
+  it('applies dragonbane bonuses for Dragon hunter lance and Dragon hunter crossbow, and fails closed only for unmodeled wand', () => {
+    expect(
+      selectPlayerAttackProfile({
+        weaponId: 22978,
+        targetSize: 5,
+        isSpecialAttack: false,
+        targetAttributes: ['dragon'],
+      }),
+    ).toEqual({
+      kind: 'singleHit',
+      maxHit: { kind: 'staged', stages: [{ numerator: 120, denominator: 100 }] },
+      hit: {
+        accuracy: { kind: 'standard', attackRollStages: [{ numerator: 120, denominator: 100 }] },
+        damage: { kind: 'uniformToMaxHit' },
+      },
+    });
     expect(
       selectPlayerAttackProfile({
         weaponId: 21012,
+        targetSize: 5,
+        isSpecialAttack: false,
+        resources: { kind: 'ammo', source: 'equipped', ammoId: 9242 },
+        targetAttributes: ['dragon'],
+      }),
+    ).toEqual({
+      kind: 'singleHit',
+      maxHit: { kind: 'staged', stages: [{ numerator: 125, denominator: 100 }] },
+      hit: {
+        accuracy: { kind: 'standard', attackRollStages: [{ numerator: 130, denominator: 100 }] },
+        damage: { kind: 'uniformToMaxHit' },
+      },
+    });
+    expect(
+      selectPlayerAttackProfile({
+        weaponId: 30070,
         targetSize: 3,
         isSpecialAttack: false,
-        resources: { kind: 'ammo', source: 'equipped', ammoId: 11212 },
         targetAttributes: ['dragon'],
       }),
     ).toBeNull();
+  });
+
+  it('supports the Chambers of Xeric 350 Magic scaling cap for Twisted bow when specified', () => {
+    const cap350 = selectPlayerAttackProfile({
+      weaponId: 20997,
+      targetSize: 5,
+      isSpecialAttack: false,
+      resources: { kind: 'ammo', source: 'equipped', ammoId: 11212 },
+      targetMagicLevel: 350,
+      targetMagicAttackBonus: 60,
+      twistedBowMagicCap: 350,
+    });
+    // 350 Magic -> 3*350/10 = 105 -> accuracy 140% (capped), damage 250 - floor((105-140)^2/100) + floor(1036/100) = 250 + 10 - 12 = 248%.
+    expect(cap350).toEqual({
+      kind: 'singleHit',
+      maxHit: { kind: 'staged', stages: [{ numerator: 248, denominator: 100 }] },
+      hit: {
+        accuracy: { kind: 'standard', attackRollStages: [{ numerator: 140, denominator: 100 }] },
+        damage: { kind: 'uniformToMaxHit' },
+      },
+    });
   });
 
   it('scales the Twisted bow from the higher of the target Magic level and Magic attack bonus', () => {

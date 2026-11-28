@@ -201,6 +201,7 @@ function planFirstPartyPlayerAttackInternal(
     soulreaperStacks: soulreaperStackCount(input.player.soulreaper),
     combatStyle: selectedCombatStyle(input.player),
     targetDistance: input.targetDistance,
+    twistedBowMagicCap: input.encounterRules?.twistedBowMagicCap,
   });
   if (profile === null) return null;
 

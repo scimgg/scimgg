@@ -637,7 +637,7 @@ function buildNpcContextEntries(
     if (action === undefined || action === null) continue;
     // Only the OSRS "Attack" action routes a red-X left-click at the actor; other
     // cache actions (e.g. Talk-to) are inert here rather than silently attacking.
-    const clickHandler = action === 'Attack' ? (onNpcAction ?? onTileClick) : undefined;
+    const clickHandler = action === 'Attack' || action === 'Douse' ? (onNpcAction ?? onTileClick) : undefined;
     entries.push({
       action,
       target,

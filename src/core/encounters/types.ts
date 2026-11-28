@@ -129,6 +129,34 @@ export interface EncounterEngineRules {
   incomingDamageMultiplier?: EncounterDynamic<number>;
   outgoingDamageMultiplier?: EncounterDynamic<number>;
   /**
+   * Optional per-target resolution of an outgoing player hit at impact (e.g. off-style damage
+   * reduction, temporary immunity, healing absorption, or blocking stat-drain specials on a target).
+   */
+  resolveTargetHitDamage?(
+    params: {
+      readonly target: Readonly<NpcActor>;
+      readonly style: DamageType;
+      readonly attackKind: AttackKind;
+      readonly damage: number;
+      readonly accurate: boolean;
+    },
+    ctx: EncounterEngineContext,
+  ): {
+    readonly damage: number;
+    readonly invertToHeal?: boolean;
+    readonly blockStatDrains?: boolean;
+  };
+  /**
+   * Optional Twisted bow Magic scaling cap for this encounter. Defaults to 250 outside raids
+   * (e.g. 350 inside the Chambers of Xeric; /w/Twisted_bow § Passive effect).
+   */
+  twistedBowMagicCap?: number;
+  /**
+   * While true for a tick, the player cannot walk or run (a bind/freeze), while prayers, inventory
+   * actions and in-range attacks remain available.
+   */
+  playerMovementLocked?: EncounterDynamic<boolean>;
+  /**
    * Restat NPCs for this encounter, keyed by npc type id. The synchronized monster dataset only
    * models a boss in its ordinary form, so anything that restats one for a single run supplies
    * the delta here rather than
@@ -333,6 +361,10 @@ export interface EncounterPlayerAttackStartedInfo {
   readonly targetId: ActorId;
   readonly attackType: DamageType;
   readonly attackKind: AttackKind;
+  /** Whether the launched primary hit passed accuracy (false on magic splash / miss). */
+  readonly accurate?: boolean;
+  /** Rolled damage of the launched primary hit before impact-time mitigation. */
+  readonly rolledDamage?: number;
 }
 
 export interface NpcAttackRequest {
