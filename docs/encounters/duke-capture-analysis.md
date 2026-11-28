@@ -6,7 +6,7 @@ The [timing verification ledger](./duke-facts-spec.md#timing-verification-ledger
 of each rule. The [capture inventory](./duke-facts-spec.md#captures) maps the aliases A0–A10, A12,
 and R to private recording files. The [unverified behavior register](./duke-unverified.md) records
 known exceptions and the observations that could resolve them. Tests use the extracted
-[capture fixtures](../../src/encounters/dukePractice/__tests__/fixtures/).
+[capture fixtures](../../src/encounters/duke/__tests__/fixtures/).
 
 **OBSERVED** marks a recorded event or tile. **DERIVED** marks a conclusion computed from the
 recorded events or the outcome of replaying them through a model. **UNCERTAIN** marks a boundary

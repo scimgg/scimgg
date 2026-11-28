@@ -13,7 +13,7 @@
  * registered in `ENCOUNTER_RENDER_CONFIGS`, not here.
  *
  */
-import { dukePracticeAudioRules } from '../audio/dukePracticeAudio';
+import { dukeAudioRules } from '../audio/dukeAudio';
 import type { SoundRules } from '../audio/EventAudioPlayer';
 import { solHereditAudioRules } from '../audio/solHereditAudioRules';
 import { yamaAudioRules } from '../audio/yamaAudioRules';
@@ -22,11 +22,7 @@ import { SOL_NPC_ID } from '../npcs/colosseum/constants';
 import { ZUK_NPC_ID, ZUK_SEQS } from '../npcs/inferno/constants';
 import type { BossPortraitConfig } from '../render/preview/bossPortraitFraming';
 import { OSRS_DEFAULT_PITCH } from '../render/projections/Projection3D';
-import {
-  createDukePracticeSceneBuilder,
-  DUKE_ASLEEP_MENU_TYPE,
-  LEGACY_DUKE_MENU_TYPE,
-} from '../render/scene/dukePracticeSceneBuilder';
+import { createDukeSceneBuilder, DUKE_ASLEEP_MENU_TYPE, LEGACY_DUKE_MENU_TYPE } from '../render/scene/dukeSceneBuilder';
 import { createLobbySceneBuilder } from '../render/scene/lobbySceneBuilder';
 import type { SceneBuilderFactory } from '../render/scene/sceneBuilderFactory';
 import { createSolHereditSceneBuilder } from '../render/scene/solHereditSceneBuilder';
@@ -35,7 +31,7 @@ import { createZukSceneBuilder } from '../render/scene/zukSceneBuilder';
 import type { NpcType } from '../rs/config/npctype/NpcType';
 import { YAMA_NPC_ID } from '../rs/model/NpcModelLoader';
 import type { Coordinate, MechanicsConfig } from '../types/simulation';
-import { DUKE_PRACTICE_KIND } from './dukePractice/controls';
+import { DUKE_KIND } from './catalog';
 import { FIRST_INFERNO_WAVE, INFERNO_PRACTICE_START_TILE, WAVE_67_JAD_TILE, ZUK_WAVE } from './inferno/constants';
 import { INFERNO_START_WAVE_KEY } from './inferno/controls';
 import { ENCOUNTER_CORE_MODULES, encounterKindsOf } from './modules';
@@ -233,16 +229,16 @@ export const ENCOUNTER_PRESENTATION_MODULES: readonly EncounterPresentationModul
     },
   },
   {
-    kind: DUKE_PRACTICE_KIND,
-    sceneBuilder: createDukePracticeSceneBuilder,
+    kind: DUKE_KIND,
+    sceneBuilder: createDukeSceneBuilder,
     localNpcTypes: new Map([
       [DUKE_ASLEEP_MENU_TYPE.id, DUKE_ASLEEP_MENU_TYPE],
       [LEGACY_DUKE_MENU_TYPE.id, LEGACY_DUKE_MENU_TYPE],
     ]),
-    audioRules: dukePracticeAudioRules,
+    audioRules: dukeAudioRules,
     defaultCamera: { yaw: 0, pitch: -57, zoom: 235 },
     presentation: {
-      tagline: 'Duke Sucellus · Awakened practice',
+      tagline: 'Duke Sucellus · Awakened',
       blurb: 'Start at full health or jump straight to vents, bile, orbs, or enrage.',
       wikiUrl: 'https://oldschool.runescape.wiki/w/Duke_Sucellus/Strategies#Awakened_mode',
     },

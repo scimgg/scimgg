@@ -4,17 +4,17 @@ import { FrameSoundTracker } from '../../../audio/FrameSoundTracker';
 import { getArenaAllowUnboundedFallback, getArenaConfig, setArenaConfig } from '../../../core/constants';
 import type { ReplayDisplayFrame } from '../../../core/ReplayRecorder';
 import { SimulationEngine } from '../../../core/SimulationEngine';
-import { DUKE_BILE_CAPTURE } from '../../../encounters/dukePractice/__tests__/fixtures/dukeBileCapture';
+import { DUKE_BILE_CAPTURE } from '../../../encounters/duke/__tests__/fixtures/dukeBileCapture';
 import {
   DUKE_ENRAGED_MAGIC_CAPTURE,
   DUKE_MAGIC_AIM_CAPTURE,
   DUKE_SLAM_CAPTURE,
-} from '../../../encounters/dukePractice/__tests__/fixtures/dukeCombatCapture';
-import { ORB_LANE, SLAM_TILES, START_TILE, square, WARDEN_TILE } from '../../../encounters/dukePractice/arena';
-import { DUKE_ORB_NPC_ID, DUKE_SEQS, DUKE_SPOT_ANIMS } from '../../../encounters/dukePractice/constants';
-import { ALWAYS_BILE_KEY, BILE_HP, ENRAGE_HP, ORB_HP, VENTS_HP } from '../../../encounters/dukePractice/controls';
-import { DukePracticeEncounter } from '../../../encounters/dukePractice/DukePracticeEncounter';
-import { DUKE_PRACTICE_RENDER_CONFIG } from '../../../encounters/dukePractice/renderConfig';
+} from '../../../encounters/duke/__tests__/fixtures/dukeCombatCapture';
+import { ORB_LANE, SLAM_TILES, START_TILE, square, WARDEN_TILE } from '../../../encounters/duke/arena';
+import { DUKE_ORB_NPC_ID, DUKE_SEQS, DUKE_SPOT_ANIMS } from '../../../encounters/duke/constants';
+import { BILE_HP, ENRAGE_HP, ORB_HP, VENTS_HP } from '../../../encounters/duke/controls';
+import { DukeEncounter } from '../../../encounters/duke/DukeEncounter';
+import { DUKE_RENDER_CONFIG } from '../../../encounters/duke/renderConfig';
 import { DUKE_ASLEEP_NPC_ID, DUKE_NPC_ID, LEGACY_DUKE_TYPE_ID, WARDEN_ID, WARDEN_SIZE } from '../../../npcs/duke/duke';
 import { LocModelLoader } from '../../../rs/config/loctype/LocModelLoader';
 import { ArchiveNpcTypeLoader } from '../../../rs/config/npctype/NpcTypeLoader';
@@ -24,6 +24,7 @@ import { IndexModelLoader } from '../../../rs/model/ModelLoader';
 import { NpcModelLoader } from '../../../rs/model/NpcModelLoader';
 import { SpotAnimModelLoader } from '../../../rs/model/SpotAnimModelLoader';
 import { openRealCache, skipWithoutRealCache } from '../../../test/helpers/real-cache';
+import { DUKE_ALWAYS_BILE_KEY } from '../../../types/duke';
 import type { Coordinate } from '../../../types/simulation';
 import { DEFAULT_TILE_INDICATOR_CONFIG } from '../../../types/tileIndicators';
 import { AnimationSystem } from '../../backends/picogl/AnimationSystem';
@@ -31,8 +32,8 @@ import type { NpcMesh3DCommand } from '../../core/commands';
 import { typeEntry } from '../../npc/__tests__/npcFacingTestHarness';
 import { PRIMARY_NPC_ACTOR_ID } from '../../npc/NpcInstanceManager';
 import { Projection3D } from '../../projections/Projection3D';
-import { DukePracticeEffects } from '../dukePracticeEffects';
-import { DukePracticeSceneCompositor } from '../dukePracticeSceneBuilder';
+import { DukeEffects } from '../dukeEffects';
+import { DukeSceneCompositor } from '../dukeSceneBuilder';
 import type { RenderContext, SceneOptions } from '../types';
 
 const options: SceneOptions = {
@@ -60,12 +61,12 @@ it.each<Coordinate>([
   [31, 51],
   [35, 51],
 ])('draws the captured frontal row through shared cues when the player is at (%i, %i)', (x, y) => {
-  const engine = new SimulationEngine({ encounter: new DukePracticeEncounter() });
+  const engine = new SimulationEngine({ encounter: new DukeEncounter() });
   engine.setAttackTarget(WARDEN_ID);
   engine.advanceTick([31, 51]);
   engine.setAttackTarget(null);
   while (engine.currentTick < 6) engine.advanceTick([x, y]);
-  const scene = new DukePracticeSceneCompositor();
+  const scene = new DukeSceneCompositor();
   try {
     const renderer = scene['spotAnimRenderer'];
     vi.spyOn(renderer, 'isLoaded').mockReturnValue(true);
@@ -106,7 +107,7 @@ it.each<Coordinate>([
 });
 
 it.each([true, false])('respects true-tile visibility %s while hiding melee tile fills', (enabled) => {
-  const engine = new SimulationEngine({ encounter: new DukePracticeEncounter() });
+  const engine = new SimulationEngine({ encounter: new DukeEncounter() });
   const playerTile: Coordinate = [31, 51];
   engine.setAttackTarget(WARDEN_ID);
   engine.advanceTick(playerTile);
@@ -123,7 +124,7 @@ it.each([true, false])('respects true-tile visibility %s while hiding melee tile
     },
   });
 
-  const scene = new DukePracticeSceneCompositor();
+  const scene = new DukeSceneCompositor();
   try {
     scene['terrainHeights'] = Array.from({ length: 65 }, () => new Int32Array(65));
     const viewport = { width: 800, height: 600, dpr: 1 };
@@ -156,20 +157,20 @@ it.each([true, false])('respects true-tile visibility %s while hiding melee tile
     const meshIds = queue.commands.flatMap((command) => (command.kind === 'mesh3d' ? [command.meshId] : []));
     expect(meshIds).toContainEqual(expect.stringMatching(/^corner-outline-30-50-/));
     expect(meshIds.some((id) => id.startsWith('outline-31-51-31-51-'))).toBe(enabled);
-    expect(meshIds).not.toContainEqual(expect.stringMatching(/^duke-practice-(spikes|slam)-/));
+    expect(meshIds).not.toContainEqual(expect.stringMatching(/^duke-(spikes|slam)-/));
   } finally {
     scene.dispose();
   }
 });
 
 it('continues the windup graphics without adding a second effect on the slam tick', () => {
-  const scene = new DukePracticeSceneCompositor();
+  const scene = new DukeSceneCompositor();
   try {
     const renderer = scene['spotAnimRenderer'];
     vi.spyOn(renderer, 'isLoaded').mockReturnValue(true);
     vi.spyOn(renderer, 'getFrameLengths').mockReturnValue([90]);
     const upsert = vi.spyOn(renderer, 'upsert');
-    new DukePracticeEffects().update(
+    new DukeEffects().update(
       renderer,
       {
         hazards: [{ kind: 'slam', tiles: [[31, 51]], impactTick: 9, expiresTick: 10 }],
@@ -190,7 +191,7 @@ it('continues the windup graphics without adding a second effect on the slam tic
 
 it('restarts one cloud when a flare lands on the same grate and fades each grate separately', () => {
   const engine = new SimulationEngine({
-    encounter: new DukePracticeEncounter(),
+    encounter: new DukeEncounter(),
     mechanics: { infiniteHealth: true },
   });
   engine.setBossHp(VENTS_HP);
@@ -199,7 +200,7 @@ it('restarts one cloud when a flare lands on the same grate and fades each grate
   engine.advanceTick(playerTile);
   engine.setAttackTarget(null);
 
-  const scene = new DukePracticeSceneCompositor();
+  const scene = new DukeSceneCompositor();
   try {
     scene['terrainHeights'] = Array.from({ length: 65 }, () => new Int32Array(65));
     const renderer = scene['spotAnimRenderer'];
@@ -264,7 +265,7 @@ it('restarts one cloud when a flare lands on the same grate and fades each grate
         });
       }
       expect(
-        queue.commands.some((command) => command.kind === 'mesh3d' && command.meshId.startsWith('duke-practice-vent-')),
+        queue.commands.some((command) => command.kind === 'mesh3d' && command.meshId.startsWith('duke-vent-')),
       ).toBe(false);
     }
   } finally {
@@ -277,11 +278,11 @@ it.skipIf(skipWithoutRealCache('pinned'))(
   async () => {
     const { cache, info } = await openRealCache([2, 7], 'pinned');
     const engine = new SimulationEngine({
-      encounter: new DukePracticeEncounter(),
-      mechanics: { [ALWAYS_BILE_KEY]: true, infiniteHealth: true },
+      encounter: new DukeEncounter(),
+      mechanics: { [DUKE_ALWAYS_BILE_KEY]: true, infiniteHealth: true },
     });
     engine.setBossHp(BILE_HP);
-    const scene = new DukePracticeSceneCompositor();
+    const scene = new DukeSceneCompositor();
     const viewport = { width: 800, height: 600, dpr: 1 };
     const projection = new Projection3D(viewport);
     const renderPools = () => {
@@ -298,7 +299,7 @@ it.skipIf(skipWithoutRealCache('pinned'))(
         viewport,
       );
       expect(
-        queue.commands.some((command) => command.kind === 'mesh3d' && command.meshId.startsWith('duke-practice-bile-')),
+        queue.commands.some((command) => command.kind === 'mesh3d' && command.meshId.startsWith('duke-bile-')),
       ).toBe(false);
       return queue.commands.flatMap((command) =>
         command.kind === 'mesh3d' && command.meshId === 'scene-object-loc:30032:10:0:-1-frame-0-opaque'
@@ -308,7 +309,7 @@ it.skipIf(skipWithoutRealCache('pinned'))(
     };
 
     try {
-      scene.setEncounterRenderConfig(DUKE_PRACTICE_RENDER_CONFIG);
+      scene.setEncounterRenderConfig(DUKE_RENDER_CONFIG);
       scene['terrainHeights'] = Array.from({ length: 65 }, () => new Int32Array(65));
       scene['setSceneObjectLocModelLoader'](
         new LocModelLoader(info, cache.getIndex(2).getArchive(6), cache.getIndex(7)),
@@ -348,7 +349,7 @@ it('aims the blue bolt and its impact at the rendered player during movement', (
   const { launch, impact } = DUKE_MAGIC_AIM_CAPTURE;
   const { launchCycle, arrivalCycle } = DUKE_ENRAGED_MAGIC_CAPTURE;
   const engine = new SimulationEngine({
-    encounter: new DukePracticeEncounter(),
+    encounter: new DukeEncounter(),
     combatRandom: () => 0,
   });
   engine.setBossHp(ENRAGE_HP);
@@ -357,7 +358,7 @@ it('aims the blue bolt and its impact at the rendered player during movement', (
   engine.setAttackTarget(null);
   while (engine.currentTick < 6) engine.advanceTick(launch.trueTile);
 
-  const scene = new DukePracticeSceneCompositor();
+  const scene = new DukeSceneCompositor();
   try {
     const renderer = scene['spotAnimRenderer'];
     vi.spyOn(renderer, 'isLoaded').mockReturnValue(true);
@@ -438,7 +439,7 @@ it('aims the blue bolt and its impact at the rendered player during movement', (
 });
 
 function startBolt() {
-  const engine = new SimulationEngine({ encounter: new DukePracticeEncounter(37), combatRandom: () => 0 });
+  const engine = new SimulationEngine({ encounter: new DukeEncounter(37), combatRandom: () => 0 });
   engine.setAttackTarget(WARDEN_ID);
   engine.advanceTick([31, 51]);
   engine.setAttackTarget(null);
@@ -446,7 +447,7 @@ function startBolt() {
   return engine;
 }
 
-function drawBoltScene(scene: DukePracticeSceneCompositor) {
+function drawBoltScene(scene: DukeSceneCompositor) {
   const renderer = scene['spotAnimRenderer'];
   vi.spyOn(renderer, 'isLoaded').mockReturnValue(true);
   vi.spyOn(renderer, 'getFrameLengths').mockReturnValue([90]);
@@ -472,7 +473,7 @@ function drawBoltScene(scene: DukePracticeSceneCompositor) {
 it.each([6, 8])('clears the old bolt in live play and replay when jumping phases at tick %i', (jumpTick) => {
   const engine = startBolt();
   const launch = { state: engine.getState(), events: engine.getLastTickEvents() };
-  const scene = new DukePracticeSceneCompositor();
+  const scene = new DukeSceneCompositor();
   try {
     const draw = drawBoltScene(scene);
     draw({ simulationState: launch.state, events: launch.events, interpolatedTick: 6 });
@@ -509,7 +510,7 @@ it.each([6, 7])('finishes a legacy bolt after takeover from a recording starting
   const frames: ReplayDisplayFrame[] = [];
   const recordLegacyFrame = () => {
     const state = engine.getState();
-    if (state.encounter.kind !== 'duke_practice') throw new Error('Expected the Duke encounter');
+    if (state.encounter.kind !== 'duke') throw new Error('Expected the Duke encounter');
     const { usesVisualEvents: _usesVisualEvents, ...visuals } = state.encounter.visuals;
     frames.push({
       state: { ...state, encounter: { ...state.encounter, visuals } },
@@ -524,7 +525,7 @@ it.each([6, 7])('finishes a legacy bolt after takeover from a recording starting
   }
   const history = { frames, throughFrameIndex: frames.length - 1 };
   const restoredPresentation = { engine, tick: 8, timeMs: 5400, history };
-  const scene = new DukePracticeSceneCompositor();
+  const scene = new DukeSceneCompositor();
   try {
     const draw = drawBoltScene(scene);
     expect(
@@ -562,20 +563,20 @@ it.each([6, 7])('finishes a legacy bolt after takeover from a recording starting
 });
 
 it('renders the captured bile projectile during its flight and removes it at arrival', () => {
-  const scene = new DukePracticeSceneCompositor();
+  const scene = new DukeSceneCompositor();
   try {
     const renderer = scene['spotAnimRenderer'];
     vi.spyOn(renderer, 'getFrameLengths').mockReturnValue([40]);
     const upsert = vi.spyOn(renderer, 'upsert');
     const despawn = vi.spyOn(renderer, 'despawn');
-    const effects = new DukePracticeEffects();
+    const effects = new DukeEffects();
     const visuals = { hazards: [], orbTile: null, pose: { clip: 'bile', startTick: 22 } } as const;
     const playerTile: Coordinate = [31, 51];
     const projectile = DUKE_BILE_CAPTURE.projectile;
     const launch = 22 + projectile.startCycle / 30;
     const arrival = 22 + projectile.endCycle / 30;
 
-    const duke = DUKE_PRACTICE_RENDER_CONFIG.preloadNpcTypes?.find(({ npcTypeId }) => npcTypeId === DUKE_NPC_ID);
+    const duke = DUKE_RENDER_CONFIG.preloadNpcTypes?.find(({ npcTypeId }) => npcTypeId === DUKE_NPC_ID);
     expect(duke?.attackClips?.bile).toBe(DUKE_BILE_CAPTURE.sequenceId);
     effects.update(renderer, visuals, launch - 1 / 30, playerTile);
     expect(upsert).not.toHaveBeenCalled();
@@ -607,11 +608,11 @@ it('renders the captured bile projectile during its flight and removes it at arr
 it.each([
   LEGACY_DUKE_TYPE_ID,
 ])('renders awake snapshot type %i with the same Duke model between sleeping snapshots', (awakeSnapshotType) => {
-  const engine = new SimulationEngine({ encounter: new DukePracticeEncounter() });
+  const engine = new SimulationEngine({ encounter: new DukeEncounter() });
   const sleepingSnapshots = engine.getState().npcs;
-  const scene = new DukePracticeSceneCompositor();
+  const scene = new DukeSceneCompositor();
   try {
-    scene.setEncounterRenderConfig(DUKE_PRACTICE_RENDER_CONFIG);
+    scene.setEncounterRenderConfig(DUKE_RENDER_CONFIG);
     const manager = scene['npcInstanceManager'];
     const types = manager['typeRegistry'];
     for (const id of [DUKE_ASLEEP_NPC_ID, DUKE_NPC_ID]) types.set(id, typeEntry(id, WARDEN_SIZE, 32));
@@ -638,12 +639,9 @@ it.skipIf(skipWithoutRealCache('pinned'))(
     const animation = new AnimationSystem();
     animation.initialize(info, cache.getIndex(0), cache.getIndex(1), configs.getArchive(12), cache.getIndex(22));
     const play = vi.fn();
-    const scene = new DukePracticeSceneCompositor(
-      () => models,
-      new FrameSoundTracker({ play } as unknown as AudioEngine),
-    );
+    const scene = new DukeSceneCompositor(() => models, new FrameSoundTracker({ play } as unknown as AudioEngine));
     const engine = new SimulationEngine({
-      encounter: new DukePracticeEncounter(),
+      encounter: new DukeEncounter(),
       mechanics: { infiniteHealth: true },
     });
     const viewport = { width: 800, height: 600, dpr: 1 };
@@ -663,7 +661,7 @@ it.skipIf(skipWithoutRealCache('pinned'))(
       );
     };
     try {
-      scene.setEncounterRenderConfig(DUKE_PRACTICE_RENDER_CONFIG);
+      scene.setEncounterRenderConfig(DUKE_RENDER_CONFIG);
       await scene.loadNpc(npcs, animation);
       draw();
       for (let i = 0; i < 3; i++) {
@@ -701,12 +699,12 @@ it.skipIf(skipWithoutRealCache('pinned'))(
     const npcs = new NpcModelLoader(new ArchiveNpcTypeLoader(info, configs.getArchive(9)), models);
     const animation = new AnimationSystem();
     animation.initialize(info, cache.getIndex(0), cache.getIndex(1), configs.getArchive(12), cache.getIndex(22));
-    const scene = new DukePracticeSceneCompositor(() => models);
+    const scene = new DukeSceneCompositor(() => models);
     try {
-      scene.setEncounterRenderConfig(DUKE_PRACTICE_RENDER_CONFIG);
+      scene.setEncounterRenderConfig(DUKE_RENDER_CONFIG);
       await scene.loadNpc(npcs, animation);
       const engine = new SimulationEngine({
-        encounter: new DukePracticeEncounter(),
+        encounter: new DukeEncounter(),
         mechanics: { infiniteHealth: true },
       });
       const tile: Coordinate = [27, 51];
@@ -762,9 +760,9 @@ it.skipIf(skipWithoutRealCache('pinned'))(
     const npcs = new NpcModelLoader(new ArchiveNpcTypeLoader(info, configs.getArchive(9)), models);
     const animation = new AnimationSystem();
     animation.initialize(info, cache.getIndex(0), cache.getIndex(1), configs.getArchive(12), cache.getIndex(22));
-    const scene = new DukePracticeSceneCompositor(() => models);
+    const scene = new DukeSceneCompositor(() => models);
     try {
-      scene.setEncounterRenderConfig(DUKE_PRACTICE_RENDER_CONFIG);
+      scene.setEncounterRenderConfig(DUKE_RENDER_CONFIG);
       await scene.loadNpc(npcs, animation);
       const frameLoader = animation.getSeqFrameLoader();
       if (!frameLoader) throw new Error('Expected the cache sequence frame loader');
@@ -776,7 +774,7 @@ it.skipIf(skipWithoutRealCache('pinned'))(
           frameLoader,
         ),
       );
-      const engine = new SimulationEngine({ encounter: new DukePracticeEncounter() });
+      const engine = new SimulationEngine({ encounter: new DukeEncounter() });
       const bait: Coordinate = [31, 51];
       engine.setAttackTarget(WARDEN_ID);
       engine.advanceTick(bait);
@@ -793,7 +791,7 @@ it.skipIf(skipWithoutRealCache('pinned'))(
         let state = engine.getState();
         let events = engine.getLastTickEvents();
         if (frames.at(-1)?.state.currentTick !== state.currentTick) frames.push({ state, events });
-        if (replay === 'legacy' && state.encounter.kind === 'duke_practice') {
+        if (replay === 'legacy' && state.encounter.kind === 'duke') {
           state = {
             ...state,
             encounter: { ...state.encounter, visuals: { ...state.encounter.visuals, usesVisualEvents: undefined } },
@@ -847,11 +845,11 @@ it.skipIf(skipWithoutRealCache('pinned'))(
 
 it('glides the cache orb in both directions and plays the burst at both ends of the sweep', () => {
   const engine = new SimulationEngine({
-    encounter: new DukePracticeEncounter(57),
+    encounter: new DukeEncounter(57),
     mechanics: { infiniteHealth: true },
   });
   engine.setBossHp(ORB_HP);
-  const scene = new DukePracticeSceneCompositor();
+  const scene = new DukeSceneCompositor();
   const mesh: NpcMesh3DCommand = {
     kind: 'mesh3d',
     meshId: 'orb-fixture',
@@ -861,7 +859,7 @@ it('glides the cache orb in both directions and plays the burst at both ends of 
     normals: new Float32Array(),
   };
   try {
-    scene.setEncounterRenderConfig(DUKE_PRACTICE_RENDER_CONFIG);
+    scene.setEncounterRenderConfig(DUKE_RENDER_CONFIG);
     const renderer = scene['spotAnimRenderer'];
     vi.spyOn(renderer, 'isLoaded').mockReturnValue(true);
     vi.spyOn(renderer, 'getFrameLengths').mockReturnValue([48]);

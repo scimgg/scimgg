@@ -92,7 +92,7 @@ describe('diffResumableState', () => {
 
   it('accepts an older Duke presentation and still compares the orb’s true tile', () => {
     const encounter: SimulationState['encounter'] = {
-      kind: 'duke_practice',
+      kind: 'duke',
       state: { bileTicksRemaining: 0, enraged: false, perfectKillEligible: true },
       visuals: { hazards: [], orbTile: [35, 51] },
     };

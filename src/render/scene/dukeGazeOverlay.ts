@@ -1,4 +1,4 @@
-import { DUKE_GAZE_DURATION_TICKS, DUKE_GAZE_OVERLAY } from '../../encounters/dukePractice/constants';
+import { DUKE_GAZE_DURATION_TICKS, DUKE_GAZE_OVERLAY } from '../../encounters/duke/constants';
 import { ModelData } from '../../rs/model/ModelData';
 import type { ModelLoader } from '../../rs/model/ModelLoader';
 import type { AnimationSystem } from '../backends/picogl/AnimationSystem';

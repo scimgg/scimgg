@@ -10,9 +10,9 @@ records the observations and the limits of each sample.
 A finite sample can rule out a proposed range or trigger and constrain the possibilities.
 Exact roll distributions and hidden probabilities require a source for the distribution itself.
 
-**E** = [`DukePracticeEncounter.ts`](../../src/encounters/dukePractice/DukePracticeEncounter.ts),
-**A** = [`arena.ts`](../../src/encounters/dukePractice/arena.ts), and **P** =
-[`controls.ts`](../../src/encounters/dukePractice/controls.ts).
+**E** = [`DukeEncounter.ts`](../../src/encounters/duke/DukeEncounter.ts),
+**A** = [`arena.ts`](../../src/encounters/duke/arena.ts), and **P** =
+[`controls.ts`](../../src/encounters/duke/controls.ts).
 
 ## Attack selection and thresholds
 

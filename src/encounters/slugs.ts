@@ -30,5 +30,7 @@ export function slugToVariantId(slug: string): string {
  * which entering resolves to the encounter that owns it. Never generated as a canonical path.
  */
 export const RETIRED_SLUG_TO_KIND: ReadonlyMap<string, string> = new Map(
-  RETIRED_ENCOUNTER_KINDS.map(({ retired }) => [retired.slug, retired.kind] as const),
+  RETIRED_ENCOUNTER_KINDS.flatMap(({ retired }) =>
+    retired.slug === undefined ? [] : [[retired.slug, retired.kind] as const],
+  ),
 );

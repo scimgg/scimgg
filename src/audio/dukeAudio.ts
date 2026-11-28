@@ -1,5 +1,6 @@
-import { DUKE_CENTER_TILE } from '../encounters/dukePractice/arena';
-import { DUKE_PRACTICE_AUDIO_EVENT, type DukePracticeAudioCue } from '../encounters/dukePractice/audioCues';
+import { DUKE_CENTER_TILE } from '../encounters/duke/arena';
+import type { DukeAudioCue } from '../encounters/duke/audioCues';
+import { DUKE_AUDIO_EVENT } from '../types/duke';
 import { coordinateFrom, play, type SoundRule, silent, type TimedSound } from './EventAudioPlayer';
 
 // The catalog, cache clips, and captured casts supply these cues.
@@ -12,7 +13,7 @@ const MAGIC_LAUNCH_SOUNDS = [
   { id: 7161, delayCycles: 1 },
   { id: 7214, delayCycles: 50 },
 ];
-const CUE_SOUNDS: Record<DukePracticeAudioCue, number | TimedSound[] | null> = {
+const CUE_SOUNDS: Record<DukeAudioCue, number | TimedSound[] | null> = {
   feed: 7249, // Regular feed, capture ticks 104–105.
   wake: [
     { id: 7201, delayCycles: 1 },
@@ -62,14 +63,14 @@ const CUE_SOUNDS: Record<DukePracticeAudioCue, number | TimedSound[] | null> = {
   ], // Seq 10181, 20261126-235612-Duke-Sucellus.jsonl:5729–5786.
 };
 
-function isCue(value: unknown): value is DukePracticeAudioCue {
+function isCue(value: unknown): value is DukeAudioCue {
   return typeof value === 'string' && Object.hasOwn(CUE_SOUNDS, value);
 }
 
-export const dukePracticeAudioRules: Record<string, SoundRule> = {
-  [DUKE_PRACTICE_AUDIO_EVENT]: {
+export const dukeAudioRules: Record<string, SoundRule> = {
+  [DUKE_AUDIO_EVENT]: {
     resolve: (event) => {
-      if (event.type !== DUKE_PRACTICE_AUDIO_EVENT || !isCue(event.cue)) return silent;
+      if (event.type !== DUKE_AUDIO_EVENT || !isCue(event.cue)) return silent;
       const sounds = CUE_SOUNDS[event.cue];
       return sounds === null ? silent : play(sounds, { position: coordinateFrom(event.position), range: 15 });
     },

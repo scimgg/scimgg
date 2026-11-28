@@ -2,7 +2,7 @@ import type { Coordinate } from '../../types/simulation';
 
 export type WardenHazardKind = 'spikes' | 'slam' | 'gaze' | 'magic' | 'vent' | 'gasSpit' | 'bile';
 
-export interface DukePracticePose {
+export interface DukePose {
   readonly clip: 'wake' | 'slam' | 'magic' | 'fastMagic' | 'gaze' | 'bile';
   readonly startTick: number;
 }
@@ -18,7 +18,7 @@ export interface WardenHazard {
   readonly expiresTick: number;
 }
 
-export interface DukePracticeState {
+export interface DukeState {
   readonly poisonToleranceFilled?: number;
   readonly bileTicksRemaining: number;
   readonly enraged: boolean;
@@ -30,7 +30,7 @@ export interface DukeOrbBurst {
   readonly tick: number;
 }
 
-export interface DukePracticeVisuals {
+export interface DukeVisuals {
   readonly hazards: readonly WardenHazard[];
   readonly orbTile: Coordinate | null;
   /** Earlier replays reconstruct attack clips and ordinary effects from snapshots alone. */
@@ -38,7 +38,7 @@ export interface DukePracticeVisuals {
   /** Previous tile of the same orb, available while it is moving. */
   readonly orbPreviousTile?: Coordinate;
   readonly orbBursts?: readonly DukeOrbBurst[];
-  readonly pose?: DukePracticePose;
+  readonly pose?: DukePose;
   /** Expired damage areas whose impact or fade graphic is still playing. */
   readonly fadingEffects?: readonly WardenHazard[];
 }

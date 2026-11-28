@@ -20,10 +20,11 @@ import { z } from 'zod';
 import type { EncounterDescriptor } from '../core/encounters/encounterFactory';
 import type { Encounter, EncounterControls, MechanicsToggleInfo } from '../core/encounters/types';
 import type { MechanicsConfig } from '../types/simulation';
-import { START_TILE as DUKE_PRACTICE_START } from './dukePractice/arena';
-import { DUKE_MAP_SQUARE } from './dukePractice/constants';
-import { DUKE_PRACTICE_CONTROLS, DUKE_PRACTICE_KIND } from './dukePractice/controls';
-import { DukePracticeEncounter } from './dukePractice/DukePracticeEncounter';
+import { DUKE_KIND, LEGACY_DUKE_KIND } from './catalog';
+import { START_TILE as DUKE_START } from './duke/arena';
+import { DUKE_MAP_SQUARE } from './duke/constants';
+import { DUKE_CONTROLS } from './duke/controls';
+import { DukeEncounter } from './duke/DukeEncounter';
 import { INFERNO_LANDING_TILE, INFERNO_MAP_SQUARE, INFERNO_MAP_SQUARE_OFFSETS, ZUK_WAVE } from './inferno/constants';
 import { buildInfernoControls, INFERNO_START_WAVE_KEY, resolveInfernoRunSetup } from './inferno/controls';
 import { InfernoEncounter } from './inferno/InfernoEncounter';
@@ -235,24 +236,25 @@ export const ENCOUNTER_CORE_MODULES: readonly EncounterCoreModule[] = [
     countdownMovement: (mechanics) => resolveInfernoRunSetup(mechanics).startWave !== ZUK_WAVE,
   },
   {
-    kind: DUKE_PRACTICE_KIND,
-    factory: () => new DukePracticeEncounter(),
+    kind: DUKE_KIND,
+    factory: () => new DukeEncounter(),
     descriptor: {
-      kind: DUKE_PRACTICE_KIND,
-      displayName: 'Awakened Duke Practice',
-      description: 'Practise step-backs, pillar cover, gas vents, bile and orb dodges against Duke Sucellus.',
+      kind: DUKE_KIND,
+      displayName: 'Awakened Duke Sucellus',
+      description: 'Face Awakened Duke Sucellus from the opening or start at a later phase.',
       mapSquare: DUKE_MAP_SQUARE,
-      playerStart: [...DUKE_PRACTICE_START],
+      playerStart: [...DUKE_START],
       loadsMapLocs: true,
       collision: { mode: 'custom' },
       victory: {
-        eyebrow: 'Practice complete',
+        eyebrow: 'Triumphant',
         title: 'VICTORY',
         narrative: 'DUKE SUCELLUS DEFEATED',
         accent: 'gold',
       },
     },
-    controls: DUKE_PRACTICE_CONTROLS,
+    controls: DUKE_CONTROLS,
+    retiredEntries: { [LEGACY_DUKE_KIND]: {} },
   },
 ];
 

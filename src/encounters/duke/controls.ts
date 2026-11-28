@@ -1,9 +1,6 @@
 import type { EncounterControls } from '../../core/encounters/types';
 import { WARDEN_MAX_HP } from '../../npcs/duke/duke';
-
-export const DUKE_PRACTICE_KIND = 'duke_practice';
-export const START_PHASE_KEY = 'dukePracticeStartPhase';
-export const ALWAYS_BILE_KEY = 'dukePracticeAlwaysBile';
+import { DUKE_ALWAYS_BILE_KEY, DUKE_START_PHASE_KEY } from '../../types/duke';
 
 // Practice breakpoints from https://oldschool.runescape.wiki/w/Duke_Sucellus/Strategies#Awakened_mode
 export const VENTS_HP = Math.floor(WARDEN_MAX_HP * 0.76);
@@ -13,7 +10,7 @@ export const BILE_HP = Math.floor(WARDEN_MAX_HP * 0.65);
 export const ORB_HP = Math.floor(WARDEN_MAX_HP * 0.33);
 export const ENRAGE_HP = 440;
 
-const PRACTICE_STARTS = [
+const START_PHASES = [
   { value: 'opening', label: 'Opening', hp: WARDEN_MAX_HP },
   { value: 'vents', label: 'Vents', hp: VENTS_HP },
   { value: 'bile', label: 'Bile', hp: BILE_HP },
@@ -21,28 +18,28 @@ const PRACTICE_STARTS = [
   { value: 'enrage', label: 'Enrage', hp: ENRAGE_HP },
 ];
 
-export function practiceStartHp(value: unknown): number {
-  return PRACTICE_STARTS.find((phase) => phase.value === value)?.hp ?? WARDEN_MAX_HP;
+export function dukeStartHp(value: unknown): number {
+  return START_PHASES.find((phase) => phase.value === value)?.hp ?? WARDEN_MAX_HP;
 }
 
-export const DUKE_PRACTICE_CONTROLS: EncounterControls = {
-  defaultMechanicsConfig: { infiniteHealth: false, [START_PHASE_KEY]: 'opening', [ALWAYS_BILE_KEY]: false },
+export const DUKE_CONTROLS: EncounterControls = {
+  defaultMechanicsConfig: { infiniteHealth: false, [DUKE_START_PHASE_KEY]: 'opening', [DUKE_ALWAYS_BILE_KEY]: false },
   mechanicsToggles: [
     {
-      key: START_PHASE_KEY,
+      key: DUKE_START_PHASE_KEY,
       label: 'Start at',
       setup: true,
-      choices: PRACTICE_STARTS.map(({ value, label }) => ({ value, label })),
+      choices: START_PHASES.map(({ value, label }) => ({ value, label })),
       info: 'Choose the phase and Hitpoints for the next attempt.',
       visibleInPractice: () => false,
     },
     {
-      key: ALWAYS_BILE_KEY,
+      key: DUKE_ALWAYS_BILE_KEY,
       label: 'Always Bile',
       group: 'aid',
       info: 'Force bile after every Gas Flare volley at any Hitpoints.',
     },
   ],
   debugActions: [],
-  bossHpPresets: PRACTICE_STARTS.map(({ label, hp }) => ({ label, hp })),
+  bossHpPresets: START_PHASES.map(({ label, hp }) => ({ label, hp })),
 };

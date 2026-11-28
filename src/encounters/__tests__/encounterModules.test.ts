@@ -54,7 +54,7 @@ const YAMA_VARIANT_KINDS = [
 ] as const;
 
 /** Every kind that owns a descriptor, i.e. is selectable in the picker in its own right. */
-const BASE_KINDS = ['yama_p3', 'lobby', 'sol_heredit', 'inferno', 'duke_practice'] as const;
+const BASE_KINDS = ['yama_p3', 'lobby', 'sol_heredit', 'inferno', 'duke'] as const;
 const BETA_ENCOUNTERS = [{ kind: 'sol_heredit', displayName: 'Sol Heredit', actorId: 'lobby-npc-2' }] as const;
 
 describe('encounter registration invariants', () => {
@@ -431,7 +431,7 @@ describe('encounter catalog invariants', () => {
         ['yama', 'yama_p3'],
         ['sol-heredit', 'sol_heredit'],
         ['inferno', 'inferno'],
-        ['awakened-duke', 'duke_practice'],
+        ['awakened-duke', 'duke'],
       ]),
     );
   });

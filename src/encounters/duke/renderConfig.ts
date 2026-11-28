@@ -3,13 +3,13 @@ import type { SceneObjectLocData } from '../../render/graphics/SceneObjectRender
 import type { SceneObjectSpec } from '../../render/graphics/sceneObjectTypes';
 import type { EncounterRenderConfig } from '../../render/scene/encounterRenderConfig';
 import { LocModelType } from '../../rs/config/loctype/LocModelType';
+import { DUKE_KIND } from '../catalog';
 import { WARDEN_TILE } from './arena';
 import { DUKE_BILE_POOL_LOC_ID, DUKE_MAP_SQUARE, DUKE_ORB_NPC_ID, DUKE_SEQS, DUKE_SPOT_ANIMS } from './constants';
-import { DUKE_PRACTICE_KIND } from './controls';
 
 const POOL_LOCAL_TRANSFORM = new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
 
-export const DUKE_PRACTICE_RENDER_CONFIG: EncounterRenderConfig = {
+export const DUKE_RENDER_CONFIG: EncounterRenderConfig = {
   terrainMapSquare: DUKE_MAP_SQUARE,
   locRender: { bounds: { minX: 19, maxX: 43, minY: 33, maxY: 62 }, marginTiles: 0, levels: [0, 1] },
   primaryNpc: {
@@ -45,7 +45,7 @@ export const DUKE_PRACTICE_RENDER_CONFIG: EncounterRenderConfig = {
   createSceneObjectController: () => ({
     consumeEvents() {},
     update({ state }) {
-      if (state.encounter.kind !== DUKE_PRACTICE_KIND) return [];
+      if (state.encounter.kind !== DUKE_KIND) return [];
 
       const pools: SceneObjectSpec<SceneObjectLocData>[] = [];
       for (const hazard of state.encounter.visuals.hazards) {

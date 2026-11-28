@@ -44,8 +44,10 @@ import {
   type WardenPlan,
   wardenDefinitions,
 } from '../../npcs/duke/duke';
+import { DUKE_ALWAYS_BILE_KEY, DUKE_START_PHASE_KEY } from '../../types/duke';
 import { ARDER_MUSCA_POISON_ITEM_ID, getFiniteStackQuantity } from '../../types/inventory';
 import type { Coordinate, MechanicsConfig } from '../../types/simulation';
+import { DUKE_KIND } from '../catalog';
 import {
   buildArena,
   COVER_TILES,
@@ -60,7 +62,7 @@ import {
   VENTS,
   WARDEN_TILE,
 } from './arena';
-import { emitDukePracticeAudio } from './audioCues';
+import { emitDukeAudio } from './audioCues';
 import {
   DUKE_ENRAGED_VENT_ACTIVE_TICKS,
   DUKE_FIRST_ATTACK_DELAY_TICKS,
@@ -82,18 +84,8 @@ import {
   DUKE_WAKE_AFTER_FEED_TICKS,
   DUKE_WAKE_ANIMATION_TICKS,
 } from './constants';
-import {
-  ALWAYS_BILE_KEY,
-  BILE_HP,
-  DUKE_PRACTICE_CONTROLS,
-  DUKE_PRACTICE_KIND,
-  ENRAGE_HP,
-  ORB_HP,
-  practiceStartHp,
-  START_PHASE_KEY,
-  VENTS_HP,
-} from './controls';
-import type { DukeOrbBurst, DukePracticePose, WardenHazard, WardenHazardKind } from './snapshot';
+import { BILE_HP, DUKE_CONTROLS, dukeStartHp, ENRAGE_HP, ORB_HP, VENTS_HP } from './controls';
+import type { DukeOrbBurst, DukePose, WardenHazard, WardenHazardKind } from './snapshot';
 
 // 20261127-005253-Duke-Sucellus_2.jsonl, first spawn tick 228 and every 12 ticks through 432.
 const ORB_PERIOD = 12;
@@ -212,9 +204,9 @@ function boltTarget(player: PlayerActor): NpcVisualTarget {
   return { kind: 'actor', actorId: player.id, size: player.size, position: player.position };
 }
 
-export class DukePracticeEncounter implements Encounter {
-  readonly kind = DUKE_PRACTICE_KIND;
-  readonly runStartMechanicsKeys = [START_PHASE_KEY];
+export class DukeEncounter implements Encounter {
+  readonly kind = DUKE_KIND;
+  readonly runStartMechanicsKeys = [DUKE_START_PHASE_KEY];
   private readonly arena = buildArena();
   private startHp = WARDEN_MAX_HP;
   private phaseStartMode: 'legacy' | 'enrage-jump' | 'awake' = 'awake';
@@ -222,7 +214,7 @@ export class DukePracticeEncounter implements Encounter {
   private perfectKillEligible = true;
   private lastIncomingHitTick: number | null = null;
   private hazards: WardenHazard[] = [];
-  private pose: DukePracticePose | undefined;
+  private pose: DukePose | undefined;
   private bileThroughTick = 0;
   private nextOrbTick: number | null = null;
   private orb: { startTick: number; eastbound: boolean } | null = null;
@@ -248,7 +240,7 @@ export class DukePracticeEncounter implements Encounter {
   }
 
   getDefaultMechanicsConfig() {
-    return DUKE_PRACTICE_CONTROLS.defaultMechanicsConfig;
+    return DUKE_CONTROLS.defaultMechanicsConfig;
   }
 
   getNpcDefinitions() {
@@ -293,7 +285,7 @@ export class DukePracticeEncounter implements Encounter {
   }
 
   configureRunStart(mechanics: Readonly<Partial<MechanicsConfig>>, ctx: EncounterRunStartContext): void {
-    const hp = practiceStartHp(mechanics[START_PHASE_KEY]);
+    const hp = dukeStartHp(mechanics[DUKE_START_PHASE_KEY]);
     if (hp === this.startHp) return;
     this.startHp = hp;
     if (ctx.world.getNpc(WARDEN_ID)) {
@@ -387,7 +379,7 @@ export class DukePracticeEncounter implements Encounter {
   onNpcDefeated(defeat: EncounterNpcDefeat, ctx: EncounterContext, ownership: EncounterCompletionOwnership): void {
     if (defeat.npcId !== WARDEN_ID) return;
     this.clearHazards();
-    emitDukePracticeAudio(ctx.tickEvents, 'defeat', DUKE_CENTER_TILE);
+    emitDukeAudio(ctx.tickEvents, 'defeat', DUKE_CENTER_TILE);
     if (ownership !== 'encounter-owned') return;
     this.outcome = {
       phase: 'resolving',
@@ -417,7 +409,7 @@ export class DukePracticeEncounter implements Encounter {
         if (ctx.tick === impactTick - DUKE_GAZE_HIT_DELAY_TICKS) {
           const covered = tiles.some((tile) => sameTile(ctx.playerPos, tile));
           this.hazards[index] = { ...hazard, missed: covered };
-          emitDukePracticeAudio(ctx.tickEvents, 'gaze');
+          emitDukeAudio(ctx.tickEvents, 'gaze');
           message(
             ctx,
             covered ? "You manage to avoid Duke Sucellus' gaze." : "You failed to avoid Duke Sucellus' gaze.",
@@ -439,7 +431,7 @@ export class DukePracticeEncounter implements Encounter {
             // A connected bolt invalidates a perfect kill even if the damage roll is zero.
             if (hit) {
               this.perfectKillEligible = false;
-              emitDukePracticeAudio(ctx.tickEvents, 'magic');
+              emitDukeAudio(ctx.tickEvents, 'magic');
               const player = ctx.world.getPlayer();
               if (player) {
                 // 20261127-002024-Duke-Sucellus_1.jsonl:8637 attaches graphic 2435 to the player.
@@ -456,7 +448,7 @@ export class DukePracticeEncounter implements Encounter {
         });
         continue;
       }
-      if (kind === 'slam') emitDukePracticeAudio(ctx.tickEvents, kind);
+      if (kind === 'slam') emitDukeAudio(ctx.tickEvents, kind);
       if (tiles.some((tile) => sameTile(ctx.playerPos, tile))) {
         damages.push(
           kind === 'slam'
@@ -467,13 +459,13 @@ export class DukePracticeEncounter implements Encounter {
     }
     for (const { tiles, landingTick, impactTick, expiresTick } of ventClouds.values()) {
       if (ctx.tick === landingTick) {
-        emitDukePracticeAudio(ctx.tickEvents, 'vent', tiles[4]);
+        emitDukeAudio(ctx.tickEvents, 'vent', tiles[4]);
       } else if (
         ctx.tick >= impactTick &&
         ctx.tick < expiresTick &&
         (ctx.tick - impactTick) % DUKE_VENT_SMOKE_CYCLE_TICKS === 0
       ) {
-        emitDukePracticeAudio(ctx.tickEvents, 'ventIdle', tiles[4]);
+        emitDukeAudio(ctx.tickEvents, 'ventIdle', tiles[4]);
         // 20261127-022231-Duke-Sucellus_7.jsonl:5529–5607. Only the smoke pulses hit.
         if (tiles.some((tile) => sameTile(ctx.playerPos, tile))) damages.push(HAZARD_DAMAGE.vent);
       }
@@ -517,7 +509,7 @@ export class DukePracticeEncounter implements Encounter {
     inventory[slot] = quantity > 1 ? { id: ARDER_MUSCA_POISON_ITEM_ID, quantity: quantity - 1 } : null;
     player.inventory = inventory;
     plan.poisonToleranceFilled = Math.min(DUKE_POISON_TOLERANCE, plan.poisonToleranceFilled + DUKE_POISON_PER_DOSE);
-    emitDukePracticeAudio(ctx.tickEvents, 'feed');
+    emitDukeAudio(ctx.tickEvents, 'feed');
     if (plan.poisonToleranceFilled === DUKE_POISON_TOLERANCE) {
       plan.openingAttackTick = ctx.tick + DUKE_WAKE_AFTER_FEED_TICKS + DUKE_FIRST_ATTACK_DELAY_TICKS;
       message(ctx, 'Duke is waking up.');
@@ -535,7 +527,7 @@ export class DukePracticeEncounter implements Encounter {
     if (!plan || plan.openingAttackTick !== null) return;
     plan.openingAttackTick = info.tick + DUKE_FIRST_ATTACK_DELAY_TICKS;
     this.playPose(ctx.tickEvents, info.tick, 'wake');
-    emitDukePracticeAudio(ctx.tickEvents, 'wake', DUKE_CENTER_TILE);
+    emitDukeAudio(ctx.tickEvents, 'wake', DUKE_CENTER_TILE);
   }
 
   onPlayerAttackResolved(info: EncounterPlayerAttackInfo, { tickEvents }: EncounterPlayerAttackContext): void {
@@ -543,7 +535,7 @@ export class DukePracticeEncounter implements Encounter {
     this.lastIncomingHitTick = info.tick;
     // The first splat decides the cue, even when it blocks and the later Scythe splats land.
     // 20261127-025030-Duke-Sucellus_10.jsonl:6165–6167 and :6674–6680.
-    if (info.effectiveDamage > 0) emitDukePracticeAudio(tickEvents, 'dukeHit', DUKE_CENTER_TILE);
+    if (info.effectiveDamage > 0) emitDukeAudio(tickEvents, 'dukeHit', DUKE_CENTER_TILE);
   }
 
   processNpcTick(actor: NpcActor, ctx: EncounterContext, mechanics: Partial<MechanicsConfig>): EncounterTickResult {
@@ -554,7 +546,7 @@ export class DukePracticeEncounter implements Encounter {
       if (plan.poisonToleranceFilled === DUKE_POISON_TOLERANCE && ctx.tick >= wakeTick) {
         actor.npcTypeId = DUKE_NPC_ID;
         this.playPose(ctx.tickEvents, wakeTick, 'wake');
-        emitDukePracticeAudio(ctx.tickEvents, 'wake', DUKE_CENTER_TILE);
+        emitDukeAudio(ctx.tickEvents, 'wake', DUKE_CENTER_TILE);
       } else if (ctx.tick >= wakeTick + DUKE_WAKE_ANIMATION_TICKS) {
         actor.npcTypeId = DUKE_NPC_ID;
         this.pose = undefined;
@@ -565,7 +557,7 @@ export class DukePracticeEncounter implements Encounter {
     }
 
     const hp = actor.vitals.hp;
-    const alwaysBile = mechanics[ALWAYS_BILE_KEY] === true;
+    const alwaysBile = mechanics[DUKE_ALWAYS_BILE_KEY] === true;
     actor.combat.attackSpeed = wardenCadence(hp);
     actor.combat.nextActionTick = ctx.tick + actor.combat.attackSpeed;
     if (plan.bileQueued) {
@@ -581,7 +573,7 @@ export class DukePracticeEncounter implements Encounter {
       // https://oldschool.runescape.wiki/w/Duke_Sucellus/Strategies#Fight_overview
       this.schedule('gaze', COVER_TILES, ctx.tick + DUKE_GAZE_COVER_CHECK_TICKS + DUKE_GAZE_HIT_DELAY_TICKS);
       this.playPose(ctx.tickEvents, ctx.tick, 'gaze');
-      emitDukePracticeAudio(ctx.tickEvents, 'gazeWindup', DUKE_CENTER_TILE);
+      emitDukeAudio(ctx.tickEvents, 'gazeWindup', DUKE_CENTER_TILE);
       actor.combat.nextActionTick = ctx.tick + DUKE_GAZE_DURATION_TICKS;
       plan.autosSinceGaze = 0;
       // The first flare follows three basics after the first Gaze.
@@ -620,7 +612,7 @@ export class DukePracticeEncounter implements Encounter {
             })),
           ],
         });
-        emitDukePracticeAudio(ctx.tickEvents, 'slamWindup', DUKE_CENTER_TILE);
+        emitDukeAudio(ctx.tickEvents, 'slamWindup', DUKE_CENTER_TILE);
         const accuracy = attackAccuracy(dukeFormulaActor(actor), ctx, 'melee_crush');
         return { environmentalDamages: [{ ...HAZARD_DAMAGE.spikes, accuracy }] };
       } else {
@@ -648,7 +640,7 @@ export class DukePracticeEncounter implements Encounter {
               ]
             : [],
         });
-        emitDukePracticeAudio(ctx.tickEvents, 'magicLaunch', DUKE_CENTER_TILE);
+        emitDukeAudio(ctx.tickEvents, 'magicLaunch', DUKE_CENTER_TILE);
       }
     }
     return { environmentalDamages: [] };
@@ -657,7 +649,7 @@ export class DukePracticeEncounter implements Encounter {
   private playPose(
     tickEvents: TickEvents,
     tick: number,
-    clip: DukePracticePose['clip'],
+    clip: DukePose['clip'],
     { graphics = [], projectiles = [] }: Partial<Pick<EncounterVisualBatch, 'graphics' | 'projectiles'>> = {},
   ): void {
     this.pose = { clip, startTick: tick };
@@ -693,7 +685,7 @@ export class DukePracticeEncounter implements Encounter {
       expiresTick: impactTick + activeTicks,
     });
     this.playPose(ctx.tickEvents, ctx.tick, 'fastMagic');
-    emitDukePracticeAudio(ctx.tickEvents, 'ventLaunch', DUKE_CENTER_TILE);
+    emitDukeAudio(ctx.tickEvents, 'ventLaunch', DUKE_CENTER_TILE);
     const firstOfFour = plan.flaresRemaining === 4;
     if (firstOfFour) message(ctx, 'Gas flares. Run south to bait the rest of the volley.');
     plan.flaresRemaining--;
@@ -714,7 +706,7 @@ export class DukePracticeEncounter implements Encounter {
     this.bileThroughTick = ctx.tick + BILE_TICKS;
     // 20261126-232238-Duke.jsonl:6554–6590 and :7537–7579.
     this.playPose(ctx.tickEvents, ctx.tick, 'bile');
-    emitDukePracticeAudio(ctx.tickEvents, 'bile', DUKE_CENTER_TILE);
+    emitDukeAudio(ctx.tickEvents, 'bile', DUKE_CENTER_TILE);
     message(ctx, 'Bile is dripping onto the floor. Keep moving to leave the pools behind.');
   }
 
@@ -747,7 +739,7 @@ export class DukePracticeEncounter implements Encounter {
       }
       if (hit) {
         // The contact sound originates one tile ahead of the burst (20261127-023028-Duke-Sucellus_8.jsonl:9004–9005).
-        emitDukePracticeAudio(ctx.tickEvents, 'orbHit', nextTile ?? previousTile);
+        emitDukeAudio(ctx.tickEvents, 'orbHit', nextTile ?? previousTile);
         // 35 isolated nonlethal contacts span 25–27. See docs/encounters/duke-unverified.md.
         return { source: ORB_DAMAGE_SOURCE, attackType: 'typeless', baseDamage: [25, 27] };
       }
@@ -759,7 +751,7 @@ export class DukePracticeEncounter implements Encounter {
     const tile: Coordinate = [eastbound ? ORB_LANE.west : ORB_LANE.east, ORB_LANE.y];
     this.orb = { startTick: ctx.tick, eastbound };
     this.orbBursts.push({ tick: ctx.tick, tile });
-    emitDukePracticeAudio(ctx.tickEvents, 'orbSpawn', tile);
+    emitDukeAudio(ctx.tickEvents, 'orbSpawn', tile);
     this.nextOrbTick = ctx.tick + ORB_PERIOD;
   }
 
@@ -791,7 +783,7 @@ export class DukePracticeEncounter implements Encounter {
     return [];
   }
 
-  getSnapshot(ctx: EncounterSnapshotContext): Extract<EncounterSnapshot, { kind: typeof DUKE_PRACTICE_KIND }> {
+  getSnapshot(ctx: EncounterSnapshotContext): Extract<EncounterSnapshot, { kind: typeof DUKE_KIND }> {
     const warden = ctx.world.getNpc(WARDEN_ID);
     const plan = warden ? getWardenPlan(warden) : undefined;
     const fadingEffects = this.hazards.filter(({ expiresTick }) => ctx.tick >= expiresTick);

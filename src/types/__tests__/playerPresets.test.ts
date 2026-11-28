@@ -27,8 +27,8 @@ describe('shipped preset equipment coverage', () => {
     expect(Object.keys(EQUIPMENT_PRESETS.inferno)[0]).toBe('max_tbow');
   });
 
-  it('opens Duke practice with Burning claws and all 28 inventory slots filled', () => {
-    const { equipment, inventory } = getDefaultLoadout('duke_practice');
+  it('opens Duke with Burning claws and all 28 inventory slots filled', () => {
+    const { equipment, inventory } = getDefaultLoadout('duke');
 
     expect(equipment.weapon).toBe(29577);
     expect(equipment.head).toBe(30750); // Oathplate helm
@@ -53,7 +53,7 @@ describe('shipped preset equipment coverage', () => {
   });
 
   it('can open Duke from every shipped loadout', () => {
-    const presets = EQUIPMENT_PRESETS.duke_practice;
+    const presets = EQUIPMENT_PRESETS.duke;
     for (const preset of Object.values(presets)) {
       expect(preset.inventory[27], preset.name).toEqual({ id: ARDER_MUSCA_POISON_ITEM_ID, quantity: 3 });
     }

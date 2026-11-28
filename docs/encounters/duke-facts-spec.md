@@ -1,6 +1,6 @@
 # Awakened Duke Sucellus — facts spec
 
-Rules supported by captures, the pinned cache, and published sources for the `duke_practice`
+Rules supported by captures, the pinned cache, and published sources for the `duke`
 encounter. The [capture analysis](./duke-capture-analysis.md) gives the derivations. The
 [unverified behavior register](./duke-unverified.md) records the simulator's models, assumptions,
 and known mismatches.
@@ -8,7 +8,7 @@ and known mismatches.
 ## Captures
 
 The recordings are private. Tests use the extracted ticks, tiles, and IDs in the
-[capture fixtures](../../src/encounters/dukePractice/__tests__/fixtures/).
+[capture fixtures](../../src/encounters/duke/__tests__/fixtures/).
 
 | Alias | File | Ticks | Contents |
 |---|---|---|---|
@@ -39,10 +39,10 @@ or known exceptions. **WIKI-ONLY** identifies a published rule awaiting a captur
 **30 client cycles = 1 game tick.** Attack offsets start at the windup unless a row names a different
 boundary. Placement, animation, and damage may occur on different ticks.
 
-**E** = [`DukePracticeEncounter.ts`](../../src/encounters/dukePractice/DukePracticeEncounter.ts),
-**C** = [`constants.ts`](../../src/encounters/dukePractice/constants.ts),
-**A** = [`arena.ts`](../../src/encounters/dukePractice/arena.ts),
-**P** = [`controls.ts`](../../src/encounters/dukePractice/controls.ts), and
+**E** = [`DukeEncounter.ts`](../../src/encounters/duke/DukeEncounter.ts),
+**C** = [`constants.ts`](../../src/encounters/duke/constants.ts),
+**A** = [`arena.ts`](../../src/encounters/duke/arena.ts),
+**P** = [`controls.ts`](../../src/encounters/duke/controls.ts), and
 **W** = [`duke.ts`](../../src/npcs/duke/duke.ts).
 
 | Timing | Value | Code | Capture evidence (n) | Status |
@@ -260,7 +260,7 @@ simulator displays each pool for nine ticks, with damage starting one tick after
 drips on the same tile preserve its expiry. The 2D renderer marks flares and pools with tile
 overlays. Both views mark gaze cover. [Recorded pool placement](https://www.youtube.com/watch?v=YwYTtOvnuck&t=116s)
 
-## 4. Practice setup
+## 4. Phase setup
 
 The simulator uses 1,289 HP for four flares, 1,103 HP for bile eligibility, 560 HP for orbs, and
 440 HP for enrage. Attack-only recordings retain their original five-tick first-swing-to-response

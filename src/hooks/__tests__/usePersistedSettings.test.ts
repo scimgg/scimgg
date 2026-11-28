@@ -1064,6 +1064,23 @@ describe('usePersistedSettings Zuk safe region mechanic', () => {
     expect(result.current[0].mechanicsConfigPerEncounter.inferno?.zukShieldSafeTiles).toBe(true);
   });
 
+  it('keeps Duke settings after the rename', () => {
+    writeSettings({
+      mechanicsConfigPerEncounter: {
+        duke_practice: { dukePracticeStartPhase: 'enrage', dukePracticeAlwaysBile: true },
+      },
+      startingHpPerEncounter: { duke_practice: 80 },
+      modifiersPerEncounter: { duke_practice: { test: 2 } },
+    });
+
+    const { result } = renderHook(() => usePersistedSettings());
+    const [settings] = result.current;
+
+    expect(settings.mechanicsConfigPerEncounter).toEqual({ duke: { dukeStartPhase: 'enrage', dukeAlwaysBile: true } });
+    expect(settings.startingHpPerEncounter).toEqual({ duke: 80 });
+    expect(settings.modifiersPerEncounter).toEqual({ duke: { test: 2 } });
+  });
+
   it('moves the retired Zuk kind’s choices onto the Inferno, the Zuk choice winning a shared key', () => {
     writeSettings({
       mechanicsConfigPerEncounter: {

@@ -1,14 +1,9 @@
 import type { ActorFrameState, FrameSoundTracker } from '../../audio/FrameSoundTracker';
-import { COVER_TILES, PILLARS, square, VENTS, WARDEN_TILE } from '../../encounters/dukePractice/arena';
-import {
-  DUKE_GROUND_ICICLES,
-  DUKE_ORB_NPC_ID,
-  DUKE_SEQS,
-  DUKE_SPOT_ANIMS,
-} from '../../encounters/dukePractice/constants';
-import { DUKE_PRACTICE_KIND } from '../../encounters/dukePractice/controls';
-import { DUKE_PRACTICE_RENDER_CONFIG } from '../../encounters/dukePractice/renderConfig';
-import type { DukePracticePose, WardenHazardKind } from '../../encounters/dukePractice/snapshot';
+import { DUKE_KIND } from '../../encounters/catalog';
+import { COVER_TILES, PILLARS, square, VENTS, WARDEN_TILE } from '../../encounters/duke/arena';
+import { DUKE_GROUND_ICICLES, DUKE_ORB_NPC_ID, DUKE_SEQS, DUKE_SPOT_ANIMS } from '../../encounters/duke/constants';
+import { DUKE_RENDER_CONFIG } from '../../encounters/duke/renderConfig';
+import type { DukePose, WardenHazardKind } from '../../encounters/duke/snapshot';
 import { DUKE_ASLEEP_NPC_ID, DUKE_NPC_ID, LEGACY_DUKE_TYPE_ID, WARDEN_ID, WARDEN_SIZE } from '../../npcs/duke/duke';
 import { NpcType } from '../../rs/config/npctype/NpcType';
 import type { ModelLoader } from '../../rs/model/ModelLoader';
@@ -25,8 +20,8 @@ import type { EncounterEffectFilter } from '../effects/NpcProjectileFlights';
 import type { AnimClipRef } from '../npc/animationTypes';
 import type { NpcAnimationTrigger } from '../npc/NpcInstanceManager';
 import { interpolateNpcPosition } from '../npc/npcRenderPosition';
+import { DukeEffects } from './dukeEffects';
 import { DukeGazeOverlay } from './dukeGazeOverlay';
-import { DukePracticeEffects } from './dukePracticeEffects';
 import { configureEncounterScene } from './encounterSceneBuilder';
 import { isNpcModelHidden } from './npcPluginVisibility';
 import { SceneCompositor, Z_LAYERS } from './SceneCompositor';
@@ -37,7 +32,7 @@ const METAL = packHsl(147, 94, 62);
 const TEAL = packHsl(123, 175, 100);
 const VENT_RIM = packHsl(23, 230, 166);
 const ORB_LIGHT = packHsl(203, 244, 133);
-const ORB_RENDER_ACTOR_ID = 'duke-practice-orb';
+const ORB_RENDER_ACTOR_ID = 'duke-orb';
 
 // The Awakened sleeping form uses the regular fight's Feed interaction.
 export const DUKE_ASLEEP_MENU_TYPE = Object.assign(
@@ -90,14 +85,14 @@ function paintTile(
   });
 }
 
-export class DukePracticeSceneCompositor extends SceneCompositor {
+export class DukeSceneCompositor extends SceneCompositor {
   private dukeRenderTypeId: number | undefined;
-  private readonly effects = new DukePracticeEffects();
+  private readonly effects = new DukeEffects();
   private readonly gazeOverlay = new DukeGazeOverlay();
   private visualHistory: RenderContext['replayHistory'];
   private replayUsesVisualEvents = false;
-  private replayPose: DukePracticePose | undefined;
-  private sampledPose: DukePracticePose | undefined;
+  private replayPose: DukePose | undefined;
+  private sampledPose: DukePose | undefined;
   private poseTimeline = new ReplayPrimaryIndex<NpcAnimationTrigger, AnimClipRef>([]);
 
   constructor(
@@ -106,7 +101,7 @@ export class DukePracticeSceneCompositor extends SceneCompositor {
   ) {
     super();
     if (frameSoundTracker) this.setFrameSoundTracker(frameSoundTracker);
-    this.registerTransientReset('dukePracticeEffects', () => this.effects.reset());
+    this.registerTransientReset('dukeEffects', () => this.effects.reset());
   }
 
   protected override frameAudioStates(): ActorFrameState[] {
@@ -123,7 +118,7 @@ export class DukePracticeSceneCompositor extends SceneCompositor {
     this.visualHistory = ctx.replayHistory ?? ctx.restoredPresentation?.history;
     const queue = super.build(ctx, projection, viewport);
     const { encounter } = ctx.simulationState;
-    if (ctx.options.renderMode !== '2d' && encounter.kind === DUKE_PRACTICE_KIND) {
+    if (ctx.options.renderMode !== '2d' && encounter.kind === DUKE_KIND) {
       const pose = encounter.visuals.pose;
       if (pose?.clip === 'gaze') this.gazeOverlay.draw(queue, this.effectTick - pose.startTick);
     }
@@ -131,7 +126,7 @@ export class DukePracticeSceneCompositor extends SceneCompositor {
   }
 
   protected override encounterNpcTriggers(state: SimulationState): readonly NpcAnimationTrigger[] {
-    if (state.encounter.kind !== DUKE_PRACTICE_KIND || state.encounter.visuals.usesVisualEvents) return [];
+    if (state.encounter.kind !== DUKE_KIND || state.encounter.visuals.usesVisualEvents) return [];
     const { pose } = state.encounter.visuals;
     return pose && pose.startTick === state.currentTick
       ? [{ actorId: this.actorRenderIdOf(WARDEN_ID), trigger: 'attack', tick: pose.startTick, clipId: pose.clip }]
@@ -139,8 +134,7 @@ export class DukePracticeSceneCompositor extends SceneCompositor {
   }
 
   protected override reconstructEncounterVisuals({ simulationState }: RenderContext): void {
-    const visuals =
-      simulationState.encounter.kind === DUKE_PRACTICE_KIND ? simulationState.encounter.visuals : undefined;
+    const visuals = simulationState.encounter.kind === DUKE_KIND ? simulationState.encounter.visuals : undefined;
     this.replayPose = visuals?.pose;
     this.replayUsesVisualEvents =
       visuals?.usesVisualEvents === true && !(this.replayPose && this.legacyEffectAtTick(this.replayPose.startTick));
@@ -162,13 +156,13 @@ export class DukePracticeSceneCompositor extends SceneCompositor {
     const source = history.frames[Math.max(0, low - 1)]?.state;
     return (
       (source?.currentTick === tick || (low === 0 && source && tick < source.currentTick)) &&
-      source.encounter.kind === DUKE_PRACTICE_KIND &&
+      source.encounter.kind === DUKE_KIND &&
       !source.encounter.visuals.usesVisualEvents
     );
   };
 
   protected override encounterEffectFilter(state: SimulationState): EncounterEffectFilter | undefined {
-    if (state.encounter.kind !== DUKE_PRACTICE_KIND) return undefined;
+    if (state.encounter.kind !== DUKE_KIND) return undefined;
     const { hazards, fadingEffects = [] } = state.encounter.visuals;
     const effects = [...hazards, ...fadingEffects];
     return (spotAnimId, tick) => {
@@ -232,7 +226,7 @@ export class DukePracticeSceneCompositor extends SceneCompositor {
       this.dukeRenderTypeId = dukeTypeId;
     }
     const visibleNpcs = isLegacy ? npcs.map((npc) => (npc === duke ? { ...npc, npcTypeId: DUKE_NPC_ID } : npc)) : npcs;
-    const visuals = state?.encounter.kind === DUKE_PRACTICE_KIND ? state.encounter.visuals : undefined;
+    const visuals = state?.encounter.kind === DUKE_KIND ? state.encounter.visuals : undefined;
     if (!visuals?.orbTile) return visibleNpcs;
     const { orbTile, orbPreviousTile } = visuals;
 
@@ -270,7 +264,7 @@ export class DukePracticeSceneCompositor extends SceneCompositor {
     is2D: boolean,
     state: SimulationState,
   ): void {
-    if (is2D || state.encounter.kind !== DUKE_PRACTICE_KIND) return;
+    if (is2D || state.encounter.kind !== DUKE_KIND) return;
     this.effects.update(
       this.spotAnimRenderer,
       state.encounter.visuals,
@@ -291,7 +285,7 @@ export class DukePracticeSceneCompositor extends SceneCompositor {
     is2D: boolean,
     options: SceneOptions,
   ): void {
-    if (state.encounter.kind !== DUKE_PRACTICE_KIND) return;
+    if (state.encounter.kind !== DUKE_KIND) return;
     if (is2D) {
       for (const tile of COVER_TILES) paintTile(queue, projection, tile, TEAL, 0.5);
       for (const tile of PILLARS) paintTile(queue, projection, tile, METAL, 1);
@@ -346,7 +340,7 @@ export class DukePracticeSceneCompositor extends SceneCompositor {
           tile[1],
           color,
           alpha,
-          `duke-practice-${kind}-${Number(active)}`,
+          `duke-${kind}-${Number(active)}`,
           0.035,
           Z_LAYERS.WAVE,
         );
@@ -361,8 +355,8 @@ export class DukePracticeSceneCompositor extends SceneCompositor {
   }
 }
 
-export const createDukePracticeSceneBuilder: SceneBuilderFactory = (options) =>
-  configureEncounterScene(new DukePracticeSceneCompositor(() => options.cacheManager.getModelLoader()), {
+export const createDukeSceneBuilder: SceneBuilderFactory = (options) =>
+  configureEncounterScene(new DukeSceneCompositor(() => options.cacheManager.getModelLoader()), {
     ...options,
-    encounterRenderConfig: options.encounterRenderConfig ?? DUKE_PRACTICE_RENDER_CONFIG,
+    encounterRenderConfig: options.encounterRenderConfig ?? DUKE_RENDER_CONFIG,
   });

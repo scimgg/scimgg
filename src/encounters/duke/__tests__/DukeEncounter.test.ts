@@ -1,28 +1,23 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { applySpecialAttackEffects } from '../../../core/combat/player/specialAttacks/postHitEffects';
 import { getArenaAllowUnboundedFallback, getArenaConfig, setArenaConfig } from '../../../core/constants';
+import { ReplayRecorder, type ReplayRecorderData } from '../../../core/ReplayRecorder';
 import { SimulationEngine } from '../../../core/SimulationEngine';
 import { DUKE_ASLEEP_NPC_ID, DUKE_NPC_ID, WARDEN_ID, WARDEN_MAX_HP } from '../../../npcs/duke/duke';
+import { diffResumableState } from '../../../replay/resumableState';
 import { ObjType } from '../../../rs/config/objtype/ObjType';
+import { DUKE_ALWAYS_BILE_KEY, DUKE_AUDIO_EVENT, DUKE_START_PHASE_KEY } from '../../../types/duke';
 import { PARAM_ATTACK_SPEED } from '../../../types/equipmentStats';
 import { ARDER_MUSCA_POISON_ITEM_ID, createEmptyInventory } from '../../../types/inventory';
 import { RESTORABLE_STATS } from '../../../types/playerState';
 import { type Coordinate, PrayerType } from '../../../types/simulation';
+import { DUKE_KIND } from '../../catalog';
+import { reconstructReplayPrefix } from '../../simulationEngineFactory';
 import { SLUG_TO_KIND } from '../../slugs';
 import { ORB_LANE, START_TILE, VENTS } from '../arena';
-import { DUKE_PRACTICE_AUDIO_EVENT } from '../audioCues';
-import {
-  ALWAYS_BILE_KEY,
-  BILE_HP,
-  DUKE_PRACTICE_CONTROLS,
-  DUKE_PRACTICE_KIND,
-  ENRAGE_HP,
-  ORB_HP,
-  practiceStartHp,
-  START_PHASE_KEY,
-} from '../controls';
-import { DukePracticeEncounter } from '../DukePracticeEncounter';
-import { DUKE_PRACTICE_RENDER_CONFIG } from '../renderConfig';
+import { BILE_HP, DUKE_CONTROLS, dukeStartHp, ENRAGE_HP, ORB_HP } from '../controls';
+import { DukeEncounter } from '../DukeEncounter';
+import { DUKE_RENDER_CONFIG } from '../renderConfig';
 import {
   DUKE_BILE_CAST_RUN_CAPTURE,
   DUKE_BILE_MELEE_CAPTURES,
@@ -61,23 +56,23 @@ beforeEach(() => {
 });
 afterEach(() => setArenaConfig(arena, allowUnbounded));
 
-function practice(startPhase = 'opening', infiniteHealth = true, encounterSeed = 71) {
+function createDukeRun(startPhase = 'opening', infiniteHealth = true, encounterSeed = 71) {
   return new SimulationEngine({
-    encounter: new DukePracticeEncounter(encounterSeed),
-    mechanics: { [START_PHASE_KEY]: startPhase, infiniteHealth },
+    encounter: new DukeEncounter(encounterSeed),
+    mechanics: { [DUKE_START_PHASE_KEY]: startPhase, infiniteHealth },
     combatSeed: 42,
   });
 }
 
-function practiceFromOpeningAtHp(phase: string, infiniteHealth = true, encounterSeed = 71) {
-  const engine = practice('opening', infiniteHealth, encounterSeed);
-  engine.setBossHp(practiceStartHp(phase));
+function startOpeningAtHp(phase: string, infiniteHealth = true, encounterSeed = 71) {
+  const engine = createDukeRun('opening', infiniteHealth, encounterSeed);
+  engine.setBossHp(dukeStartHp(phase));
   return engine;
 }
 
 function snapshot(engine: SimulationEngine) {
   const state = engine.getState().encounter;
-  if (state.kind !== DUKE_PRACTICE_KIND) throw new Error(`Unexpected encounter ${state.kind}`);
+  if (state.kind !== DUKE_KIND) throw new Error(`Unexpected encounter ${state.kind}`);
   return state;
 }
 
@@ -94,7 +89,7 @@ function received(engine: SimulationEngine, source: string): boolean {
 }
 
 function audioCues(engine: SimulationEngine) {
-  return engine.getLastTickEvents().filter((event) => event.type === DUKE_PRACTICE_AUDIO_EVENT);
+  return engine.getLastTickEvents().filter((event) => event.type === DUKE_AUDIO_EVENT);
 }
 
 function advanceThroughFlareLaunches(engine: SimulationEngine, endTick: number): number[] {
@@ -117,12 +112,12 @@ function openFight(engine: SimulationEngine): void {
 
 // HP thresholds and relative timing from https://oldschool.runescape.wiki/w/Duke_Sucellus/Strategies#Awakened_mode
 // See the timing ledger and practice setup in docs/encounters/duke-facts-spec.md.
-describe('Awakened Duke practice', () => {
+describe('Awakened Duke', () => {
   it('spawns the sleeping cache NPC and leaves its hazards inactive while the player waits', () => {
-    const engine = practice();
+    const engine = createDukeRun();
     const [boss] = engine.getState().npcs;
     expect(boss.npcTypeId).toBe(DUKE_ASLEEP_NPC_ID);
-    expect(DUKE_PRACTICE_RENDER_CONFIG.primaryNpc?.npcTypeId).toBe(DUKE_NPC_ID);
+    expect(DUKE_RENDER_CONFIG.primaryNpc?.npcTypeId).toBe(DUKE_NPC_ID);
     advanceTo(engine, 20);
     expect(engine.getState().npcs[0].npcTypeId).toBe(DUKE_ASLEEP_NPC_ID);
     expect(snapshot(engine).visuals).toEqual({ hazards: [], orbTile: null, usesVisualEvents: true });
@@ -130,7 +125,7 @@ describe('Awakened Duke practice', () => {
 
   // Cache 2772, map square (47, 100). The floor at y=52 and 53 blocks access under Duke.
   it('stops ground movement in front of Duke in both forms and allows an attack from there', () => {
-    const engine = practice();
+    const engine = createDukeRun();
     const front: Coordinate = [31, 51];
     const underDuke: Coordinate = [31, 52];
     advanceTo(engine, 2, underDuke);
@@ -150,7 +145,7 @@ describe('Awakened Duke practice', () => {
   });
 
   it('uses the Awakened formula stats before and after the NPC wakes', () => {
-    const engine = practice();
+    const engine = createDukeRun();
     const duke = engine['worldState'].getNpc(WARDEN_ID)!;
     const expected = {
       levels: { attack: 435, strength: 500, defence: 316, magic: 465, ranged: 0 },
@@ -179,7 +174,7 @@ describe('Awakened Duke practice', () => {
     { source: 'Slam', tile: [31, 51] as Coordinate, impactTick: 8, levels: { strength: 300 }, bonuses: { str: 0 } },
     { source: 'Magic bolt', tile: START_TILE, impactTick: 10, levels: { magic: 300 }, bonuses: { magicStr: 0 } },
   ])('uses the actor’s offensive stats for the $source damage cap', ({ source, tile, impactTick, levels, bonuses }) => {
-    const engine = practice();
+    const engine = createDukeRun();
     openFight(engine);
     advanceTo(engine, impactTick - 1, tile);
     const duke = engine['worldState'].getNpc(WARDEN_ID)!;
@@ -203,7 +198,7 @@ describe('Awakened Duke practice', () => {
   });
 
   it('keeps the Awakened levels when stat-draining effects hit Duke', () => {
-    const engine = practice();
+    const engine = createDukeRun();
     openFight(engine);
     advanceTo(engine, 6);
     const world = engine['worldState'];
@@ -229,7 +224,7 @@ describe('Awakened Duke practice', () => {
     firstHitBlocked,
     hitSounds,
   }) => {
-    const engine = practice();
+    const engine = createDukeRun();
     engine.setEquipment({ weapon: 22325 }); // Scythe of vitur
     const random = vi
       .spyOn(engine, 'rollCombat')
@@ -249,7 +244,7 @@ describe('Awakened Duke practice', () => {
   });
 
   it('feeds three doses and lands the second swing of a six-tick opener without taking the first slam', () => {
-    const engine = practice('opening', false);
+    const engine = createDukeRun('opening', false);
     const openingWeapon = 11806;
     const secondWeapon = 29589;
     engine.setObjTypeLoader({
@@ -325,7 +320,7 @@ describe('Awakened Duke practice', () => {
   });
 
   it('walks to Duke to feed and stops when no poison remains', () => {
-    const engine = practice();
+    const engine = createDukeRun();
     const inventory = createEmptyInventory();
     inventory[5] = { id: ARDER_MUSCA_POISON_ITEM_ID };
     engine.setInventory(inventory);
@@ -364,8 +359,8 @@ describe('Awakened Duke practice', () => {
     ['enrage', 440],
     ['stale', 1697],
   ])('opens the %s checkpoint at %d / 1697 HP', (phase, hp) => {
-    expect(SLUG_TO_KIND.get('awakened-duke')).toBe(DUKE_PRACTICE_KIND);
-    const engine = practice(phase);
+    expect(SLUG_TO_KIND.get('awakened-duke')).toBe(DUKE_KIND);
+    const engine = createDukeRun(phase);
     expect(engine.getState().npcs[0]).toMatchObject({
       id: WARDEN_ID,
       hp,
@@ -376,9 +371,58 @@ describe('Awakened Duke practice', () => {
     expect(snapshot(engine).state.enraged).toBe(phase === 'enrage');
   });
 
+  it('loads and reconstructs a recording written before the encounter rename', () => {
+    const engine = createDukeRun('enrage');
+    engine.setMechanicsConfig({ [DUKE_START_PHASE_KEY]: 'enrage', [DUKE_ALWAYS_BILE_KEY]: true });
+    const recorder = new ReplayRecorder();
+    const runConfig = engine.getRunConfig();
+    const opening = engine.getState();
+    recorder.startRun(runConfig);
+    recorder.recordFrame(0, START_TILE, opening, []);
+    for (let tick = 1; tick <= 3; tick++) {
+      engine.advanceTick(START_TILE);
+      recorder.recordFrame(tick, START_TILE, engine.getState(), engine.getLastTickEvents());
+    }
+
+    const current = recorder.exportData();
+    const { [DUKE_START_PHASE_KEY]: phase, [DUKE_ALWAYS_BILE_KEY]: alwaysBile, ...mechanics } = opening.mechanicsConfig;
+    const legacyMechanics = { ...mechanics, dukePracticeStartPhase: phase, dukePracticeAlwaysBile: alwaysBile };
+    const legacy = {
+      ...current,
+      runConfig: {
+        ...runConfig,
+        encounter: { ...runConfig.encounter, kind: 'duke_practice' },
+        bootstrap: { ...runConfig.bootstrap, mechanicsConfig: legacyMechanics },
+      },
+      frames: current.frames.map((frame) => ({
+        ...frame,
+        state: {
+          ...frame.state,
+          encounter: { ...frame.state.encounter, kind: 'duke_practice' },
+          mechanicsConfig: legacyMechanics,
+        },
+        events: frame.events.map((event) =>
+          event.type === DUKE_AUDIO_EVENT ? { ...event, type: 'duke_practice_audio' } : event,
+        ),
+      })),
+    };
+    expect(legacy.frames.at(-1)?.events).toContainEqual(
+      expect.objectContaining({ type: 'duke_practice_audio', cue: 'orbSpawn' }),
+    );
+
+    recorder.load(legacy as ReplayRecorderData);
+    expect(recorder.exportData()).toEqual(current);
+    expect(legacy.frames[0].state.encounter.kind).toBe('duke_practice');
+    const config = recorder.getRunConfig();
+    if (!config) throw new Error('Missing Duke replay configuration');
+    const resumed = reconstructReplayPrefix(config, recorder.getReconstructionFrames(), 3, null);
+    if (!resumed) throw new Error('Could not reconstruct Duke');
+    expect(diffResumableState(engine.getState(), resumed.getState())).toEqual([]);
+  });
+
   it('applies a checkpoint change before tick one and opens a clean retry', () => {
-    const engine = practice();
-    engine.setMechanicsConfig({ [START_PHASE_KEY]: 'enrage' });
+    const engine = createDukeRun();
+    engine.setMechanicsConfig({ [DUKE_START_PHASE_KEY]: 'enrage' });
     expect(engine.getState().npcs[0].hp).toBe(440);
     advanceTo(engine, 3);
     expect(snapshot(engine).visuals.orbTile).not.toBeNull();
@@ -389,10 +433,10 @@ describe('Awakened Duke practice', () => {
   });
 
   it('jumps to each HP breakpoint in the current attempt', () => {
-    const engine = practice();
+    const engine = createDukeRun();
     openFight(engine);
     advanceTo(engine, 6);
-    for (const preset of DUKE_PRACTICE_CONTROLS.bossHpPresets ?? []) {
+    for (const preset of DUKE_CONTROLS.bossHpPresets ?? []) {
       engine.applyAction({ type: 'applyBossHpPreset', hp: preset.hp });
       expect(engine.currentTick).toBe(6);
       expect(engine.getState().npcs[0]).toMatchObject({ hp: preset.hp, npcTypeId: DUKE_NPC_ID });
@@ -408,9 +452,9 @@ describe('Awakened Duke practice', () => {
     ]),
   )('opens $label on its captured volley rotation via $entry', (capture) => {
     const { phase, hp, label, entry, flareTicks, nextVolleyTick, bileTick } = capture;
-    const engine = practice(entry === 'Start at' ? phase : 'opening', true, bileTick === null ? 28 : 71);
+    const engine = createDukeRun(entry === 'Start at' ? phase : 'opening', true, bileTick === null ? 28 : 71);
     if (entry === 'Jump to phase') {
-      const preset = DUKE_PRACTICE_CONTROLS.bossHpPresets?.find((preset) => preset.label === label);
+      const preset = DUKE_CONTROLS.bossHpPresets?.find((preset) => preset.label === label);
       expect(preset?.hp).toBe(hp);
       engine.applyAction({ type: 'applyBossHpPreset', hp });
     }
@@ -436,8 +480,8 @@ describe('Awakened Duke practice', () => {
   });
 
   it('jumps from sleeping Duke into the four-tick enrage rotation without an opener', () => {
-    const engine = practice();
-    const preset = DUKE_PRACTICE_CONTROLS.bossHpPresets?.find(({ label }) => label === 'Enrage');
+    const engine = createDukeRun();
+    const preset = DUKE_CONTROLS.bossHpPresets?.find(({ label }) => label === 'Enrage');
     expect(preset?.hp).toBe(440);
     const inventory = createEmptyInventory();
     inventory[0] = { id: ARDER_MUSCA_POISON_ITEM_ID, quantity: 3 };
@@ -467,7 +511,7 @@ describe('Awakened Duke practice', () => {
   });
 
   it('replaces the queued enrage attack when jumping to Opening before the first windup', () => {
-    const engine = practice();
+    const engine = createDukeRun();
     const cover: Coordinate = [27, 51];
     engine.applyAction({ type: 'applyBossHpPreset', hp: 440 });
     advanceTo(engine, 1, cover);
@@ -483,10 +527,10 @@ describe('Awakened Duke practice', () => {
     { phase: 'vents', hp: 1289, seeds: { encounterSeed: 71, awakeEnrageJump: true }, awake: false },
     { phase: 'enrage', hp: ENRAGE_HP, seeds: { encounterSeed: 71 }, awake: false },
   ])('restores the recorded $phase setup and jump for $seeds', ({ phase, hp, seeds, awake }) => {
-    const engine = practice();
+    const engine = createDukeRun();
     const runConfig = engine.getRunConfig();
     engine.reset(undefined, { ...runConfig, encounter: { ...runConfig.encounter, seeds } });
-    engine.setMechanicsConfig({ [START_PHASE_KEY]: phase, infiniteHealth: true });
+    engine.setMechanicsConfig({ [DUKE_START_PHASE_KEY]: phase, infiniteHealth: true });
     expect(engine.getState().npcs[0]).toMatchObject({ hp, npcTypeId: DUKE_ASLEEP_NPC_ID });
     engine.applyAction({ type: 'applyBossHpPreset', hp });
     expect(engine.getState().npcs[0].npcTypeId).toBe(awake ? DUKE_NPC_ID : DUKE_ASLEEP_NPC_ID);
@@ -497,7 +541,7 @@ describe('Awakened Duke practice', () => {
   });
 
   it('clears the current volley and starts a single-flare cycle when jumping back to Opening', () => {
-    const engine = practiceFromOpeningAtHp('orbs');
+    const engine = startOpeningAtHp('orbs');
     openFight(engine);
     advanceTo(engine, 61);
     expect(snapshot(engine).visuals.hazards.filter(({ kind }) => kind === 'vent')).toHaveLength(4);
@@ -512,7 +556,7 @@ describe('Awakened Duke practice', () => {
     { hp: 1697, chipTicks: [6, 11, 16], slamTicks: [8, 13, 18] },
     { hp: 440, chipTicks: [6, 10, 14], slamTicks: [8, 12, 16] },
   ])('lands chip two ticks before each slam at $hp HP', ({ hp, chipTicks, slamTicks }) => {
-    const engine = practice();
+    const engine = createDukeRun();
     engine.setBossHp(hp);
     openFight(engine);
     advanceTo(engine, slamTicks[2], [31, 51]);
@@ -527,7 +571,7 @@ describe('Awakened Duke practice', () => {
     cover,
     reentry,
   }) => {
-    const engine = practice('opening', false);
+    const engine = createDukeRun('opening', false);
     openFight(engine);
     advanceTo(engine, 5, beforeWindup);
     advanceTo(engine, 6, cover);
@@ -567,7 +611,7 @@ describe('Awakened Duke practice', () => {
     { prayer: PrayerType.ProtectMagic, roll: 0.25, base: 20, damage: 20 },
     { prayer: PrayerType.ProtectMelee, roll: 0.25, base: 20, damage: 15 },
   ])('deals $damage slam damage for a base roll of $base with $prayer at impact', ({ prayer, roll, base, damage }) => {
-    const engine = practice('opening', false);
+    const engine = createDukeRun('opening', false);
     const front: Coordinate = [31, 51];
     openFight(engine);
     advanceTo(engine, 7, front);
@@ -589,7 +633,7 @@ describe('Awakened Duke practice', () => {
     { bait: [31, 51] as Coordinate, front: [32, 51] as Coordinate },
     { bait: [27, 51] as Coordinate, front: [28, 51] as Coordinate },
   ])('hits the front row at impact when baited from $bait', ({ bait, front }) => {
-    const engine = practice('opening', false);
+    const engine = createDukeRun('opening', false);
     openFight(engine);
     advanceTo(engine, 6, bait);
     advanceTo(engine, 7, front);
@@ -604,7 +648,7 @@ describe('Awakened Duke practice', () => {
     afterMove,
     clip,
   }) => {
-    const engine = practiceFromOpeningAtHp(phase, false);
+    const engine = startOpeningAtHp(phase, false);
     openFight(engine);
     advanceTo(engine, 5, beforeMove);
     expect(engine.getState().playerPosition).toEqual(beforeMove);
@@ -630,7 +674,7 @@ describe('Awakened Duke practice', () => {
     damageRoll,
     expected,
   }) => {
-    const engine = practice('opening', false);
+    const engine = createDukeRun('opening', false);
     openFight(engine);
     advanceTo(engine, 5, [31, 51]);
     if (prayer) engine.queueProtectionPrayer(prayer);
@@ -650,7 +694,7 @@ describe('Awakened Duke practice', () => {
     [27, 51],
     [35, 51],
   ])('still triggers melee but only takes icicle chip behind the pillar at (%i, %i)', (x, y) => {
-    const engine = practice('opening', false);
+    const engine = createDukeRun('opening', false);
     const cover: Coordinate = [x, y];
     openFight(engine);
     advanceTo(engine, 6, cover);
@@ -674,7 +718,7 @@ describe('Awakened Duke practice', () => {
     front,
     step,
   }) => {
-    const engine = practiceFromOpeningAtHp(phase, false);
+    const engine = startOpeningAtHp(phase, false);
     openFight(engine);
     const simWindup = 6;
     const simHit = simWindup + hitTick - windupTick;
@@ -697,7 +741,7 @@ describe('Awakened Duke practice', () => {
 
   it('uses the captured magic animation and arrival timing during enrage', () => {
     const { windupTick, nextWindupTick, arrivalCycle } = DUKE_ENRAGED_MAGIC_CAPTURE;
-    const engine = practiceFromOpeningAtHp('enrage');
+    const engine = startOpeningAtHp('enrage');
     openFight(engine);
     const simWindup = 6;
     const arrivalTick = simWindup + arrivalCycle / 30;
@@ -727,7 +771,7 @@ describe('Awakened Duke practice', () => {
 
   it('lands the enraged bolt on a player who returned to melee range as Duke starts his next attack', () => {
     const { windupTick, nextWindupTick, castFrom, followUpFrom } = DUKE_ENRAGED_MAGIC_TO_MELEE_CAPTURE;
-    const engine = practiceFromOpeningAtHp('enrage');
+    const engine = startOpeningAtHp('enrage');
     openFight(engine);
     const simWindup = 6;
     const simFollowUp = simWindup + nextWindupTick - windupTick;
@@ -758,7 +802,7 @@ describe('Awakened Duke practice', () => {
     { prayer: PrayerType.ProtectMagic, roll: 0.999, expected: 36 },
     { prayer: PrayerType.ProtectMagic, roll: 0, expected: 0 },
   ])('resolves the bolt on impact with $prayer active and $expected damage', ({ prayer, roll, expected }) => {
-    const engine = practice('opening', false);
+    const engine = createDukeRun('opening', false);
     openFight(engine);
     const hpBefore = engine.getState().stats.hitpoints.current;
     advanceTo(engine, 6, START_TILE);
@@ -800,7 +844,7 @@ describe('Awakened Duke practice', () => {
 
   // Capture tick 128: block hitsplat without the 2435 spot or the 7197 sound.
   it('blocks an inaccurate bolt at arrival without spoiling a perfect kill', () => {
-    const engine = practice();
+    const engine = createDukeRun();
     openFight(engine);
     advanceTo(engine, 9);
     vi.spyOn(engine, 'rollCombat').mockReturnValueOnce(0.999);
@@ -820,7 +864,7 @@ describe('Awakened Duke practice', () => {
   });
 
   it('uses magic behind a rear pillar outside melee range', () => {
-    const engine = practice();
+    const engine = createDukeRun();
     openFight(engine);
     advanceTo(engine, 6, [27, 47]);
     expect(engine.getState().playerPosition).toEqual([27, 47]);
@@ -828,7 +872,7 @@ describe('Awakened Duke practice', () => {
   });
 
   it('leaves two tiles between vents across each row and three between each pair of pillars', () => {
-    const engine = practice();
+    const engine = createDukeRun();
     const { bounds, walkableTiles } = getArenaConfig();
     expect(bounds).toMatchObject({ width: 11, height: 20 });
     expect(engine.getState().npcs[0].size).toBe(7);
@@ -852,7 +896,7 @@ describe('Awakened Duke practice', () => {
     [27, 47],
     [35, 47],
   ])('gives four ticks of gaze warning and protects the tile (%i, %i) behind a pillar', (x, y) => {
-    const engine = practice();
+    const engine = createDukeRun();
     expect(getArenaConfig().walkableTiles?.has(`${x},${y + 1}`)).toBe(false);
     openFight(engine);
     advanceTo(engine, 31);
@@ -874,7 +918,7 @@ describe('Awakened Duke practice', () => {
 
   it('reports failed cover one tick before gaze damage even when the player moves into cover late', () => {
     const { windupTick, messageTick, hitTick, beforeCover, cover } = DUKE_FAILED_GAZE_CAPTURE;
-    const engine = practiceFromOpeningAtHp('enrage');
+    const engine = startOpeningAtHp('enrage');
     const simWindup = 26;
     const simCheck = simWindup + messageTick - windupTick;
     const simHit = simWindup + hitTick - windupTick;
@@ -907,7 +951,7 @@ describe('Awakened Duke practice', () => {
     pulses,
     fade,
   }) => {
-    const engine = practice();
+    const engine = createDukeRun();
     if (phase === 'enrage') engine.applyAction({ type: 'applyBossHpPreset', hp: ENRAGE_HP });
     else openFight(engine);
     const launch = phase === 'enrage' ? 16 : 52;
@@ -931,7 +975,7 @@ describe('Awakened Duke practice', () => {
     DUKE_VENT_DAMAGE_CAPTURE,
     DUKE_VENT_TIE_CAPTURE,
   ])('matches grate targets and damage for the enrage volley at capture tick $firstTick', (capture) => {
-    const engine = practice('enrage');
+    const engine = createDukeRun('enrage');
     engine.applyAction({ type: 'applyBossHpPreset', hp: ENRAGE_HP });
     const simLaunch = 16;
     const offset = capture.firstTick - simLaunch;
@@ -955,7 +999,7 @@ describe('Awakened Duke practice', () => {
     { phase: 'vents', expectedLaunches: [52, 55, 57, 59] },
     { phase: 'enrage', expectedLaunches: [44, 47, 49, 51] },
   ])('spaces the four flare launches by three, two, and two ticks in $phase', ({ phase, expectedLaunches }) => {
-    const engine = practiceFromOpeningAtHp(phase);
+    const engine = startOpeningAtHp(phase);
     openFight(engine);
     expect(advanceThroughFlareLaunches(engine, expectedLaunches[3])).toEqual(expectedLaunches);
   });
@@ -982,7 +1026,7 @@ describe('Awakened Duke practice', () => {
     recovery,
     flareImpacts,
   }) => {
-    const engine = practiceFromOpeningAtHp(phase);
+    const engine = startOpeningAtHp(phase);
     openFight(engine);
     advanceTo(engine, lastFlareTick);
     const flares = snapshot(engine).visuals.hazards.filter((hazard) => hazard.kind === 'vent');
@@ -1018,8 +1062,8 @@ describe('Awakened Duke practice', () => {
 
   it.each(DUKE_BILE_MELEE_CAPTURES)('matches the recorded $phase bile and melee damage ticks', (capture) => {
     const enraged = capture.phase === 'enrage';
-    const engine = practice('opening', true, 70); // The orb during the enrage window enters from the west.
-    engine.setMechanicsConfig({ ...engine.getState().mechanicsConfig, [ALWAYS_BILE_KEY]: true });
+    const engine = createDukeRun('opening', true, 70); // The orb during the enrage window enters from the west.
+    engine.setMechanicsConfig({ ...engine.getState().mechanicsConfig, [DUKE_ALWAYS_BILE_KEY]: true });
     engine.applyAction({ type: 'applyBossHpPreset', hp: enraged ? ENRAGE_HP : BILE_HP });
 
     const simFlare = enraged ? 16 : 5;
@@ -1054,9 +1098,9 @@ describe('Awakened Duke practice', () => {
     { phase: 'opening', expected: [56, 96] },
     { phase: 'bile', expected: [63, 105] },
   ])('forces bile after consecutive $phase volleys with Always Bile enabled', ({ phase, expected }) => {
-    const engine = practiceFromOpeningAtHp(phase);
+    const engine = startOpeningAtHp(phase);
     openFight(engine);
-    engine.setMechanicsConfig({ [START_PHASE_KEY]: phase, infiniteHealth: true, [ALWAYS_BILE_KEY]: true });
+    engine.setMechanicsConfig({ [DUKE_START_PHASE_KEY]: phase, infiniteHealth: true, [DUKE_ALWAYS_BILE_KEY]: true });
     const casts: number[] = [];
     for (let tick = 2; tick <= expected[1]; tick++) {
       advanceTo(engine, tick);
@@ -1069,7 +1113,7 @@ describe('Awakened Duke practice', () => {
     { seed: 57, expected: [true, true, false] },
     { seed: 28, expected: [false, false, false, false, true] },
   ])('allows successive or skipped bile casts without Always Bile (seed $seed)', ({ seed, expected }) => {
-    const engine = practice('enrage', true, seed);
+    const engine = createDukeRun('enrage', true, seed);
     const volleyCasts: boolean[] = [];
     let launchCount = 0;
     let warningTick = 0;
@@ -1086,7 +1130,7 @@ describe('Awakened Duke practice', () => {
   });
 
   it('cancels queued bile when jumping to a different phase after the last flare', () => {
-    const engine = practiceFromOpeningAtHp('bile');
+    const engine = startOpeningAtHp('bile');
     openFight(engine);
     advanceTo(engine, 60);
     engine.applyAction({ type: 'applyBossHpPreset', hp: 1697 });
@@ -1096,7 +1140,7 @@ describe('Awakened Duke practice', () => {
   });
 
   it('retargets subsequent flares south when the player retreats between shots', () => {
-    const engine = practiceFromOpeningAtHp('vents');
+    const engine = startOpeningAtHp('vents');
     openFight(engine);
     advanceTo(engine, 52);
     const firstFlare = snapshot(engine).visuals.hazards.find(({ kind }) => kind === 'vent');
@@ -1132,7 +1176,7 @@ describe('Awakened Duke practice', () => {
 
   // 20261126-232238-Duke.jsonl ticks 139–157: gaze, one basic, then the due grate volley.
   it('uses a due grate volley one basic after gaze below the bile breakpoint', () => {
-    const engine = practiceFromOpeningAtHp('bile');
+    const engine = startOpeningAtHp('bile');
     openFight(engine);
     const gazeTick = 120;
     advanceTo(engine, gazeTick, [27, 51]);
@@ -1148,8 +1192,8 @@ describe('Awakened Duke practice', () => {
   // 20261126-232238-Duke.jsonl:6586 and :6606–6607. The next drip covers both run steps.
   it('drops the first bile pool at the endpoint of a run on the cast tick', () => {
     const capture = DUKE_BILE_CAST_RUN_CAPTURE;
-    const engine = practice();
-    engine.setMechanicsConfig({ ...engine.getState().mechanicsConfig, [ALWAYS_BILE_KEY]: true });
+    const engine = createDukeRun();
+    engine.setMechanicsConfig({ ...engine.getState().mechanicsConfig, [DUKE_ALWAYS_BILE_KEY]: true });
     engine.applyAction({ type: 'applyBossHpPreset', hp: BILE_HP });
     const simCast = 16;
     const offset = capture.castTick - simCast;
@@ -1169,7 +1213,7 @@ describe('Awakened Duke practice', () => {
   });
 
   it('leaves pools on both running tiles and keeps the original nine-tick lifetime', () => {
-    const engine = practiceFromOpeningAtHp('bile');
+    const engine = startOpeningAtHp('bile');
     const cover: Coordinate = [27, 51];
     const turn: Coordinate = [29, 51];
     openFight(engine);
@@ -1192,13 +1236,13 @@ describe('Awakened Duke practice', () => {
 
   it('applies the captured bile poison severity while still damaging a player with poison immunity', () => {
     const cover: Coordinate = [27, 51];
-    const bare = practiceFromOpeningAtHp('bile');
+    const bare = startOpeningAtHp('bile');
     openFight(bare);
     advanceTo(bare, 65, cover);
     expect(received(bare, 'Bile pool')).toBe(true);
     expect(bare.getState().poisonVarp).toBe(DUKE_BILE_POISON_VARP);
 
-    const protectedPlayer = practiceFromOpeningAtHp('bile');
+    const protectedPlayer = startOpeningAtHp('bile');
     openFight(protectedPlayer);
     const inventory = createEmptyInventory();
     inventory[0] = { id: 5952 }; // Antidote++(4)
@@ -1210,7 +1254,7 @@ describe('Awakened Duke practice', () => {
   });
 
   it('starts the orb delay on the threshold hit, including a player attack late in that tick', () => {
-    const engine = practice();
+    const engine = createDukeRun();
     const front: Coordinate = [31, 51];
     openFight(engine);
     advanceTo(engine, 7, front);
@@ -1243,7 +1287,7 @@ describe('Awakened Duke practice', () => {
   ])('hits for $expectedDamage and despawns the orb on the tick after contact', ({ roll, expectedDamage }) => {
     const { spawnTick, spawnTile, contactTick, contactTile, hitTick, nextSpawnTick, nextSpawnTile } =
       DUKE_ORB_CONTACT_CAPTURE;
-    const engine = practiceFromOpeningAtHp('orbs');
+    const engine = startOpeningAtHp('orbs');
     const simSpawn = 10;
     const simHit = simSpawn + hitTick - spawnTick;
     const simNextSpawn = simSpawn + nextSpawnTick - spawnTick;
@@ -1278,7 +1322,7 @@ describe('Awakened Duke practice', () => {
   });
 
   it('can start and repeat from the west and restores those rolls from a saved seed', () => {
-    const engine = practice('orbs', true, 19);
+    const engine = createDukeRun('orbs', true, 19);
     const runConfig = engine.getRunConfig();
     expect(runConfig.encounter.seeds).toMatchObject({ encounterSeed: 19 });
     const { tile, repeatInterval } = DUKE_WEST_ORB_CAPTURE;
@@ -1296,7 +1340,7 @@ describe('Awakened Duke practice', () => {
   });
 
   it('winds up again four ticks after a basic attack in enrage', () => {
-    const engine = practice('enrage');
+    const engine = createDukeRun('enrage');
     advanceTo(engine, 4, [31, 51]);
     expect(snapshot(engine).visuals.hazards).toContainEqual(expect.objectContaining({ kind: 'slam', impactTick: 6 }));
     advanceTo(engine, 7, [31, 51]);
@@ -1306,7 +1350,7 @@ describe('Awakened Duke practice', () => {
   });
 
   it('allows standard attack targeting and clears encounter hazards on victory', () => {
-    const engine = practice('enrage');
+    const engine = createDukeRun('enrage');
     engine.setEquipment({ weapon: 29589 });
     engine.setAttackTarget(WARDEN_ID);
     advanceTo(engine, 1);

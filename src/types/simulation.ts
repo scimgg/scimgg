@@ -5,6 +5,7 @@ import type { EncounterOutcome } from '../core/encounters/outcome';
 import type { EncounterSnapshot } from '../core/encounters/snapshot';
 import type { MechanicsToggleInfo } from '../core/encounters/types';
 import type { PlayerEquipment } from '../rs/model/PlayerModelLoader';
+import { DUKE_ALWAYS_BILE_KEY } from './duke';
 import type { CombatSupplies } from './encounterLoadout';
 import type { EquipmentStats } from './equipmentStats';
 import type { GroundItem } from './groundItems';
@@ -89,7 +90,7 @@ export const BOOLEAN_MECHANICS_KEYS = [
   'infernoSouthPillarDestroyed',
   'infernoNorthEastPillarDestroyed',
   'yamaStartGlyphs',
-  'dukePracticeAlwaysBile',
+  DUKE_ALWAYS_BILE_KEY,
 ] as const;
 
 export const BOOLEAN_MECHANICS_KEY_SET: ReadonlySet<string> = new Set(BOOLEAN_MECHANICS_KEYS);

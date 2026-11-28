@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { DUKE_AUDIO_EVENT } from '../types/duke';
 import {
   ACTOR_PRESENTATIONS_REMOVED_EVENT,
   ENCOUNTER_VISUAL_EVENT,
@@ -104,6 +105,8 @@ function decodeEvent(event: GameEvent, frameIndex: number): GameEvent {
       if (!parsed.success) throw new LegacyReplayEventError(frameIndex, event, parsed.error.message);
       return { ...event, type: ACTOR_PRESENTATIONS_REMOVED_EVENT };
     }
+    case 'duke_practice_audio':
+      return { ...event, type: DUKE_AUDIO_EVENT };
     default:
       return event;
   }

@@ -1,4 +1,4 @@
-import { DUKE_CENTER_TILE, DUKE_MOUTH_POSITION, SLAM_TILES } from '../../encounters/dukePractice/arena';
+import { DUKE_CENTER_TILE, DUKE_MOUTH_POSITION, SLAM_TILES } from '../../encounters/duke/arena';
 import {
   DUKE_BILE_PROJECTILE,
   DUKE_GROUND_ICICLES,
@@ -7,8 +7,8 @@ import {
   DUKE_VENT_ARM_TICKS,
   DUKE_VENT_PROJECTILE,
   DUKE_VENT_SMOKE_CYCLE_TICKS,
-} from '../../encounters/dukePractice/constants';
-import type { DukePracticeVisuals } from '../../encounters/dukePractice/snapshot';
+} from '../../encounters/duke/constants';
+import type { DukeVisuals } from '../../encounters/duke/snapshot';
 import type { Coordinate } from '../../types/simulation';
 import { CLIENT_TICK_MS, GAME_TICK_MS } from '../core/animation';
 import type { SurfaceHeightResolver } from '../effects/controllers/ProjectileController';
@@ -99,7 +99,7 @@ function projectileTo([x, y]: Coordinate, launchCycle: number, projectile: DukeP
   };
 }
 
-export class DukePracticeEffects {
+export class DukeEffects {
   private activeIds = new Set<string>();
   private readonly magicFlights = new Map<string, ProjectileFlight>();
 
@@ -150,7 +150,7 @@ export class DukePracticeEffects {
 
   update(
     renderer: SpotAnimRenderer,
-    visuals: DukePracticeVisuals,
+    visuals: DukeVisuals,
     time: number,
     playerVisualPosition: Coordinate,
     resolveSurfaceHeight: SurfaceHeightResolver = () => 0,

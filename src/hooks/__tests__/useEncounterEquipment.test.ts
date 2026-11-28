@@ -115,6 +115,21 @@ describe('useEncounterEquipment combat supplies', () => {
     expect(result.current.getLoadout('zuk').supplies).not.toBe(loadout.supplies);
   });
 
+  it('keeps the saved Duke loadout after the rename', async () => {
+    const { equipment, inventory } = EQUIPMENT_PRESETS.duke.scythe;
+    storageMocks.loadSetting.mockReturnValue({ duke_practice: { equipment, inventory } });
+
+    const { result } = renderHook(() => useEncounterEquipment());
+
+    expect(result.current.getEquipment('duke')).toEqual(equipment);
+    expect(result.current.getInventory('duke')).toEqual(inventory);
+    await waitFor(() => {
+      expect(storageMocks.saveSetting).toHaveBeenLastCalledWith('osrs-encounter-equipment', {
+        duke: expect.objectContaining({ equipment, inventory }),
+      });
+    });
+  });
+
   it('shares one saved loadout between the Inferno and its retired Zuk kind', async () => {
     const preset = EQUIPMENT_PRESETS.inferno.atlatl_eclipse;
     storageMocks.loadSetting.mockReturnValue({

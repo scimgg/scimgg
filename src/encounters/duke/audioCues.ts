@@ -1,9 +1,8 @@
 import type { TickEvents } from '../../core/events/TickEvents';
+import { DUKE_AUDIO_EVENT } from '../../types/duke';
 import type { Coordinate } from '../../types/simulation';
 
-export const DUKE_PRACTICE_AUDIO_EVENT = 'duke_practice_audio';
-
-export type DukePracticeAudioCue =
+export type DukeAudioCue =
   | 'feed'
   | 'wake'
   | 'slamWindup'
@@ -25,6 +24,6 @@ export type DukePracticeAudioCue =
   | 'dukeHit'
   | 'defeat';
 
-export function emitDukePracticeAudio(tickEvents: TickEvents, cue: DukePracticeAudioCue, position?: Coordinate): void {
-  tickEvents.emit({ type: DUKE_PRACTICE_AUDIO_EVENT, cue, ...(position ? { position } : {}) });
+export function emitDukeAudio(tickEvents: TickEvents, cue: DukeAudioCue, position?: Coordinate): void {
+  tickEvents.emit({ type: DUKE_AUDIO_EVENT, cue, ...(position ? { position } : {}) });
 }

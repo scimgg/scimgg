@@ -1425,10 +1425,10 @@ export const EQUIPMENT_PRESETS: Record<string, Record<string, EncounterPreset>> 
   },
 };
 
-// The Duke practice loadout uses the user's opening switches and supply counts.
+// The Duke loadout uses the user's opening switches and supply counts.
 // https://oldschool.runescape.wiki/w/Duke_Sucellus/Strategies#Awakened_mode
-const dukePracticeEquipment = { ...EQUIPMENT_PRESETS.sol_heredit.max.equipment, head: 30750, weapon: 29577 };
-const dukePracticeInventory = parseInventoryFromSetup([
+const dukeEquipment = { ...EQUIPMENT_PRESETS.sol_heredit.max.equipment, head: 30750, weapon: 29577 };
+const dukeInventory = parseInventoryFromSetup([
   { id: 29589 }, // Emberlight
   { id: 12695 }, // Super combat potion(4)
   { id: 12695 }, // Super combat potion(4)
@@ -1449,14 +1449,14 @@ const dukePracticeInventory = parseInventoryFromSetup([
 ]);
 
 const unarmedDukeInventory = createEmptyInventory();
-unarmedDukeInventory[27] = dukePracticeInventory[27];
+unarmedDukeInventory[27] = dukeInventory[27];
 
-EQUIPMENT_PRESETS.duke_practice = {
-  burning_claws: { name: 'Max (Burning claws)', equipment: dukePracticeEquipment, inventory: dukePracticeInventory },
+EQUIPMENT_PRESETS.duke = {
+  burning_claws: { name: 'Max (Burning claws)', equipment: dukeEquipment, inventory: dukeInventory },
   emberlight: {
     name: 'Max (Emberlight)',
-    equipment: { ...dukePracticeEquipment, weapon: 29589, shield: 22322 },
-    inventory: dukePracticeInventory.map((item) => {
+    equipment: { ...dukeEquipment, weapon: 29589, shield: 22322 },
+    inventory: dukeInventory.map((item) => {
       if (item?.id === 29589) return { id: 29577 }; // Burning claws replace Emberlight.
       if (item?.id === 22322) return null; // The defender is worn.
       return item;
@@ -1464,8 +1464,8 @@ EQUIPMENT_PRESETS.duke_practice = {
   },
   scythe: {
     name: 'Max (Scythe)',
-    equipment: { ...dukePracticeEquipment, weapon: 22325 },
-    inventory: dukePracticeInventory.map((item) => (item?.id === 22325 ? { id: 29577 } : item)),
+    equipment: { ...dukeEquipment, weapon: 22325 },
+    inventory: dukeInventory.map((item) => (item?.id === 22325 ? { id: 29577 } : item)),
   },
   naked: { ...NO_EQUIPMENT_FALLBACK, inventory: unarmedDukeInventory },
 };

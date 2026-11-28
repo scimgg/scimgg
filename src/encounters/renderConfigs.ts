@@ -5,8 +5,8 @@
  */
 import type { NpcBaseSeqOverrides } from '../render/npc/npcBaseSeqIds';
 import type { AuthoredEncounterRenderConfig } from '../render/scene/encounterRenderConfig';
-import { DUKE_PRACTICE_KIND } from './dukePractice/controls';
-import { DUKE_PRACTICE_RENDER_CONFIG } from './dukePractice/renderConfig';
+import { DUKE_KIND } from './catalog';
+import { DUKE_RENDER_CONFIG } from './duke/renderConfig';
 import { INFERNO_RENDER_CONFIG } from './inferno/renderConfig';
 import { LOBBY_BOSS_NPCS } from './lobby/metadata';
 import { SOL_HEREDIT_RENDER_CONFIG } from './solHeredit/renderConfig';
@@ -22,7 +22,7 @@ export const ENCOUNTER_RENDER_CONFIGS: ReadonlyMap<string, AuthoredEncounterRend
   ['yama_p3', YAMA_ENCOUNTER_RENDER_CONFIG],
   ['sol_heredit', SOL_HEREDIT_RENDER_CONFIG],
   ['inferno', INFERNO_RENDER_CONFIG],
-  [DUKE_PRACTICE_KIND, DUKE_PRACTICE_RENDER_CONFIG],
+  [DUKE_KIND, DUKE_RENDER_CONFIG],
 ]);
 
 /**
