@@ -52,6 +52,17 @@ describe('shipped preset equipment coverage', () => {
     expect(normalizeEncounterLoadout({ equipment, inventory }).inventory[27]).toEqual(poison);
   });
 
+  it('can open Duke from every shipped loadout', () => {
+    const presets = EQUIPMENT_PRESETS.duke_practice;
+    for (const preset of Object.values(presets)) {
+      expect(preset.inventory[27], preset.name).toEqual({ id: ARDER_MUSCA_POISON_ITEM_ID, quantity: 3 });
+    }
+    expect(presets.emberlight.equipment).toMatchObject({ weapon: 29589, shield: 22322 });
+    expect(presets.emberlight.inventory).toContainEqual({ id: 29577 });
+    expect(presets.scythe.equipment.weapon).toBe(22325);
+    expect(presets.scythe.inventory).toContainEqual({ id: 29577 });
+  });
+
   it('resolves every initially equipped slot in all 34 real encounter presets', () => {
     const unresolved: string[] = [];
     let realPresetCount = 0;

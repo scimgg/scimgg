@@ -91,7 +91,7 @@ const ORB_SPAWN_DELAY_TICKS = 3;
 // Graphic 379's cache sequence 1973 lasts 48 client cycles.
 const ORB_BURST_TICKS = 2;
 const BILE_TICKS = 15;
-// Practice rate from the eight Awakened recordings in docs/encounters/duke-practice.md.
+// Practice rate from the eight Awakened recordings in docs/encounters/duke-capture-analysis.md.
 const BILE_CHANCE = 27 / 58;
 // All 23 complete pool lifetimes in 20261126-232238-Duke.jsonl (lines 6586–6824 and 7575–7937).
 const BILE_POOL_TICKS = 9;
@@ -662,7 +662,7 @@ export class DukePracticeEncounter implements Encounter {
       if (hit) {
         // The contact sound originates one tile ahead of the burst (20261127-023028-Duke-Sucellus_8.jsonl:9004–9005).
         emitDukePracticeAudio(ctx.tickEvents, 'orbHit', nextTile ?? previousTile);
-        // All 31 recorded nonlethal contacts deal 25–27. See docs/encounters/duke-practice.md.
+        // All 31 recorded nonlethal contacts deal 25–27. See docs/encounters/duke-capture-analysis.md.
         return { source: ORB_DAMAGE_SOURCE, attackType: 'typeless', baseDamage: [25, 27] };
       }
     }

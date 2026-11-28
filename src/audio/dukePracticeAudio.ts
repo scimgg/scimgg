@@ -3,7 +3,7 @@ import { DUKE_PRACTICE_AUDIO_EVENT, type DukePracticeAudioCue } from '../encount
 import { coordinateFrom, play, type SoundRule, silent, type TimedSound } from './EventAudioPlayer';
 
 // The catalog, cache clips, and captured casts supply these cues.
-// See docs/encounters/duke-practice.md for timing and sources.
+// See docs/encounters/duke-facts-spec.md for timing and sources.
 const FAST_SPIT_SOUNDS = [
   { id: 7179, delayCycles: 1 },
   { id: 7248, delayCycles: 35 },

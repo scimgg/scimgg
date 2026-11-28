@@ -118,7 +118,7 @@ function openFight(engine: SimulationEngine): void {
 }
 
 // HP thresholds and relative timing from https://oldschool.runescape.wiki/w/Duke_Sucellus/Strategies#Awakened_mode
-// Opening delay, starting geometry, and flare lifetimes are practice choices in docs/encounters/duke-practice.md.
+// Opening delay, starting geometry, and flare lifetimes are practice choices in docs/encounters/duke-facts-spec.md.
 describe('Awakened Duke practice', () => {
   it('spawns the sleeping cache NPC and leaves its hazards inactive while the player waits', () => {
     const engine = practice();

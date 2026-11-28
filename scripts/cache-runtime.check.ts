@@ -9,6 +9,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type { AudioEngine } from '../src/audio/AudioEngine';
+import { EventAudioPlayer } from '../src/audio/EventAudioPlayer';
 import { FrameSoundTracker } from '../src/audio/FrameSoundTracker';
 import { CacheManager } from '../src/cache/CacheManager';
 import { toCollisionLocInput } from '../src/core/arena/collisionSpec';
@@ -37,9 +38,12 @@ import { getAutocastableSpells } from '../src/data/spellCatalog';
 import { DEATH_CHARGE_SPELL, getSpellRuneRequirement } from '../src/data/spellRunes';
 import { getMeleeSweep, getWeaponCombatVisuals } from '../src/data/weaponCombatVisuals';
 import { isRetiredEncounterKind } from '../src/encounters/catalog';
+import { DUKE_BILE_POOL_LOC_ID, DUKE_NPC_ID } from '../src/encounters/dukePractice/constants';
+import { ALWAYS_BILE_KEY, DUKE_PRACTICE_KIND, ENRAGE_HP } from '../src/encounters/dukePractice/controls';
+import { WARDEN_ID } from '../src/encounters/dukePractice/warden';
 import { LOBBY_BOSS_NPCS } from '../src/encounters/lobby/metadata';
 import { encounterControlsForKind, encounterEnablesIntro, resolveEncounterEntry } from '../src/encounters/modules';
-import { encounterDefaultCamera } from '../src/encounters/presentationModules';
+import { encounterDefaultCamera, encounterPresentationModuleForKind } from '../src/encounters/presentationModules';
 import { ALL_ENCOUNTER_KINDS, encounterRegistry } from '../src/encounters/registry';
 import { createSimulationEngineForNewRun } from '../src/encounters/simulationEngineFactory';
 import { COLOSSEUM_SPOTANIMS } from '../src/npcs/colosseum/constants';
@@ -102,6 +106,7 @@ const ENCOUNTER_DYNAMIC_COVERAGE: Readonly<Record<string, readonly string[]>> = 
   yama_p3_sensory: fightAndDeath('yama_p3_sensory'),
   yama_p3_bloodied: fightAndDeath('yama_p3_bloodied'),
   yama_p3_glyphic: fightAndDeath('yama_p3_glyphic'),
+  [DUKE_PRACTICE_KIND]: ['startup duke_practice', 'duke opening and enrage'],
   // The lobby's only runtime assets are its scene bosses, loaded and posed by its startup.
   lobby: ['startup lobby'],
   // Run from the Zuk entry (wave 69), where the boss and Zuk's practice commands live.
@@ -419,6 +424,7 @@ it('serves every archive the production runtime reads from the trimmed cache', a
     });
 
     await runEncounterStartups();
+    await runDukePractice();
     await runItemActions();
     await runEquipment();
     await runGroundItems();
@@ -1327,6 +1333,46 @@ async function runEncounterDynamics(): Promise<void> {
     session.scene.dispose?.();
   }
   await runSolModifiers();
+}
+
+/** Exercise Duke's Feed interaction, captured sound rules, and the renderable enrage hazards. */
+async function runDukePractice(): Promise<void> {
+  await runner.run('encounter dynamics', 'duke opening and enrage', async (scenario) => {
+    const session = await openArmed(DUKE_PRACTICE_KIND);
+    const { engine, scene, compositor } = session;
+    try {
+      const rules = need(encounterPresentationModuleForKind(session.kind)?.audioRules, 'Duke sound rules');
+      compositor.setEventAudioPlayer(new EventAudioPlayer(soundReadingEngine, rules));
+      play(session, 3, () => engine.applyAction({ type: 'npcInteraction', targetId: WARDEN_ID }));
+      play(session, 1);
+      scenario.require(livingBoss(engine)?.npcTypeId === DUKE_NPC_ID, 'three feeds woke Duke');
+
+      engine.setMechanicsConfig({ ...engine.getMechanicsConfig(), [ALWAYS_BILE_KEY]: true });
+      engine.applyAction({ type: 'applyBossHpPreset', hp: ENRAGE_HP });
+      let sawPool = false;
+      let sawGaze = false;
+      let sawOrb = false;
+      for (let tick = 0; tick < 45; tick++) {
+        play(session, 1);
+        for (const command of session.lastQueue?.commands ?? []) {
+          if (command.kind !== 'mesh3d') continue;
+          sawPool ||= command.meshId.startsWith(`scene-object-loc:${DUKE_BILE_POOL_LOC_ID}:`);
+          sawGaze ||= command.meshId.startsWith('duke-gaze-overlay-');
+        }
+        const { encounter } = engine.getState();
+        sawOrb ||= encounter.kind === DUKE_PRACTICE_KIND && encounter.visuals.orbTile !== null;
+      }
+      scenario.require(sawPool, 'bile pool rendered from a cache LOC');
+      scenario.require(sawGaze, 'Freezing Gaze interface model and sequences rendered');
+      scenario.require(sawOrb, 'an enrage orb crossed the front row');
+      scenario.require(playedSounds.has(5002) && playedSounds.has(1784), 'both flare and bile warnings played');
+      engine.setBossHp(0);
+      play(session, 20);
+      scenario.require(engine.getState().encounterOutcome.phase === 'victory', 'the fight resolved after Duke died');
+    } finally {
+      scene.dispose?.();
+    }
+  });
 }
 
 /** Encounter seeds that give each Quartet warbander role; the scenario fails if one stops matching. */

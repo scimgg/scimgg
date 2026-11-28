@@ -89,7 +89,7 @@ export interface EncounterPresentationModule {
   readonly kind: string;
   /** A scene of its own, for presentation the common `SceneCompositor` lacks. Omit for that scene. */
   readonly sceneBuilder?: SceneBuilderFactory;
-  /** Encounter-supplied NPC interaction data, such as the Attack action on sleeping Duke. */
+  /** Encounter-supplied NPC interaction data, such as the Feed action on sleeping Duke. */
   readonly localNpcTypes?: ReadonlyMap<number, NpcType>;
   readonly defaultCamera?: EncounterCameraConfig;
   /**

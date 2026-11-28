@@ -1425,34 +1425,49 @@ export const EQUIPMENT_PRESETS: Record<string, Record<string, EncounterPreset>> 
   },
 };
 
+// The Duke practice loadout uses the user's opening switches and supply counts.
+// https://oldschool.runescape.wiki/w/Duke_Sucellus/Strategies#Awakened_mode
+const dukePracticeEquipment = { ...EQUIPMENT_PRESETS.sol_heredit.max.equipment, head: 30750, weapon: 29577 };
+const dukePracticeInventory = parseInventoryFromSetup([
+  { id: 29589 }, // Emberlight
+  { id: 12695 }, // Super combat potion(4)
+  { id: 12695 }, // Super combat potion(4)
+  { id: 22325 }, // Scythe of Vitur
+  { id: 22322 }, // Avernic defender
+  { id: 6685 }, // Saradomin brew(4)
+  { id: 3024 }, // Super restore(4)
+  { id: 3024 }, // Super restore(4)
+  { id: 6685 }, // Saradomin brew(4)
+  { id: 6685 }, // Saradomin brew(4)
+  { id: 3024 }, // Super restore(4)
+  { id: 3024 }, // Super restore(4)
+  { id: 6685 }, // Saradomin brew(4)
+  { id: 6685 }, // Saradomin brew(4)
+  { id: 3024 }, // Super restore(4)
+  ...Array.from({ length: 3 }, () => [{ id: HALIBUT_ITEM_ID }, { id: 13441 }, { id: 13441 }, { id: 13441 }]).flat(),
+  { id: ARDER_MUSCA_POISON_ITEM_ID, q: 3 }, // Arder-musca poison
+]);
+
+const unarmedDukeInventory = createEmptyInventory();
+unarmedDukeInventory[27] = dukePracticeInventory[27];
+
 EQUIPMENT_PRESETS.duke_practice = {
-  burning_claws: {
-    // Requested Duke opener with Oathplate helm and the rest of the existing max melee armour.
-    name: 'Max (Burning claws)',
-    equipment: { ...EQUIPMENT_PRESETS.sol_heredit.max.equipment, head: 30750, weapon: 29577 },
-    inventory: parseInventoryFromSetup([
-      { id: 29589 }, // Emberlight
-      { id: 12695 }, // Super combat potion(4)
-      { id: 12695 }, // Super combat potion(4)
-      { id: 22325 }, // Scythe of Vitur
-      { id: 22322 }, // Avernic defender
-      { id: 6685 }, // Saradomin brew(4)
-      { id: 3024 }, // Super restore(4)
-      { id: 3024 }, // Super restore(4)
-      { id: 6685 }, // Saradomin brew(4)
-      { id: 6685 }, // Saradomin brew(4)
-      { id: 3024 }, // Super restore(4)
-      { id: 3024 }, // Super restore(4)
-      { id: 6685 }, // Saradomin brew(4)
-      { id: 6685 }, // Saradomin brew(4)
-      { id: 3024 }, // Super restore(4)
-      ...Array.from({ length: 3 }, () => [{ id: HALIBUT_ITEM_ID }, { id: 13441 }, { id: 13441 }, { id: 13441 }]).flat(),
-      { id: ARDER_MUSCA_POISON_ITEM_ID, q: 3 }, // Arder-musca poison
-    ]),
+  burning_claws: { name: 'Max (Burning claws)', equipment: dukePracticeEquipment, inventory: dukePracticeInventory },
+  emberlight: {
+    name: 'Max (Emberlight)',
+    equipment: { ...dukePracticeEquipment, weapon: 29589, shield: 22322 },
+    inventory: dukePracticeInventory.map((item) => {
+      if (item?.id === 29589) return { id: 29577 }; // Burning claws replace Emberlight.
+      if (item?.id === 22322) return null; // The defender is worn.
+      return item;
+    }),
   },
-  emberlight: { ...EQUIPMENT_PRESETS.yama_p3.melee, name: 'Max (Emberlight)' },
-  scythe: EQUIPMENT_PRESETS.sol_heredit.max,
-  naked: NO_EQUIPMENT_FALLBACK,
+  scythe: {
+    name: 'Max (Scythe)',
+    equipment: { ...dukePracticeEquipment, weapon: 22325 },
+    inventory: dukePracticeInventory.map((item) => (item?.id === 22325 ? { id: 29577 } : item)),
+  },
+  naked: { ...NO_EQUIPMENT_FALLBACK, inventory: unarmedDukeInventory },
 };
 
 // Derive every real set's requirements from the items it uses (see itemRequirements.ts),

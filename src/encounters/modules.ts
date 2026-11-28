@@ -240,7 +240,7 @@ export const ENCOUNTER_CORE_MODULES: readonly EncounterCoreModule[] = [
     descriptor: {
       kind: DUKE_PRACTICE_KIND,
       displayName: 'Awakened Duke Practice',
-      description: 'Drill step-backs, pillar cover, gas vents, bile and orb dodges against Duke Sucellus.',
+      description: 'Practise step-backs, pillar cover, gas vents, bile and orb dodges against Duke Sucellus.',
       mapSquare: DUKE_MAP_SQUARE,
       playerStart: [...DUKE_PRACTICE_START],
       loadsMapLocs: true,

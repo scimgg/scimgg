@@ -101,10 +101,12 @@ export class DukePracticeSceneCompositor extends SceneCompositor {
     this.registerTransientReset('dukePracticeEffects', () => this.effects.reset());
   }
 
-  protected override shouldPlayFrameSound({ actorId, seqId }: ActorFrameState): boolean {
+  protected override frameAudioStates(): ActorFrameState[] {
     // Duke's combat sounds use captured cues. His sleep and the player's clips use frame sounds.
-    if (actorId === this.actorRenderIdOf(WARDEN_ID)) return seqId === DUKE_SEQS.asleep;
-    return !actorId.startsWith('spotanim:duke-');
+    const dukeId = this.actorRenderIdOf(WARDEN_ID);
+    return this.collectActorFrameStates().filter(({ actorId, seqId }) =>
+      actorId === dukeId ? seqId === DUKE_SEQS.asleep : !actorId.startsWith('spotanim:duke-'),
+    );
   }
 
   override build(ctx: RenderContext, projection: Projection2D, viewport: Viewport): RenderQueue {

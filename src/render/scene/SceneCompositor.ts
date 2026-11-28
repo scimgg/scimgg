@@ -2039,17 +2039,18 @@ export class SceneCompositor {
     }
   }
 
+  /** An encounter with explicit sound cues can filter the frames the tracker plays. */
+  protected frameAudioStates(): ActorFrameState[] {
+    return this.collectActorFrameStates();
+  }
+
   /**
    * Plays the frame sounds this frame's final poses reached. A paused, discontinuous or rebuilt frame
    * only syncs the tracker, so a seek, scrub or restore never replays stale frame sounds.
    */
-  protected shouldPlayFrameSound(_actor: ActorFrameState): boolean {
-    return true;
-  }
-
   private updateFrameAudio(paused: boolean): void {
     if (!this.frameSoundTracker || this._disposed) return;
-    const actors = this.collectActorFrameStates().filter((actor) => this.shouldPlayFrameSound(actor));
+    const actors = this.frameAudioStates();
     if (paused || this.lastDiscontinuityReason !== null || this.reconstructedVisuals) {
       this.frameSoundTracker.silentSync(actors);
     } else this.frameSoundTracker.update(actors, this.getFrameSoundListenerPosition());
