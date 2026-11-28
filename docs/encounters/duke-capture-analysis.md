@@ -1,17 +1,35 @@
-# Awakened Duke capture analysis
+# Awakened Duke Sucellus capture analysis
 
-The [facts spec](./duke-facts-spec.md) summarizes the encounter's rules. The [unverified behavior register](./duke-unverified.md) tracks open questions and model choices. The recordings are private. The [capture fixtures](../../src/encounters/dukePractice/__tests__/fixtures/) contain the extracted ticks, tiles, IDs and outcomes used by the tests. Each section uses the named recording's own tick index. Coordinates are local to map square `(47, 100)`. The regular-mode sections establish behavior shared across the recorded examples. Awakened-specific thresholds and damage use Awakened evidence.
+## Scope, citations, and evidence discipline
 
-## First Awakened capture
+The [timing verification ledger](./duke-facts-spec.md#timing-verification-ledger) tracks the status
+of each rule. The [capture inventory](./duke-facts-spec.md#captures) maps the aliases A0–A10, A12,
+and R to private recording files. The [unverified behavior register](./duke-unverified.md) records
+known exceptions and the observations that could resolve them. Tests use the extracted
+[capture fixtures](../../src/encounters/dukePractice/__tests__/fixtures/).
 
-`20261126-232238-Duke.jsonl` records 184 consecutive ticks of a members-world
+**OBSERVED** marks a recorded event or tile. **DERIVED** marks a conclusion computed from the
+recorded events or the outcome of replaying them through a model. **UNCERTAIN** marks a boundary
+or hypothesis that the recordings leave open.
+
+Each section uses the named capture's own ticks. `A2:t380` refers to a game tick and
+`A2:L11783–11815` refers to file lines. Tiles are local to map square `(47, 100)`. Player movement
+checks use `me.tile` before or after movement as stated. Client-cycle offsets are relative to the
+specified attack or graphic start. R is regular-mode evidence for shared timings. Awakened damage
+and phase rules use the Awakened captures.
+
+## 1. Capture cross-checks
+
+### First Awakened capture (A0)
+
+**OBSERVED (A0).** `20261126-232238-Duke.jsonl` records 184 consecutive ticks of a members-world
 fight on revision 243. Duke is already awake at tick 0. His health bar drops
 from 140/160 to 83/160 before the player's death at tick 177. The capture
 covers the pre-enrage fight and both flare and bile thresholds. The timings
 below use the capture's tick numbers and its player true tile (`me.tile`).
 Cycle offsets are relative to the start of Duke's action.
 
-### Melee
+#### Melee
 
 - All 14 melee actions show chip damage, sequence 10176, frontal graphic
   2439 and ground graphics 2440, 2441, 2442, 2443, 2442, 2441, 2440 together
@@ -27,7 +45,7 @@ Cycle offsets are relative to the start of Duke's action.
   A pre-movement check at windup +2 fits all 14 attacks. A check one tick
   later would catch six successful re-entries.
 
-### Other attacks
+#### Other attacks
 
 | Mechanic | Capture evidence |
 | --- | --- |
@@ -47,7 +65,7 @@ this capture's coverage.
 
 ### Regular-mode cross-check
 
-`20261126-235612-Duke-Sucellus.jsonl` records 467 consecutive game ticks
+**OBSERVED (R).** `20261126-235612-Duke-Sucellus.jsonl` records 467 consecutive game ticks
 and four regular kills. The first fight is already underway when the recording
 starts. The other three show the player feeding Duke before combat.
 
@@ -78,7 +96,7 @@ These observations are for regular mode.
 
 ### Awakened opener and orb cross-check
 
-`20261127-002024-Duke-Sucellus_1.jsonl` records 257 consecutive ticks
+**OBSERVED (A1).** `20261127-002024-Duke-Sucellus_1.jsonl` records 257 consecutive ticks
 on revision 243. The player feeds Duke at the start and leaves the arena
 at tick 250 with Duke at 470 HP, above the enrage threshold.
 
@@ -89,9 +107,9 @@ at tick 250 with Duke at 470 HP, above the enrage threshold.
   sleeping NPC 12167. At tick 11 it switches to 12191 and starts
   sequence 10179, followed by the first melee windup at tick 16.
   The player swings at ticks 12 and 16, and is back in cover by tick 17.
-  The sim matches the delays from application to wake and from wake
-  to windup. It currently applies the dose on the inventory-change tick
-  and uses sleeping NPC 12166. See lines 4417–4530 and 4590–4758.
+  The sim uses the tolerance-update-to-wake and wake-to-windup offsets.
+  It combines the inventory decrement and tolerance update into the Feed
+  tick and uses sleeping NPC 12166. See lines 4417–4530 and 4590–4758.
 - **Slam.** All 29 shatter checks fit the sim's pre-movement rule at
   windup +2. In 24 cases the player re-enters the front row on that
   tick and takes no slam damage. Chip damage reaches 7 with Protect
@@ -122,7 +140,7 @@ at tick 250 with Duke at 470 HP, above the enrage threshold.
 
 ### Awakened enrage cross-check
 
-`20261127-005253-Duke-Sucellus_2.jsonl` has consecutive snapshots from
+**OBSERVED (A2).** `20261127-005253-Duke-Sucellus_2.jsonl` has consecutive snapshots from
 ticks 0–462 on revision 243. The fight is underway at tick 0. The player
 dies at tick 436 with Duke's health bar at 2/160. The capture shows the
 bar's resolution, so the exact remaining HP is unknown.
@@ -161,7 +179,7 @@ bar's resolution, so the exact remaining HP is unknown.
 
 ### Awakened west-side orb opener and final contact
 
-`20261127-012348-Duke-Sucellus_3.jsonl` has consecutive snapshots from
+**OBSERVED (A3).** `20261127-012348-Duke-Sucellus_3.jsonl` has consecutive snapshots from
 ticks 0–562 on revision 243. The fight is already underway at tick 0.
 Duke's health bar is 5/160 from the player's final hit on tick 502
 through death on tick 505.
@@ -189,7 +207,7 @@ through death on tick 505.
 
 ### Awakened magic and failed gaze cross-check
 
-`20261127-013711-Duke-Sucellus_4.jsonl` and
+**OBSERVED (A4 and A5).** `20261127-013711-Duke-Sucellus_4.jsonl` and
 `20261127-014756-Duke-Sucellus_5.jsonl` have consecutive snapshots at
 ticks 0–343 and 0–419, respectively. Both fights are underway at tick 0.
 
@@ -220,7 +238,7 @@ ticks 0–343 and 0–419, respectively. Both fights are underway at tick 0.
 
 ### Two Awakened attempts and a complete opener
 
-`20261127-020616-Duke-Sucellus_6.jsonl` has consecutive snapshots from
+**OBSERVED (A6).** `20261127-020616-Duke-Sucellus_6.jsonl` has consecutive snapshots from
 ticks 0–1112 on revision 243. The first attempt is underway at tick 0.
 The second starts from sleeping Duke.
 
@@ -253,7 +271,7 @@ The second starts from sleeping Duke.
 
 ### Awakened orb threshold cross-check
 
-`20261127-022231-Duke-Sucellus_7.jsonl` has consecutive snapshots from
+**OBSERVED (A7).** `20261127-022231-Duke-Sucellus_7.jsonl` has consecutive snapshots from
 ticks 0–310 on revision 243. Duke starts asleep. He wakes on tick 3,
 starts his first melee attack on tick 8, and is at roughly 440 HP from
 recorded damage when the player leaves on tick 297. See lines 4339,
@@ -278,7 +296,7 @@ recorded damage when the player leaves on tick 297. See lines 4339,
 
 ### Three Awakened enrage recordings
 
-`20261127-023028-Duke-Sucellus_8.jsonl`, `20261127-024405-Duke-Sucellus_9.jsonl`
+**OBSERVED (A8–A10).** `20261127-023028-Duke-Sucellus_8.jsonl`, `20261127-024405-Duke-Sucellus_9.jsonl`
 and `20261127-025030-Duke-Sucellus_10.jsonl` have consecutive snapshots
 through ticks 349, 219 and 417, respectively. The ninth fight is already
 underway at tick 0.
@@ -323,13 +341,14 @@ underway at tick 0.
 
 ### Basic attack selection by tick
 
-The front-row check matches 487 of 501 basic windups across the 12 captures
+**DERIVED.** The front-row check matches 487 of 501 basic windups across the 12 captures
 when using the player's true tile before movement. That sample uses sequences
 10176 and 10177 for NPC 12191, with a living player and snapshots on both sides
 of the windup. Checking the true tile after movement matches 404 of 501.
 All 27 magic windups start outside the melee lane. The 14 exceptions are melee
-windups outside the lane, with no icicle chip. The captures leave the trigger
-for those extra melee windups open.
+windups outside the lane, with no icicle chip.
+
+**UNCERTAIN.** The trigger for those extra melee windups remains open.
 
 - **Stepping in.** Duke starts magic on tick 134 when the player begins at
   `[34, 50]` and steps behind the front pillar at `[35, 51]` on the same
@@ -338,9 +357,9 @@ for those extra melee windups open.
   380 and ends at `[34, 50]`. Duke starts melee and the icicles deal 5 that
   tick. See `20261127-005253-Duke-Sucellus_2.jsonl:11783–11815`.
 
-## Damage replay audit
+## 2. Damage replay audit
 
-The audit fed successive recorded true tiles to the simulation's movement engine
+**DERIVED.** The audit fed successive recorded true tiles to the simulation's movement engine
 over 4,211 ticks from 12 captures. Every movement endpoint matched. It supplied
 the recorded attack windup ticks, bile casts, and orb spawn ticks and sides,
 and used a fixed positive damage roll. This checks hit timing with the recorded
@@ -448,8 +467,9 @@ test whether staying still distinguishes those casts.
 
 ### 19:29 Awakened recording
 
-`20261127-192944-Duke-Sucellus_12.jsonl` starts with Duke already awake.
-The replay used 165 consecutive battle ticks and matched every movement
+**OBSERVED (A12).** `20261127-192944-Duke-Sucellus_12.jsonl` starts with Duke already awake.
+
+**DERIVED.** The replay used 165 consecutive battle ticks and matched every movement
 endpoint. After seeding the opening counters from the first recorded
 volley and gaze, the sim scheduled all 41 windups at their recorded ticks.
 The replay supplied the observed bile decision and orb directions, applied
@@ -476,7 +496,7 @@ combat roll. The four orb spawns match at ticks 120, 132, 144, and 156 after the
   `20261127-020616-Duke-Sucellus_6.jsonl` also drops its first pool only
   on the final tile (ticks 1088–1089).
 
-The sim matches the ticks of all 23 direct damage or block splats and all
+**DERIVED.** The sim matches the ticks of all 23 direct damage or block splats and all
 four bile splats, with zero extras. The same changes leave the hit history
 unchanged over 4,211 battle ticks from the earlier 12 captures. Focused
 capture tests cover the flare targets, pool placements, and damage ticks.
