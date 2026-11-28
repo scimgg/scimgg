@@ -53,6 +53,21 @@ export function selectInfoboxes(state: SimulationState, settings?: InfoBoxSettin
     });
   }
 
+  const overloadTicksRemaining = state.overloadTicksRemaining ?? 0;
+
+  if (overloadTicksRemaining > 0) {
+    const overloadTimeText = formatTicksToClock(overloadTicksRemaining);
+    infoboxes.push({
+      id: 'overload-plus',
+      itemId: INFOBOX_ITEM_IDS.overloadPlus,
+      text: overloadTimeText,
+      ticksRemaining: overloadTicksRemaining,
+      sampledAtTick: state.currentTick,
+      tooltipTitle: 'Overload (+)',
+      tooltipDetail: `Combat stats boosted (${overloadTimeText} remaining)`,
+    });
+  }
+
   const ticksRemaining = saturatedHeartTicksRemaining(state.combatTimers);
 
   if (ticksRemaining > 0) {
