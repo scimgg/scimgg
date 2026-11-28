@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createEmptyCombatSupplies, type EncounterLoadout } from '../../types/encounterLoadout';
-import { createEmptyInventory } from '../../types/inventory';
+import { ARDER_MUSCA_POISON_ITEM_ID, createEmptyInventory } from '../../types/inventory';
 import { getGearCatalog } from '../customEquipmentPresets';
 import { exportInventorySetup, importInventorySetup } from '../inventorySetupIO';
 
@@ -264,6 +264,18 @@ describe('RuneLite Inventory Setups interchange', () => {
       const imported = importInventorySetup(exportInventorySetup('Counted', loadout, loader));
 
       expect(imported.kind === 'success' ? imported.loadout.inventory[0] : null).toEqual({ id: DEATH_RUNE });
+    });
+
+    it('round-trips the exact size of a finite stack', () => {
+      const inventory = createEmptyInventory();
+      const poison = { id: ARDER_MUSCA_POISON_ITEM_ID, quantity: 3 };
+      inventory[27] = poison;
+      const loadout: EncounterLoadout = { equipment: {}, inventory, supplies: createEmptyCombatSupplies() };
+
+      const text = exportInventorySetup('Duke opener', loadout);
+      expect(JSON.parse(text).setup.inv[27]).toEqual({ id: poison.id, q: 3 });
+      const imported = importInventorySetup(text);
+      expect(imported.kind === 'success' ? imported.loadout.inventory[27] : null).toEqual(poison);
     });
   });
 });

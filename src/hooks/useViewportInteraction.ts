@@ -126,6 +126,10 @@ export function useViewportInteraction({
       }
 
       const manualSpell = armedSpell;
+      const npcInteraction = engineRef.current.acceptsEncounterInput({
+        kind: 'npcInteraction',
+        targetId: hoveredNpcActorId,
+      });
       if (manualSpell) setArmedSpell(null);
       const retireTargetPreview = previewTargetTile(null);
 
@@ -137,7 +141,11 @@ export function useViewportInteraction({
         setTargetTile(null);
         targetTileRef.current = null;
         retireTargetPreview();
-        if (manualSpell) {
+        if (npcInteraction) {
+          const action = { type: 'npcInteraction', targetId: hoveredNpcActorId } as const;
+          replay.recordAction(action);
+          engineRef.current.applyAction(action);
+        } else if (manualSpell) {
           // Manual cast: the armed spell is spent on this one target and put away,
           // matching OSRS where casting again needs another spell + target click.
           replay.recordAction({ type: 'manualCast', spellName: manualSpell, targetId: hoveredNpcActorId });

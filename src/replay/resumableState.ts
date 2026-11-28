@@ -8,8 +8,8 @@ import type { SimulationState } from '../types/simulation';
  * simulation; the position histories are rolling render trails that the recorder empties before
  * it stores a frame (`snapshotStateForReplay`), so a recorded frame's copy is always empty while
  * a live engine's is not. Comparing either produces a guaranteed mismatch and would abort every
- * takeover. `crawlMovement` is likewise presentation history (the renderer's crawl interpolation),
- * not authoritative movement.
+ * takeover. The renderer uses `crawlMovement` and `orbPreviousTile` for interpolation. Their
+ * authoritative positions are compared separately.
  */
 const IGNORED_STATE_KEYS: ReadonlySet<string> = new Set([
   'eventLog',
@@ -17,6 +17,7 @@ const IGNORED_STATE_KEYS: ReadonlySet<string> = new Set([
   'primaryNpcHistory',
   'history',
   'crawlMovement',
+  'orbPreviousTile',
 ]);
 
 function normalize(value: unknown): unknown {

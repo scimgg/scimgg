@@ -90,6 +90,27 @@ describe('diffResumableState', () => {
     expect(diffResumableState(expectedState, withTrail)).toEqual([]);
   });
 
+  it('accepts a Duke recording without orb interpolation history and still compares its true tile', () => {
+    const encounter: SimulationState['encounter'] = {
+      kind: 'duke_practice',
+      state: { bileTicksRemaining: 0, enraged: false, perfectKillEligible: true },
+      visuals: { hazards: [], orbTile: [35, 51] },
+    };
+    const recorded: SimulationState = { ...makeEngine().getState(), encounter };
+    const rebuilt: SimulationState = {
+      ...recorded,
+      encounter: { ...encounter, visuals: { ...encounter.visuals, orbPreviousTile: [36, 51] } },
+    };
+
+    expect(diffResumableState(recorded, rebuilt)).toEqual([]);
+    expect(
+      diffResumableState(recorded, {
+        ...rebuilt,
+        encounter: { ...encounter, visuals: { ...encounter.visuals, orbTile: [34, 51] } },
+      }),
+    ).toContain('encounter.visuals.orbTile.0: expected 35, got 34');
+  });
+
   it('ignores crawl presentation history but not the fight state', () => {
     const [recorded, rebuilt] = twoSnapshots();
     const withCrawl: SimulationState = {

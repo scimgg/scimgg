@@ -1809,9 +1809,13 @@ export class PicoGLRenderer implements ContextStatusRenderer {
         }
       }
 
-      this.multiplyMatrices(mvpMatrix, viewProjMatrix, modelMatrix);
       if (programEntry.uniformLocations.viewProjMatrix) {
-        gl.uniformMatrix4fv(programEntry.uniformLocations.viewProjMatrix, false, mvpMatrix);
+        if (!cmd.clipSpace) this.multiplyMatrices(mvpMatrix, viewProjMatrix, modelMatrix);
+        gl.uniformMatrix4fv(
+          programEntry.uniformLocations.viewProjMatrix,
+          false,
+          cmd.clipSpace ? modelMatrix : mvpMatrix,
+        );
       }
 
       if (currentShaderId === 'scene-effects' && programEntry.uniformLocations.animParams) {

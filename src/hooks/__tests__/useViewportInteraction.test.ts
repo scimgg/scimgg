@@ -44,6 +44,7 @@ function makeEngine(paused: boolean, events: GameEvent[] = []): SimulationEngine
   const state = makeState(1);
   return {
     applyAction: vi.fn(),
+    acceptsEncounterInput: vi.fn(() => false),
     advanceTick: vi.fn(),
     canAdvance: vi.fn(() => true),
     didLastTickDiscardWalkTarget: vi.fn(() => false),
@@ -265,6 +266,19 @@ describe('useViewportInteraction', () => {
     });
 
     expect(engine.applyAction).toHaveBeenCalledWith({ type: 'attackTarget', targetId: 'yama' });
+  });
+
+  it('records a claimed NPC interaction in place of an attack or a manual cast', () => {
+    const engine = makeEngine(false);
+    vi.mocked(engine.acceptsEncounterInput).mockReturnValue(true);
+    const { result, replay, setArmedSpell } = renderInteraction(engine, { armedSpell: 'Fire Surge' });
+
+    act(() => result.current.handleTileClick([28, 52], false, 'duke'));
+
+    const action = { type: 'npcInteraction', targetId: 'duke' };
+    expect(setArmedSpell).toHaveBeenCalledWith(null);
+    expect(engine.applyAction).toHaveBeenCalledExactlyOnceWith(action);
+    expect(replay.recordAction).toHaveBeenLastCalledWith(action);
   });
 
   it('shows a walk destination immediately while movement remains buffered', () => {

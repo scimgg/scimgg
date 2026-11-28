@@ -12,6 +12,7 @@ import type { TileEdge, TileEdgeRef } from '../../types/lineMarkers';
 import type { NpcHighlightMode } from '../../types/npcHighlight';
 import type { Coordinate } from '../../types/simulation';
 import { log } from '../../util/Logger';
+import { isNpcClickAction } from '../npcInteraction';
 import type { ContextMenuContent, ContextMenuEntry } from './contextMenuTypes';
 
 const TARGET_COLORS = {
@@ -290,7 +291,7 @@ export interface ViewportMenuInputs {
   ray?: Ray3D | null;
   screenPx?: { x: number; y: number };
   onNpcAction?: (coord: Coordinate) => void;
-  onNpcAttackByTarget?: (actorId: string, position: Coordinate) => void;
+  onNpcActionByTarget?: (actorId: string, position: Coordinate) => void;
   groundItemContext?: GroundItemMenuContext;
   customMenuSwaps?: readonly CustomMenuSwap[];
   tileMarkerContext?: TileMarkerContext;
@@ -320,7 +321,7 @@ function buildViewportMenuParts(inputs: ViewportMenuInputs): ViewportMenuParts {
     ray,
     screenPx,
     onNpcAction,
-    onNpcAttackByTarget,
+    onNpcActionByTarget,
     groundItemContext,
     npcHighlightContext,
   } = inputs;
@@ -337,7 +338,7 @@ function buildViewportMenuParts(inputs: ViewportMenuInputs): ViewportMenuParts {
         onTileClick,
         onNpcAction,
         npcHighlightContext,
-        onNpcAttackByTarget,
+        onNpcActionByTarget,
       ),
       actions,
       examines,
@@ -547,7 +548,7 @@ function buildNpcEntriesForRay(
   onTileClick?: (coord: Coordinate) => void,
   onNpcAction?: (coord: Coordinate) => void,
   npcHighlightContext?: NpcHighlightMenuContext,
-  onNpcAttackByTarget?: (actorId: string, position: Coordinate) => void,
+  onNpcActionByTarget?: (actorId: string, position: Coordinate) => void,
 ): ContextMenuEntry[] {
   const pickNpcs = ctx.pickNpcs;
   const npcTypeLoader = ctx.npcTypeLoader;
@@ -566,8 +567,8 @@ function buildNpcEntriesForRay(
         continue;
       }
 
-      const clickHandler = onNpcAttackByTarget
-        ? (_coord: Coordinate) => onNpcAttackByTarget(picked.actorId, picked.position)
+      const clickHandler = onNpcActionByTarget
+        ? (_coord: Coordinate) => onNpcActionByTarget(picked.actorId, picked.position)
         : onNpcAction;
       const isAttackTarget = ctx.attackTargetActorId === picked.actorId;
       const targetColor = ctx.npcMenuColor?.(picked.npcTypeId, picked.actorId) ?? TARGET_COLORS.npc;
@@ -635,9 +636,7 @@ function buildNpcContextEntries(
 
   for (const action of npcType.actions) {
     if (action === undefined || action === null) continue;
-    // Only the OSRS "Attack" action routes a red-X left-click at the actor; other
-    // cache actions (e.g. Talk-to) are inert here rather than silently attacking.
-    const clickHandler = action === 'Attack' ? (onNpcAction ?? onTileClick) : undefined;
+    const clickHandler = isNpcClickAction(action) ? (onNpcAction ?? onTileClick) : undefined;
     entries.push({
       action,
       target,

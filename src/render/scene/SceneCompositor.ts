@@ -1556,6 +1556,7 @@ export class SceneCompositor {
     _playerFacingAngle: number,
     _mechanicsConfig: SimulationState['mechanicsConfig'],
     _is2D: boolean,
+    _simulationState: SimulationState,
   ): void {}
 
   private loadEncounterSpotAnims(spotAnimModelLoader: SpotAnimModelLoader): void {
@@ -2042,9 +2043,13 @@ export class SceneCompositor {
    * Plays the frame sounds this frame's final poses reached. A paused, discontinuous or rebuilt frame
    * only syncs the tracker, so a seek, scrub or restore never replays stale frame sounds.
    */
+  protected shouldPlayFrameSound(_actor: ActorFrameState): boolean {
+    return true;
+  }
+
   private updateFrameAudio(paused: boolean): void {
     if (!this.frameSoundTracker || this._disposed) return;
-    const actors = this.collectActorFrameStates();
+    const actors = this.collectActorFrameStates().filter((actor) => this.shouldPlayFrameSound(actor));
     if (paused || this.lastDiscontinuityReason !== null || this.reconstructedVisuals) {
       this.frameSoundTracker.silentSync(actors);
     } else this.frameSoundTracker.update(actors, this.getFrameSoundListenerPosition());
@@ -2484,6 +2489,7 @@ export class SceneCompositor {
       stepFacingAngle,
       mechanicsConfig,
       is2D,
+      simulationState,
     );
 
     // Skip 3D face-sorting projection in 2D mode because mesh data is not rendered.

@@ -272,6 +272,22 @@ describe('resolveViewportRightClick', () => {
 });
 
 describe('resolveViewportLeftClickSwap', () => {
+  it('routes Feed on a sleeping NPC to the clicked actor', () => {
+    const onNpcActionByTarget = vi.fn();
+    const content = buildViewportContextMenu({
+      tile: TILE,
+      entityContext: npcEntityContext(['Feed']),
+      ray: RAY,
+      screenPx: SCREEN_PX,
+      onNpcActionByTarget,
+    });
+    const feed = content?.entries.find(({ action }) => action === 'Feed');
+    expect(feed?.clickType).toBe('red');
+    feed?.onClick?.();
+    expect(onNpcActionByTarget).toHaveBeenCalledWith('npc-1', TILE);
+    expect(actions(content)).not.toContain('Attack');
+  });
+
   it('returns nothing when no rule promotes an entry', () => {
     expect(
       resolveViewportLeftClickSwap({
@@ -297,20 +313,20 @@ describe('resolveViewportLeftClickSwap', () => {
   });
 
   it('hands back the promoted action with its click handler attached', () => {
-    const onNpcAttackByTarget = vi.fn();
+    const onNpcActionByTarget = vi.fn();
     const swapped = resolveViewportLeftClickSwap({
       tile: TILE,
       onTileClick: vi.fn(),
       entityContext: npcEntityContext(['Talk-to', 'Attack']),
       ray: RAY,
       screenPx: SCREEN_PX,
-      onNpcAttackByTarget,
+      onNpcActionByTarget,
       customMenuSwaps: parseCustomMenuSwaps('attack,*'),
     });
     expect(swapped?.kind).toBe('action');
     expect(swapped?.entry.action).toBe('Attack');
     swapped?.entry.onClick?.();
-    expect(onNpcAttackByTarget).toHaveBeenCalledWith('npc-1', [30, 32]);
+    expect(onNpcActionByTarget).toHaveBeenCalledWith('npc-1', [30, 32]);
   });
 });
 
@@ -336,7 +352,7 @@ describe('resolveViewportLeftClickSwap — an entity behind the nearest one', ()
       entityContext: stackedEntityContext(),
       ray: RAY,
       screenPx: SCREEN_PX,
-      onNpcAttackByTarget: vi.fn(),
+      onNpcActionByTarget: vi.fn(),
       customMenuSwaps: parseCustomMenuSwaps(rules),
     });
 
@@ -347,16 +363,16 @@ describe('resolveViewportLeftClickSwap — an entity behind the nearest one', ()
   });
 
   it('routes the click at the further entity, not the nearest one', () => {
-    const onNpcAttackByTarget = vi.fn();
+    const onNpcActionByTarget = vi.fn();
     resolveViewportLeftClickSwap({
       tile: TILE,
       entityContext: stackedEntityContext(),
       ray: RAY,
       screenPx: SCREEN_PX,
-      onNpcAttackByTarget,
+      onNpcActionByTarget,
       customMenuSwaps: parseCustomMenuSwaps('attack,void flare*'),
     })?.entry.onClick?.();
-    expect(onNpcAttackByTarget).toHaveBeenCalledWith('flare', [31, 33]);
+    expect(onNpcActionByTarget).toHaveBeenCalledWith('flare', [31, 33]);
   });
 
   it('still resolves when the rule names what already leads, so the click cannot fall back', () => {
@@ -675,7 +691,7 @@ const STACK_SCREEN_PX = { x: 400, y: 300 };
 function buildStackedNpcMenu(
   picked: PickedNpc[],
   specs: Record<number, NpcTypeSpec>,
-  onNpcAttackByTarget?: (actorId: string, position: Coordinate) => void,
+  onNpcActionByTarget?: (actorId: string, position: Coordinate) => void,
   attackTargetActorId?: string | null,
 ) {
   const byId: Record<number, NpcType> = {};
@@ -687,7 +703,7 @@ function buildStackedNpcMenu(
     entityContext: { npcTypeLoader: loaderFor(byId), pickNpcs: () => picked, attackTargetActorId },
     ray: STACK_RAY,
     screenPx: STACK_SCREEN_PX,
-    onNpcAttackByTarget,
+    onNpcActionByTarget,
   });
 }
 
@@ -740,16 +756,16 @@ describe('buildViewportContextMenu NPC stacking', () => {
   });
 
   it('routes each Attack entry at its own actor', () => {
-    const onNpcAttackByTarget = vi.fn<(actorId: string, position: Coordinate) => void>();
-    const content = buildStackedNpcMenu([ZEK, XIL], SPECS, onNpcAttackByTarget);
+    const onNpcActionByTarget = vi.fn<(actorId: string, position: Coordinate) => void>();
+    const content = buildStackedNpcMenu([ZEK, XIL], SPECS, onNpcActionByTarget);
 
     const xilAttack = content?.entries.find(
       (entry) => entry.action === 'Attack' && entry.target === 'Jal-Xil  (level-370)',
     );
     xilAttack?.onClick?.();
 
-    expect(onNpcAttackByTarget).toHaveBeenCalledTimes(1);
-    expect(onNpcAttackByTarget).toHaveBeenCalledWith('jal-xil-1', STACK_TILE);
+    expect(onNpcActionByTarget).toHaveBeenCalledTimes(1);
+    expect(onNpcActionByTarget).toHaveBeenCalledWith('jal-xil-1', STACK_TILE);
   });
 
   it('skips only the NPC whose cache type fails to load', () => {
@@ -760,10 +776,10 @@ describe('buildViewportContextMenu NPC stacking', () => {
   });
 
   it('does not route a non-Attack action (Talk-to) through the attack callback', () => {
-    const onNpcAttackByTarget = vi.fn<(actorId: string, position: Coordinate) => void>();
+    const onNpcActionByTarget = vi.fn<(actorId: string, position: Coordinate) => void>();
     const BANKER: PickedNpc = { actorId: 'banker-1', npcTypeId: 8000, position: STACK_TILE, distance: 3 };
     const BANKER_SPEC: NpcTypeSpec = { name: 'Banker', combatLevel: 0, actions: ['Talk-to', 'Attack'] };
-    const content = buildStackedNpcMenu([BANKER], { 8000: BANKER_SPEC }, onNpcAttackByTarget);
+    const content = buildStackedNpcMenu([BANKER], { 8000: BANKER_SPEC }, onNpcActionByTarget);
 
     // Talk-to is present but inert: no red-X click handler, no attack routing.
     const talk = content?.entries.find((entry) => entry.action === 'Talk-to');
@@ -771,25 +787,25 @@ describe('buildViewportContextMenu NPC stacking', () => {
     expect(talk?.onClick).toBeUndefined();
     expect(talk?.clickType).toBeUndefined();
     talk?.onClick?.();
-    expect(onNpcAttackByTarget).not.toHaveBeenCalled();
+    expect(onNpcActionByTarget).not.toHaveBeenCalled();
 
     // Attack on the same NPC still routes at that actor.
     const attack = content?.entries.find((entry) => entry.action === 'Attack');
     attack?.onClick?.();
-    expect(onNpcAttackByTarget).toHaveBeenCalledTimes(1);
-    expect(onNpcAttackByTarget).toHaveBeenCalledWith('banker-1', STACK_TILE);
+    expect(onNpcActionByTarget).toHaveBeenCalledTimes(1);
+    expect(onNpcActionByTarget).toHaveBeenCalledWith('banker-1', STACK_TILE);
   });
 
   it('leaves an NPC with no cache actions unclickable (the Zuk shield case)', () => {
-    const onNpcAttackByTarget = vi.fn<(actorId: string, position: Coordinate) => void>();
+    const onNpcActionByTarget = vi.fn<(actorId: string, position: Coordinate) => void>();
     const SHIELD: PickedNpc = { actorId: 'shield-1', npcTypeId: 8001, position: STACK_TILE, distance: 3 };
     const SHIELD_SPEC: NpcTypeSpec = { name: "Zuk's shield", combatLevel: 0, actions: [] };
-    const content = buildStackedNpcMenu([SHIELD], { 8001: SHIELD_SPEC }, onNpcAttackByTarget);
+    const content = buildStackedNpcMenu([SHIELD], { 8001: SHIELD_SPEC }, onNpcActionByTarget);
 
     // No red-X (attack) entries at all; only the implicit Examine survives.
     expect(content?.entries.some((entry) => entry.clickType === 'red')).toBe(false);
     for (const entry of content?.entries ?? []) entry.onClick?.();
-    expect(onNpcAttackByTarget).not.toHaveBeenCalled();
+    expect(onNpcActionByTarget).not.toHaveBeenCalled();
   });
 
   it('renders the glyph cache color wrapper as a cyan name rather than literal tags', () => {

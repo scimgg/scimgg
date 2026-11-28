@@ -164,7 +164,7 @@ import { TopChrome, type TopChromeProps } from './launcher/TopChrome';
 import { Minimap, type MinimapHandle } from './Minimap';
 import { MobileLayoutEditBar } from './MobileLayoutEditBar';
 import { MobileToolWindow } from './MobileToolWindow';
-import { isNpcAttackable, resolveInteractiveNpcPick } from './npcInteraction';
+import { hasNpcClickAction, resolveInteractiveNpcPick } from './npcInteraction';
 import { PixelComposedLayer, tileFill } from './PixelComposedLayer';
 import { PRAYER_FLICK_PANEL_HEIGHT, PrayerFlickOverlay } from './PrayerFlickOverlay';
 import { ReplayControls, type ReplayControlsProps } from './ReplayControls';
@@ -684,7 +684,7 @@ export interface GridProps {
 const ViewportContextMenuBridge: React.FC<{
   onTileClick: (coord: Coordinate) => void;
   onNpcAction?: (coord: Coordinate) => void;
-  onNpcAttackByTarget?: (actorId: string, position: Coordinate) => void;
+  onNpcActionByTarget?: (actorId: string, position: Coordinate) => void;
   tileMarkers: TileMarker[];
   showTileMarkers: boolean;
   onMarkTile?: (tile: Coordinate) => void;
@@ -720,7 +720,7 @@ const ViewportContextMenuBridge: React.FC<{
 }> = ({
   onTileClick,
   onNpcAction,
-  onNpcAttackByTarget,
+  onNpcActionByTarget,
   tileMarkers,
   showTileMarkers,
   onMarkTile,
@@ -830,7 +830,7 @@ const ViewportContextMenuBridge: React.FC<{
           ray,
           screenPx: canvasScreenPx,
           onNpcAction,
-          onNpcAttackByTarget,
+          onNpcActionByTarget,
           groundItemContext: groundItemCtx,
           customMenuSwaps,
           tileMarkerContext,
@@ -856,7 +856,7 @@ const ViewportContextMenuBridge: React.FC<{
     [
       onTileClick,
       onNpcAction,
-      onNpcAttackByTarget,
+      onNpcActionByTarget,
       showContextMenu,
       entityContext,
       resolveGroundItemMenuItems,
@@ -1011,19 +1011,19 @@ const ViewportEntityBridge: React.FC<{
           applyHoverResult(`npc-no-tooltip:${picked.actorId}`, null, 'yellow', picked.actorId);
           return;
         }
-        if (isNpcAttackable(npcType)) {
+        if (hasNpcClickAction(npcType)) {
           // In the memo key because it is part of the tooltip's content: recoloring a tag
           // while its NPC is hovered would otherwise leave the old color on screen.
           const highlightColor = entityContext.npcMenuColor?.(picked.npcTypeId, picked.actorId);
           applyHoverResult(
-            `npc:${picked.actorId}:${highlightColor ?? ''}`,
+            `npc:${picked.actorId}:${picked.npcTypeId}:${highlightColor ?? ''}`,
             buildNpcTooltip(npcType, highlightColor),
             'red',
             picked.actorId,
           );
           return;
         }
-        // Owns ops but no Attack (e.g. a Talk-to NPC): it still heads the menu, so it
+        // Owns ops but no supported action (e.g. a Talk-to NPC): it still heads the menu, so it
         // is not a red-X target and nothing behind it can be one either.
         applyHoverResult(`npc-no-action:${picked.actorId}`, null, 'yellow', null);
         return;
@@ -2268,7 +2268,7 @@ export const Grid: React.FC<Partial<GridProps>> = (props) => {
     [onTileClick, primaryNpcActorId],
   );
 
-  const handleNpcAttackByTarget = useCallback(
+  const handleNpcActionByTarget = useCallback(
     (actorId: string, position: Coordinate) => {
       onTileClick(position, getModifiers().ctrl, actorId);
     },
@@ -2299,7 +2299,7 @@ export const Grid: React.FC<Partial<GridProps>> = (props) => {
           ray,
           screenPx,
           onNpcAction: (coord) => onTileClick(coord, ctrlKey, primaryNpcActorId ?? null),
-          onNpcAttackByTarget: (actorId, position) => onTileClick(position, ctrlKey, actorId),
+          onNpcActionByTarget: (actorId, position) => onTileClick(position, ctrlKey, actorId),
           groundItemContext:
             onTakeGroundItem && groundItems.length > 0
               ? { items: groundItems, objTypeLoader, onTake: onTakeGroundItem }
@@ -2318,13 +2318,12 @@ export const Grid: React.FC<Partial<GridProps>> = (props) => {
 
       const resolved = resolveInteractiveNpcPick(pickNpcs(ray, screenPx), npcTypeLoader);
       if (resolved) {
-        if (resolved.npcType && isNpcAttackable(resolved.npcType)) {
+        if (resolved.npcType && hasNpcClickAction(resolved.npcType)) {
           wrappedOnTileClick(resolved.picked.position, ctrlKey, resolved.picked.actorId);
           return true;
         }
-        // The NPC heading the menu offers no attack (or its type failed to load): do
-        // not attack. Clear the hovered actor so the fall-through tile walk does not
-        // route through it, and let the viewport perform an ordinary click.
+        // The NPC has no supported action. Clear the hovered actor so the fall-through
+        // tile walk does not route through it.
         hoveredNpcActorIdRef.current = null;
         return false;
       }
@@ -2709,7 +2708,7 @@ export const Grid: React.FC<Partial<GridProps>> = (props) => {
             <ViewportContextMenuBridge
               onTileClick={wrappedOnTileClick}
               onNpcAction={handleNpcAction}
-              onNpcAttackByTarget={handleNpcAttackByTarget}
+              onNpcActionByTarget={handleNpcActionByTarget}
               tileMarkers={tileMarkers}
               showTileMarkers={showTileMarkers}
               onMarkTile={onMarkTile}

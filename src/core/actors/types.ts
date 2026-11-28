@@ -83,6 +83,8 @@ export interface NpcFormulaStats {
   freezeResistance?: number;
   /** Percent poison resistance from the wiki's `poison_resistance` field; 100 rejects poison. */
   poisonResistance?: number;
+  /** Whether stat-draining attacks leave this NPC's combat levels intact. */
+  statDrainImmune?: boolean;
   attributes?: readonly string[];
   /** Every player magic or arrow hit rolls its maximum (the void flare weakness). */
   alwaysMaximumPlayerHit?: boolean;

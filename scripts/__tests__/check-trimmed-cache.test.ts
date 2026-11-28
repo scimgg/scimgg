@@ -68,6 +68,7 @@ function noRoots(): CacheRoots {
     spotAnims: new Map(),
     seqs: new Map(),
     npcs: new Map(),
+    models: new Map(),
     wornItems: new Map(),
     droppedItems: new Map(),
     identKits: new Map(),

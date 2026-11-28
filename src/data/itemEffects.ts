@@ -1,5 +1,6 @@
 import type { CombatSkill, PlayerStats, TimedEffectType } from '../types/playerState';
 import { DIVINE_POTION_DURATION_TICKS } from '../types/playerState';
+import { HALIBUT_ITEM_ID } from './itemIds';
 import type { PrayerRestoreFormula } from './prayerRestoration';
 
 export { EMPTY_VIAL_ID } from './itemIds';
@@ -208,6 +209,15 @@ export const ITEM_ACTIONS: Readonly<Record<number, ItemActionDef>> = {
     delayTicks: 3,
     consume: { type: 'remove' },
     effects: [{ op: 'heal', amount: 18 }],
+  },
+
+  // 20261127-014756-Duke-Sucellus_5.jsonl:4204 and :10965–10996.
+  // https://secure.runescape.com/m=news/sailing---resources--skilling-activities-poll?oldschool=1
+  [HALIBUT_ITEM_ID]: {
+    track: 'combo_food',
+    delayTicks: 3,
+    consume: { type: 'remove' },
+    effects: [{ op: 'heal', amount: 20 }],
   },
 
   // Saturated heart - Invigorate (magic boost, not consumed)

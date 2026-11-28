@@ -1,6 +1,8 @@
+import { ARDER_MUSCA_POISON_ITEM_ID } from '../types/inventory';
 import { getCanonicalEquipmentItemId, getEquipmentCatalog } from './equipmentCatalog';
 import { isVerifiedEquipmentPiece } from './equipmentSupport';
 import { ITEM_ACTIONS } from './itemEffects';
+import { HALIBUT_ITEM_ID } from './itemIds';
 import { RUNE_POUCH_ITEMS, SUPPORTED_RUNES } from './runePouch';
 
 export type InventoryItemCategory = 'food' | 'potions' | 'runes' | 'gear' | 'other';
@@ -116,6 +118,7 @@ const CONSUMABLE_ITEM_NAMES: Readonly<Record<number, string>> = {
   31653: 'Armadyl brew(3)',
   31656: 'Armadyl brew(2)',
   31659: 'Armadyl brew(1)',
+  [HALIBUT_ITEM_ID]: 'Halibut',
 };
 
 /**
@@ -162,6 +165,12 @@ function buildCatalog(): InventoryCatalog {
       byId.set(item.id, item);
     }
   }
+  byId.set(ARDER_MUSCA_POISON_ITEM_ID, {
+    id: ARDER_MUSCA_POISON_ITEM_ID,
+    name: 'Arder-musca poison',
+    category: 'other',
+    verified: true,
+  });
   for (const piece of getEquipmentCatalog()) {
     if (!byId.has(piece.id)) {
       const canonicalId = getCanonicalEquipmentItemId(piece.id);

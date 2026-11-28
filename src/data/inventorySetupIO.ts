@@ -1,8 +1,12 @@
 import { z } from 'zod';
 import type { EncounterLoadout } from '../types/encounterLoadout';
 import { createEmptyCombatSupplies, type RunePouch, type SupplyItem } from '../types/encounterLoadout';
-import type { Inventory, StackableLookup } from '../types/inventory';
-import { createEmptyInventory, isStackableItem } from '../types/inventory';
+import {
+  getFiniteStackQuantity,
+  isStackableItem,
+  parseInventoryFromSetup,
+  type StackableLookup,
+} from '../types/inventory';
 import type { SpellbookType } from '../types/spellbook';
 import type { CustomizableGearSlot, ImportedPresetVerificationIssue } from './customEquipmentPresets';
 import { getGearCatalog, isTwoHandedWeapon } from './customEquipmentPresets';
@@ -97,19 +101,9 @@ type PortableItem = {
 };
 
 /**
- * Stacks never deplete in the sim, so an import drops RuneLite's `q` count. Inventory Setups
- * still expects one on every stack it is given, so an export writes this ample one instead.
+ * Inventory Setups expects a `q` for every stack. Use this count for unlimited supplies.
  */
 const EXPORTED_STACK_QUANTITY = 100_000;
-
-function toInventory(items: readonly (z.infer<typeof itemSchema> | null)[]): Inventory {
-  const inventory = createEmptyInventory();
-  for (let index = 0; index < inventory.length; index++) {
-    const item = items[index];
-    inventory[index] = item ? { id: item.id } : null;
-  }
-  return inventory;
-}
 
 function toSupplyItem(item: z.infer<typeof itemSchema> | null | undefined): SupplyItem | null {
   return item ? { id: item.id } : null;
@@ -213,7 +207,7 @@ export function importInventorySetup(input: string): InventorySetupImportResult 
     verificationIssues: [...issuesById.values()],
     loadout: {
       equipment,
-      inventory: toInventory(parsed.data.setup.inv),
+      inventory: parseInventoryFromSetup(parsed.data.setup.inv),
       supplies: {
         ...supplies,
         equippedAmmo: toSupplyItem(parsed.data.setup.eq[13]),
@@ -227,8 +221,7 @@ export function importInventorySetup(input: string): InventorySetupImportResult 
 
 /**
  * `objTypeLoader` decides which inventory items and worn items (chinchompas, darts) are stacks.
- * Without it only the slot's own quantity can say, which a loadout never carries, so those go out
- * uncounted. Ammunition, quiver and rune pouch contents are always stacks.
+ * Finite stack counts travel with the item. Ammunition, quiver and rune pouch contents are always stacks.
  */
 export function exportInventorySetup(
   name: string,
@@ -245,9 +238,12 @@ export function exportInventorySetup(
 
   return JSON.stringify({
     setup: {
-      inv: loadout.inventory.map((item) =>
-        toPortableItem(item, item !== null && isStackableItem(item.id, item.quantity, objTypeLoader)),
-      ),
+      inv: loadout.inventory.map((item) => {
+        if (!item) return null;
+        const quantity = getFiniteStackQuantity(item);
+        if (quantity !== undefined) return { id: item.id, q: quantity };
+        return toPortableItem(item, isStackableItem(item.id, item.quantity, objTypeLoader));
+      }),
       eq: equipment,
       ...(loadout.supplies.runePouch
         ? { rp: loadout.supplies.runePouch.slots.map((item) => toPortableItem(item, true)) }

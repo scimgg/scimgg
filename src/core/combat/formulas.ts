@@ -21,4 +21,4 @@ export type {
   PrayerMultipliers,
   RangedDefenceType,
 } from './formulaTypes';
-export { calculateMaxHit } from './maxHit';
+export { calculateMaxHit, calculateNpcMaxHit } from './maxHit';

@@ -20,6 +20,10 @@ import { z } from 'zod';
 import type { EncounterDescriptor } from '../core/encounters/encounterFactory';
 import type { Encounter, EncounterControls, MechanicsToggleInfo } from '../core/encounters/types';
 import type { MechanicsConfig } from '../types/simulation';
+import { START_TILE as DUKE_PRACTICE_START } from './dukePractice/arena';
+import { DUKE_MAP_SQUARE } from './dukePractice/constants';
+import { DUKE_PRACTICE_CONTROLS, DUKE_PRACTICE_KIND } from './dukePractice/controls';
+import { DukePracticeEncounter } from './dukePractice/DukePracticeEncounter';
 import { INFERNO_LANDING_TILE, INFERNO_MAP_SQUARE, INFERNO_MAP_SQUARE_OFFSETS, ZUK_WAVE } from './inferno/constants';
 import { buildInfernoControls, INFERNO_START_WAVE_KEY, resolveInfernoRunSetup } from './inferno/controls';
 import { InfernoEncounter } from './inferno/InfernoEncounter';
@@ -229,6 +233,26 @@ export const ENCOUNTER_CORE_MODULES: readonly EncounterCoreModule[] = [
     // up (behind a pillar, say); wave 1 also gets it after its landing. Wave 69 opens on its fixed
     // start facing Zuk.
     countdownMovement: (mechanics) => resolveInfernoRunSetup(mechanics).startWave !== ZUK_WAVE,
+  },
+  {
+    kind: DUKE_PRACTICE_KIND,
+    factory: () => new DukePracticeEncounter(),
+    descriptor: {
+      kind: DUKE_PRACTICE_KIND,
+      displayName: 'Awakened Duke Practice',
+      description: 'Drill step-backs, pillar cover, gas vents, bile and orb dodges against Duke Sucellus.',
+      mapSquare: DUKE_MAP_SQUARE,
+      playerStart: [...DUKE_PRACTICE_START],
+      loadsMapLocs: true,
+      collision: { mode: 'custom' },
+      victory: {
+        eyebrow: 'Practice complete',
+        title: 'VICTORY',
+        narrative: 'DUKE SUCELLUS DEFEATED',
+        accent: 'gold',
+      },
+    },
+    controls: DUKE_PRACTICE_CONTROLS,
   },
 ];
 

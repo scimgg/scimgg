@@ -54,7 +54,7 @@ const YAMA_VARIANT_KINDS = [
 ] as const;
 
 /** Every kind that owns a descriptor, i.e. is selectable in the picker in its own right. */
-const BASE_KINDS = ['yama_p3', 'lobby', 'sol_heredit', 'inferno'] as const;
+const BASE_KINDS = ['yama_p3', 'lobby', 'sol_heredit', 'inferno', 'duke_practice'] as const;
 const BETA_ENCOUNTERS = [{ kind: 'sol_heredit', displayName: 'Sol Heredit', actorId: 'lobby-npc-2' }] as const;
 
 describe('encounter registration invariants', () => {
@@ -277,7 +277,7 @@ describe('encounter registration invariants', () => {
     expect([...manifestKinds].sort()).toEqual([...encounterRegistry.getRegisteredKinds()].sort());
   });
 
-  it('gives every manifest kind a render config, except the lobby which needs none', () => {
+  it('gives the cache-backed combat scenes a render config', () => {
     for (const kind of encounterRegistry.getRegisteredKinds()) {
       if (kind === 'lobby') continue;
       expect(getEncounterRenderConfig(kind), `no render config for '${kind}'`).toBeDefined();
@@ -431,6 +431,7 @@ describe('encounter catalog invariants', () => {
         ['yama', 'yama_p3'],
         ['sol-heredit', 'sol_heredit'],
         ['inferno', 'inferno'],
+        ['awakened-duke', 'duke_practice'],
       ]),
     );
   });

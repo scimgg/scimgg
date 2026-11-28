@@ -3,20 +3,20 @@ import type { PickedNpc } from '../../render/scene/npcPick';
 import type { CacheInfo } from '../../rs/cache/CacheInfo';
 import { NpcType } from '../../rs/config/npctype/NpcType';
 import type { NpcTypeLoader } from '../../rs/config/npctype/NpcTypeLoader';
-import { isNpcAttackable, resolveInteractiveNpcPick } from '../npcInteraction';
+import { hasNpcClickAction, resolveInteractiveNpcPick } from '../npcInteraction';
 
-describe('isNpcAttackable', () => {
+describe('hasNpcClickAction', () => {
   it('rejects an NPC with no options besides the implicit Examine entry', () => {
     const actions = new Array<string>(5);
 
-    expect(isNpcAttackable({ actions })).toBe(false);
+    expect(hasNpcClickAction({ actions })).toBe(false);
   });
 
   it('accepts an NPC exposing the Attack option', () => {
     const actions = new Array<string>(5);
     actions[1] = 'Attack';
 
-    expect(isNpcAttackable({ actions })).toBe(true);
+    expect(hasNpcClickAction({ actions })).toBe(true);
   });
 
   it('rejects an NPC whose only options are non-combat (e.g. Talk-to)', () => {
@@ -24,7 +24,7 @@ describe('isNpcAttackable', () => {
     actions[0] = 'Talk-to';
     actions[2] = 'Trade';
 
-    expect(isNpcAttackable({ actions })).toBe(false);
+    expect(hasNpcClickAction({ actions })).toBe(false);
   });
 
   it('accepts an NPC that carries Attack alongside non-combat options', () => {
@@ -32,7 +32,7 @@ describe('isNpcAttackable', () => {
     actions[0] = 'Talk-to';
     actions[1] = 'Attack';
 
-    expect(isNpcAttackable({ actions })).toBe(true);
+    expect(hasNpcClickAction({ actions })).toBe(true);
   });
 });
 
@@ -89,7 +89,7 @@ describe('resolveInteractiveNpcPick', () => {
     const resolved = resolveInteractiveNpcPick([GLYPH, HEALER], LOADER);
 
     expect(resolved?.picked.actorId).toBe('healer-1');
-    expect(isNpcAttackable(resolved?.npcType ?? { actions: [] })).toBe(true);
+    expect(hasNpcClickAction(resolved?.npcType ?? { actions: [] })).toBe(true);
   });
 
   it('resolves nothing when the only NPC under the cursor is op-less', () => {
@@ -103,7 +103,7 @@ describe('resolveInteractiveNpcPick', () => {
     const resolved = resolveInteractiveNpcPick([banker, HEALER], loader);
 
     expect(resolved?.picked.actorId).toBe('banker-1');
-    expect(isNpcAttackable(resolved?.npcType ?? { actions: [] })).toBe(false);
+    expect(hasNpcClickAction(resolved?.npcType ?? { actions: [] })).toBe(false);
   });
 
   it('prefers a loadable NPC over one whose loader throws', () => {

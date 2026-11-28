@@ -83,6 +83,8 @@ export interface Mesh3DCommand {
   meshId: string;
   materialId: string;
   modelMatrix: Float32Array;
+  /** A depthless overlay whose matrix maps its vertices directly to clip space. */
+  clipSpace?: true;
   depth?: DepthMode;
   blend?: BlendMode;
   /**

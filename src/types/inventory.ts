@@ -1,8 +1,7 @@
-/**
- * `quantity` is runtime-only: ground-item pickups and consumable decrements use it.
- * Loadouts never carry one, because ammunition, runes and other stacks never deplete
- * (see SupplyItem), so a loadout stack models only the item's presence.
- */
+// Stackable in pinned cache 2772 (https://oldschool.runescape.wiki/w/Arder-musca_poison).
+export const ARDER_MUSCA_POISON_ITEM_ID = 28351;
+
+/** Runtime stacks and finite loadout stacks can carry counts. Ammo and rune supplies model presence. */
 export interface InventoryItem {
   id: number;
   quantity?: number;
@@ -16,6 +15,18 @@ export const INVENTORY_SIZE = 28;
 
 export function createEmptyInventory(): Inventory {
   return new Array(INVENTORY_SIZE).fill(null);
+}
+
+/** Most stackable supplies are unlimited. The poison loadout records a finite number of items. */
+export function getFiniteStackQuantity(item: InventorySlot | undefined): number | undefined {
+  if (item?.id !== ARDER_MUSCA_POISON_ITEM_ID) return undefined;
+  const quantity = item.quantity ?? 1;
+  return Number.isSafeInteger(quantity) && quantity > 0 ? quantity : 1;
+}
+
+export function toLoadoutInventoryItem(item: InventoryItem): InventoryItem {
+  const quantity = getFiniteStackQuantity(item);
+  return quantity !== undefined && quantity > 1 ? { id: item.id, quantity } : { id: item.id };
 }
 
 /**
@@ -36,7 +47,7 @@ export function isStackableItem(
   quantity: number | undefined,
   objTypeLoader: StackableLookup | null | undefined,
 ): boolean {
-  const fallback = (quantity ?? 1) > 1;
+  const fallback = itemId === ARDER_MUSCA_POISON_ITEM_ID || (quantity ?? 1) > 1;
   if (!objTypeLoader) return fallback;
   try {
     return objTypeLoader.load(itemId).stackable;
@@ -45,13 +56,13 @@ export function isStackableItem(
   }
 }
 
-/** Accepts a `q` count in a setup but drops it: loadout stacks model presence only. */
-export function parseInventoryFromSetup(inv: ({ id: number; q?: number } | null)[]): Inventory {
+/** Retains `q` for finite stacks when parsing a preset or Inventory Setup. */
+export function parseInventoryFromSetup(inv: readonly ({ id: number; q?: number } | null)[]): Inventory {
   const inventory = createEmptyInventory();
   for (let i = 0; i < Math.min(inv.length, INVENTORY_SIZE); i++) {
     const item = inv[i];
     if (item) {
-      inventory[i] = { id: item.id };
+      inventory[i] = toLoadoutInventoryItem({ id: item.id, quantity: item.q });
     }
   }
   return inventory;

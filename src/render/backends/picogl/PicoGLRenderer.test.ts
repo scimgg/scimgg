@@ -562,6 +562,22 @@ describe('PicoGLRenderer', () => {
       frame.queue.clear = { color: { r: 0.5, g: 0.5, b: 0.5, a: 1 } };
       renderer.render(frame);
     });
+
+    it('draws depthless clip-space overlays independently of the scene camera', () => {
+      const renderer = new PicoGLRenderer();
+      renderer.init(canvas);
+      const frame = createMockRenderFrame();
+      const modelMatrix = createIdentityMatrix();
+      frame.queue.commands.push(createTestMeshCommand({ modelMatrix, clipSpace: true, depth: 'none' }));
+      renderer.render(frame);
+      // The mock camera has zero view and projection matrices. Applying them would collapse the overlay.
+      expect(mockGL.uniformMatrix4fv).toHaveBeenCalledWith(
+        expect.objectContaining({ name: 'u_viewProjMatrix' }),
+        false,
+        modelMatrix,
+      );
+      renderer.dispose();
+    });
   });
 
   describe('transparent command ordering', () => {

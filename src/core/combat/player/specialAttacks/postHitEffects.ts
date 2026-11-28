@@ -52,6 +52,14 @@ export function appliesOnAccurateHit(effect: SpecialAttackEffect): boolean {
  */
 type EffectTiming = 'on-hit' | 'on-fire';
 
+const STAT_DRAIN_EFFECTS = new Set<SpecialAttackEffect['effect']>([
+  'weaken',
+  'condemn',
+  'drain_defence',
+  'drain_magic',
+  'drain_attack',
+]);
+
 function applyEffects(
   player: PlayerActor,
   target: NpcActor,
@@ -63,6 +71,7 @@ function applyEffects(
   if (!target.debuffs) target.debuffs = {};
 
   for (const effect of effects) {
+    if (target.formulaStats?.statDrainImmune && STAT_DRAIN_EFFECTS.has(effect.effect)) continue;
     switch (effect.effect) {
       case 'weaken': {
         // /w/Emberlight#Special_attack: additive drains from BASE levels, even on an accurate zero.

@@ -285,6 +285,7 @@ export async function checkRoots(
   };
 
   for (const [id, label] of roots.spotAnims) spotAnim(id, label);
+  for (const [id, label] of roots.models) model(id, label);
   for (const [id, label] of roots.seqs) seq(id, label);
   for (const [id, label] of roots.npcs) npc(id, label);
   // A runtime-spawned transform loc draws whichever target its varbit picks (SceneObjectRenderer

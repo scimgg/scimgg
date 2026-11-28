@@ -89,6 +89,7 @@ export const BOOLEAN_MECHANICS_KEYS = [
   'infernoSouthPillarDestroyed',
   'infernoNorthEastPillarDestroyed',
   'yamaStartGlyphs',
+  'dukePracticeAlwaysBile',
 ] as const;
 
 export const BOOLEAN_MECHANICS_KEY_SET: ReadonlySet<string> = new Set(BOOLEAN_MECHANICS_KEYS);

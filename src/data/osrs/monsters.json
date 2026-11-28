@@ -682,6 +682,196 @@
   },
   {
     "ids": [
+      12166,
+      12167
+    ],
+    "name": "Duke Sucellus",
+    "version": "Asleep",
+    "size": 7,
+    "levels": {
+      "hitpoints": 485,
+      "attack": 300,
+      "strength": 345,
+      "defence": 275,
+      "magic": 310,
+      "ranged": 0
+    },
+    "offensive": {
+      "attack": 200,
+      "strength": 38,
+      "magic": 150,
+      "magicDamage": 32,
+      "ranged": 0,
+      "rangedStrength": 0
+    },
+    "defensive": {
+      "stab": 255,
+      "slash": 45,
+      "crush": 190,
+      "magic": 440,
+      "ranged": 0,
+      "rangedLight": 320,
+      "rangedStandard": 320,
+      "rangedHeavy": 320,
+      "flatArmour": 0
+    },
+    "attributes": [
+      "demon"
+    ],
+    "attackSpeed": 5,
+    "immunities": {
+      "burn": null,
+      "cannon": false,
+      "thrall": false,
+      "poison": 100,
+      "venom": 100,
+      "freeze": 100
+    }
+  },
+  {
+    "ids": [
+      12166,
+      12167
+    ],
+    "name": "Duke Sucellus",
+    "version": "Asleep",
+    "size": 7,
+    "levels": {
+      "hitpoints": 1697,
+      "attack": 435,
+      "strength": 500,
+      "defence": 316,
+      "magic": 465,
+      "ranged": 0
+    },
+    "offensive": {
+      "attack": 200,
+      "strength": 38,
+      "magic": 150,
+      "magicDamage": 32,
+      "ranged": 0,
+      "rangedStrength": 0
+    },
+    "defensive": {
+      "stab": 255,
+      "slash": 65,
+      "crush": 190,
+      "magic": 440,
+      "ranged": 0,
+      "rangedLight": 320,
+      "rangedStandard": 320,
+      "rangedHeavy": 320,
+      "flatArmour": 0
+    },
+    "attributes": [
+      "demon"
+    ],
+    "attackSpeed": 5,
+    "immunities": {
+      "burn": null,
+      "cannon": false,
+      "thrall": false,
+      "poison": 0,
+      "venom": 0,
+      "freeze": 0
+    }
+  },
+  {
+    "ids": [
+      12191
+    ],
+    "name": "Duke Sucellus",
+    "version": "Awake",
+    "size": 7,
+    "levels": {
+      "hitpoints": 485,
+      "attack": 300,
+      "strength": 345,
+      "defence": 275,
+      "magic": 310,
+      "ranged": 0
+    },
+    "offensive": {
+      "attack": 200,
+      "strength": 38,
+      "magic": 150,
+      "magicDamage": 32,
+      "ranged": 0,
+      "rangedStrength": 0
+    },
+    "defensive": {
+      "stab": 255,
+      "slash": 45,
+      "crush": 190,
+      "magic": 440,
+      "ranged": 0,
+      "rangedLight": 320,
+      "rangedStandard": 320,
+      "rangedHeavy": 320,
+      "flatArmour": 0
+    },
+    "attributes": [
+      "demon"
+    ],
+    "attackSpeed": 5,
+    "immunities": {
+      "burn": null,
+      "cannon": false,
+      "thrall": false,
+      "poison": 0,
+      "venom": 0,
+      "freeze": 100
+    }
+  },
+  {
+    "ids": [
+      12191
+    ],
+    "name": "Duke Sucellus",
+    "version": "Awake",
+    "size": 7,
+    "levels": {
+      "hitpoints": 1697,
+      "attack": 435,
+      "strength": 500,
+      "defence": 316,
+      "magic": 465,
+      "ranged": 0
+    },
+    "offensive": {
+      "attack": 200,
+      "strength": 38,
+      "magic": 150,
+      "magicDamage": 32,
+      "ranged": 0,
+      "rangedStrength": 0
+    },
+    "defensive": {
+      "stab": 255,
+      "slash": 65,
+      "crush": 190,
+      "magic": 440,
+      "ranged": 0,
+      "rangedLight": 320,
+      "rangedStandard": 320,
+      "rangedHeavy": 320,
+      "flatArmour": 0
+    },
+    "attributes": [
+      "demon"
+    ],
+    "attackSpeed": 5,
+    "immunities": {
+      "burn": null,
+      "cannon": false,
+      "thrall": false,
+      "poison": 0,
+      "venom": 0,
+      "freeze": 0
+    }
+  },
+  {
+    "ids": [
       12814
     ],
     "name": "Fremennik warband archer",

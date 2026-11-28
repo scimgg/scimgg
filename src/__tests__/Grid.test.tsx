@@ -943,7 +943,7 @@ describe('Grid', () => {
               target: 'Test NPC',
               onClick: () => {
                 if (route === 'primary') options.onNpcAction?.([30, 30]);
-                else options.onNpcAttackByTarget?.('target-npc', [30, 30]);
+                else options.onNpcActionByTarget?.('target-npc', [30, 30]);
               },
             },
           ],

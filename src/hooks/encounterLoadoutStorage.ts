@@ -9,7 +9,7 @@ import {
   normalizeCombatSupplies,
 } from '../types/encounterLoadout';
 import type { Inventory, InventorySlot } from '../types/inventory';
-import { createEmptyInventory, INVENTORY_SIZE } from '../types/inventory';
+import { createEmptyInventory, INVENTORY_SIZE, toLoadoutInventoryItem } from '../types/inventory';
 import { cloneEquipment, cloneInventory } from '../util/loadoutUtils';
 
 const recordSchema = z.record(z.string(), z.unknown());
@@ -38,10 +38,9 @@ function normalizeEquipment(raw: unknown): PlayerEquipment {
   return parsed.success ? parsed.data : {};
 }
 
-/** A slot's runtime stack `quantity` is accepted but dropped, as loadout stacks model presence only. */
 function normalizeInventorySlot(raw: unknown): InventorySlot {
   const parsed = z.object({ id: z.number().finite(), quantity: z.number().finite().optional() }).safeParse(raw);
-  return parsed.success ? { id: parsed.data.id } : null;
+  return parsed.success ? toLoadoutInventoryItem(parsed.data) : null;
 }
 
 function normalizeInventory(raw: unknown): Inventory {

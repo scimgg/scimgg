@@ -17,7 +17,7 @@ export function calculateMaxHit(
 ): number {
   switch (attacker.kind) {
     case 'npc':
-      return npcMaxHit(attacker, style);
+      return calculateNpcMaxHit(attacker, style);
     case 'player':
       return playerMaxHit(attacker, style, equipmentStats, prayerMultipliers);
     default:
@@ -25,7 +25,7 @@ export function calculateMaxHit(
   }
 }
 
-function npcMaxHit(attacker: NpcFormulaActor, style: CombatFormulaStyle): number {
+export function calculateNpcMaxHit(attacker: NpcFormulaActor, style: CombatFormulaStyle): number {
   switch (style) {
     case 'melee_stab':
     case 'melee_slash':
