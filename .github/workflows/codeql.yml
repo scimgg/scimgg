@@ -1,0 +1,47 @@
+name: CodeQL
+
+# A workflow rather than CodeQL's default setup, which does not analyze pull requests from forks:
+# the ruleset on main requires a CodeQL result, so every fork pull request would wait forever.
+#
+# Fork pull requests get a read-only token and no secrets on `pull_request`, and the code
+# scanning upload still accepts their results. Never switch this to `pull_request_target`: that
+# would run the analysis of untrusted code with a write token.
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  schedule:
+    - cron: "23 5 * * 1"
+
+permissions: {}
+
+# A new push to a pull request cancels its older run; runs on main always finish.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  analyze:
+    name: Analyze
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      security-events: write # uploads the results
+    strategy:
+      fail-fast: false
+      matrix:
+        # Both are analyzed from source without building or installing anything.
+        language: [actions, javascript-typescript]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: github/codeql-action/init@915412ff23e8b7659517e607487dbeae018f2934 # v4.39.5
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: none
+
+      - uses: github/codeql-action/analyze@915412ff23e8b7659517e607487dbeae018f2934 # v4.39.5
