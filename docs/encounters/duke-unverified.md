@@ -1,0 +1,29 @@
+# Awakened Duke unverified behavior
+
+The [facts spec](./duke-facts-spec.md) records the timing, geometry, and damage rules supported by captures or published sources. This register records the simulator choices that still need evidence. The [capture analysis](./duke-capture-analysis.md) gives the recordings, tick ranges, and replay comparisons behind each choice.
+
+Combat and hazard logic, tile geometry, and HP gates are defined in the encounter source. [DukePracticeEncounter.ts](../../src/encounters/dukePractice/DukePracticeEncounter.ts) · [arena.ts](../../src/encounters/dukePractice/arena.ts) · [controls.ts](../../src/encounters/dukePractice/controls.ts)
+
+## Attack selection and thresholds
+
+| Behavior | Current simulator model | Evidence and next capture |
+| --- | --- | --- |
+| Melee selection outside the front row | Duke picks melee from X 27–35, Y 51 before player movement at windup. He picks magic elsewhere. | The rule matches 487 of 501 earlier basics and all 19 in the latest capture. The earlier sample contains 14 off-row melee windups. Compare repeated windups from the same tile and phase with different prior steps. [Selection evidence](./duke-capture-analysis.md#basic-attack-selection-by-tick) · [Follow-up trials](./duke-capture-analysis.md#follow-up-trials) |
+| Gas flare distance ties | The closest vent without active landed smoke wins. A tie across rows favors north. Equal-distance vents in the same row retain west-first order. | One available-vent tie across rows picked north. Collect another row tie and an equal-distance pair in the same row. [Recorded tie](./duke-capture-analysis.md#1929-awakened-recording) |
+| Bile eligibility and trigger | Each completed volley at 1,103 HP or less has an independent 27/58 chance to queue bile. | Bile followed 27 of 58 complete eligible volleys across eight calibration captures. Capture volleys with exact HP near the eligibility threshold, including consecutive volleys at the same HP, to test the cutoff and dependence on earlier casts. [Cross-check](./duke-capture-analysis.md#awakened-orb-threshold-cross-check) |
+| Orb activation cutoff | The orb countdown starts at 560 HP. | Two complete attempts put the cutoff between 547 and 569 HP. Record known cumulative damage with smaller hits across that window. [Threshold cross-check](./duke-capture-analysis.md#awakened-orb-threshold-cross-check) |
+| Orb spawn side | Each spawn independently chooses east or west with equal odds. | The earlier sample has 41 spawns from each side. Both opener sides and repeated sides occur. Record longer sequences with player positions and compare first spawns with later sweeps. [West-side opener](./duke-capture-analysis.md#awakened-west-side-orb-opener-and-final-contact) |
+
+Replays store an encounter seed for the modeled bile and orb choices. Those rolls are independent of the combat damage and accuracy rolls.
+
+## Damage and hazard boundaries
+
+| Behavior | Current simulator model | Evidence and next capture |
+| --- | --- | --- |
+| Icicle maximum and accuracy | The sim uses a 0–16 crush hit, with Protect from Melee halving the result and rounding down. | Protected hits of 8 and an unprotected hit of 13 support a cap of at least 16. Record controlled samples with and without protection and with differing crush defence to test the cap and accuracy roll. [Damage sources](./duke-facts-spec.md#source-and-practiced-timings) |
+| Slam damage roll | The sim skips accuracy, rolls uniformly from 0 through 81 and applies 75% with Protect from Melee. | Captures establish the exposed tiles and impact tick. The published maximum supports the cap. Record repeated exposed slams with prayer on and off to test the lower bound, distribution and rounding. [Shatter replay audit](./duke-capture-analysis.md#damage-replay-audit) · [Standard NPC damage roll](https://oldschool.runescape.wiki/w/Successful_hit) |
+| Magic prayer mitigation and perfect-kill boundary | The sim floors 51% of the unprotected damage when Protect from Magic is active. An accurate zero invalidates the perfect kill. | The modifier reproduces the published protected maximum of 36. An inaccurate bolt produced a block with no impact effect. Record protected intermediate rolls and a confirmed accurate zero in an otherwise clean kill. [Bolt audit](./duke-capture-analysis.md#damage-replay-audit) |
+| Freezing Gaze damage and cover | A failed cover check uses a uniform 65–121 damage roll. The sim uses the pillar cover tiles in `arena.ts`. | Captures establish the check and damage ticks and include a 93-damage failed gaze. Record failures for the damage range and test the outer cover tiles and the tile just outside each pillar's cover. [Failed-gaze cross-check](./duke-capture-analysis.md#awakened-magic-and-failed-gaze-cross-check) |
+| Gas flare damage and face covering | The sim rolls 16–27 regardless of headgear. | The unmasked cap of 27 is supported. The lower bound and the reductions from a gas mask or Slayer helmet need controlled hits with and without each item. [Awakened strategy](https://oldschool.runescape.wiki/w/Duke_Sucellus/Strategies#Awakened_mode) |
+| Bile pool removal tick | A pool stays visible for nine ticks and deals damage from placement +1 through +8. A later drip on the same tile keeps its original expiry. | In recording `_5`, a pool also hits on its removal tick, nine ticks after placement. Re-enter pools on their last two visible ticks and their removal tick, with and without a later drip on the same tile. [Damage replay audit](./duke-capture-analysis.md#damage-replay-audit) |
+| Orb contact damage distribution | The sim rolls uniformly from 25 through 27. | All 31 recorded nonlethal contacts fall in this range. More contacts at varied HP would test the minimum and frequency of each value. [Orb evidence](./duke-capture-analysis.md#awakened-orb-threshold-cross-check) |

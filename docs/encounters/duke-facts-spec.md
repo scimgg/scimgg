@@ -1,6 +1,6 @@
 # Awakened Duke facts spec
 
-The [capture analysis](./duke-capture-analysis.md) contains the tick-level evidence. The ledger records which timing rules the captures establish and where the simulator uses a practice model.
+The [capture analysis](./duke-capture-analysis.md) contains the tick-level evidence. The [unverified behavior register](./duke-unverified.md) tracks model choices, known mismatches, and the captures that would resolve them.
 
 The sim starts with Duke asleep. Click **Feed** to use one Arder-musca
 poison per tick, for three doses total. Each dose fills 125 of the 370-point
@@ -56,15 +56,14 @@ one tick later. Duke starts the next attack at windup +6. Gas follows three basi
 first gaze, then five, four, or three basic attacks apart as the fight
 progresses. Gaze takes priority over a competing vent attack.
 
-The melee windup hits the target in the 3×3 icicle area immediately and
+The melee windup checks the target in the 3×3 icicle area immediately and
 starts sequence 10176 at its cache speed. The sim uses the NPC crush
 accuracy roll with Duke's 435 Attack and +200 attack bonus. Protect from
 Melee halves the chip roll and rounds down. Awakened recordings show 8
 with melee prayer (`20261127-012348-Duke-Sucellus_3.jsonl:8445–8472`,
 `20261127-013711-Duke-Sucellus_4.jsonl:9038–9068` and
 `20261127-020616-Duke-Sucellus_6.jsonl:6169–6195`), and 13 without it
-(`20261127-005253-Duke-Sucellus_2.jsonl:12482–12511`). The sim uses 16 as
-the smallest unprotected cap consistent with the protected hit of 8.
+(`20261127-005253-Duke-Sucellus_2.jsonl:12482–12511`). The [unverified behavior register](./duke-unverified.md#damage-and-hazard-boundaries) records the modeled chip cap.
 The shatter checks the seven front-row tiles (X 28–34, Y 51) two ticks after
 windup, before player movement. The two pillar diagonals can bait icicles and
 sit outside the shatter row. Step out before the slam tick and click Duke
@@ -150,9 +149,8 @@ previous pulse on the tick before the second projectile arrives
 basic attacks four ticks after the last flare. At tick 150, the due grate
 volley starts one basic attack after Gaze.
 
-Practice health breakpoints are 1,289 for four flares, 1,103 for bile
-eligibility, 560 for orbs, and 440 for enrage. Bile lasts 15 ticks. The first orb spawns in the
-front lane three ticks after Duke crosses the HP threshold. Orbs spawn
+Bile lasts 15 ticks. The first orb spawns in the front lane three ticks
+after Duke crosses its activation threshold. The [unverified behavior register](./duke-unverified.md#attack-selection-and-thresholds) records the modeled cutoff. Orbs spawn
 every 12 ticks and travel one tile per tick. Sharing a true tile with the
 orb causes it to disappear and hit on the following tick. It deals up to
 27 damage and drains
@@ -187,36 +185,13 @@ All offsets are game ticks unless specified. One game tick is 30 client cycles. 
 | Bile trail | 15 drips, starting at cast +1. Pools appear on the true tile and on later intermediate running tiles. | First-drip placement is [observed in two casts](./duke-capture-analysis.md#1929-awakened-recording). Pool lifetime is modelled as nine ticks. One recorded expiry boundary remains open. |
 | Orb | Spawns every 12 ticks, advances one tile per tick, hits on the tick after contact. | Observed from both starting sides. The [threshold cross-check](./duke-capture-analysis.md#awakened-orb-threshold-cross-check) bounds the threshold. The exact cutoff and side selection are open. |
 
-## Practice choices and open questions
+## Practice setup
 
-Opening positions and damage roll parameters are practice settings. The wake delay from the final tolerance
-update and the delay to Duke's first attack are observed in both modes.
-Attack-only recordings retain their original five-tick
-first-swing-to-response delay for replay takeover.
-The gas flare uses the unmasked damage cap of 27. The amount by which a
-gas mask or Slayer helmet reduces that damage in Awakened mode is unverified.
-The sim locks the gaze result before movement on the avoidance message tick
-and applies damage one tick later, matching the tenth capture. The sim floors 51%
-of the unprotected magic roll with Protect from Magic
-active to reach the sourced protected cap.
-The slam skips the accuracy roll. Its exact lower bound is unverified, so the
-sim uses the [standard NPC damage roll](https://oldschool.runescape.wiki/w/Successful_hit)
-from zero through 81 and floors 75% of the roll if Protect from Melee is active
-on impact.
-Bile follows 27 of the 58 complete below-threshold flare volleys across
-the eight Awakened captures. Practice uses that fraction as the chance
-after each eligible volley. The actual cast trigger remains open.
+The simulator uses 1,289 HP for four flares, 1,103 HP for bile eligibility,
+560 HP for orbs, and 440 HP for enrage. Attack-only recordings retain their
+original five-tick first-swing-to-response delay for replay takeover.
 
-Practice starts the orb countdown at 560 HP, approximately 33% of
-Duke's full HP and within the observed bracket. The exact cutoff remains
-open. Practice gives both sides equal odds on each orb spawn, including
-the opener. The captured orb spawns are evenly split with 41 from each side.
-The actual side selection rule remains open. Practice rolls 25–27 for
-orb damage, the range of all 31 recorded nonlethal hits. Replays store
-an encounter seed to reproduce the orb and bile rolls, which run
-independently of combat damage and accuracy rolls.
-
-It starts with poison already brewed. The default loadout opens with Burning claws and Oathplate
+The starting loadout includes brewed poison. The default loadout opens with Burning claws and Oathplate
 helm equipped. It carries a Scythe of Vitur, Emberlight, an Avernic defender, two non-divine super
 combat potions, five super restores, five Saradomin brews, three halibut, nine anglerfish, and one
 stack of three [Arder-musca poisons](https://oldschool.runescape.wiki/w/Arder-musca_poison).
@@ -237,6 +212,8 @@ Duke starts asleep and his first volley follows the first Gaze and three
 basics. Older recordings retain their original setup and phase jumps. Bile
 uses its usual chance at eligible HP. **Always Bile** forces the cast after
 every completed volley at any HP.
+
+## Audio and presentation
 
 The 3D trail uses Acid pool object 30032 from cache 2772. The capture uses
 LOC type 10 (model 29311), as at line 6586. Each pool shows for nine ticks and

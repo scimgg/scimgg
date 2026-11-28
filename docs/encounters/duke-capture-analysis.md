@@ -1,6 +1,6 @@
 # Awakened Duke capture analysis
 
-The [facts spec](./duke-facts-spec.md) summarizes the simulator's rules and open questions. The recordings are private. The [capture fixtures](../../src/encounters/dukePractice/__tests__/fixtures/) contain the extracted ticks, tiles, IDs and outcomes used by the tests. Each section uses the named recording's own tick index. Coordinates are local to map square `(47, 100)`. The regular-mode sections establish behavior shared across the recorded examples. Awakened-specific thresholds and damage use Awakened evidence.
+The [facts spec](./duke-facts-spec.md) summarizes the encounter's rules. The [unverified behavior register](./duke-unverified.md) tracks open questions and model choices. The recordings are private. The [capture fixtures](../../src/encounters/dukePractice/__tests__/fixtures/) contain the extracted ticks, tiles, IDs and outcomes used by the tests. Each section uses the named recording's own tick index. Coordinates are local to map square `(47, 100)`. The regular-mode sections establish behavior shared across the recorded examples. Awakened-specific thresholds and damage use Awakened evidence.
 
 ## First Awakened capture
 
