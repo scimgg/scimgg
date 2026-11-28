@@ -748,7 +748,7 @@ export class DukePracticeEncounter implements Encounter {
       if (hit) {
         // The contact sound originates one tile ahead of the burst (20261127-023028-Duke-Sucellus_8.jsonl:9004–9005).
         emitDukePracticeAudio(ctx.tickEvents, 'orbHit', nextTile ?? previousTile);
-        // All 31 recorded nonlethal contacts deal 25–27. See docs/encounters/duke-unverified.md.
+        // 35 isolated nonlethal contacts span 25–27. See docs/encounters/duke-unverified.md.
         return { source: ORB_DAMAGE_SOURCE, attackType: 'typeless', baseDamage: [25, 27] };
       }
     }

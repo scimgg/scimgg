@@ -521,3 +521,124 @@ the pre-existing flare at `[28, 50]` is included. Its smoke ignites at
 the windup boundary, so the next flare targets `[28, 46]` (lines 4270–4300).
 This supports keeping landed smoke as an exclusion while allowing repeat
 targets before landing and during the fade.
+
+## 3. Evidence audit
+
+The audit used all 13 available recordings. The regular recording supports shared
+opener timing and vent geometry. The Awakened phase and damage samples use only the
+12 Awakened recordings. Counts below state the conditions used to isolate each observation.
+
+### Trigger and selection samples
+
+- **Melee selection.** A4:t326 and A6:t1092 start at `[28, 50]` during
+  enrage, four ticks after bile. A4 uses magic and A6 uses melee. The
+  cases agree on phase, starting true tile, and time since bile, so another
+  variable is needed to explain the difference. The
+  [follow-up trials](#follow-up-trials) rule out a two-bolt cap.
+- **Vent ties.** Among the 379 windups in the
+  [target audit](#gas-flare-repeat-targets), only A12:t146 has two equally
+  close eligible grates after accounting for active smoke. The player starts
+  at `[29, 48]` and Duke picks `[28, 50]` over `[28, 46]`
+  (A12:L7142–7181). The sample contains no same-row choice between tied nearest
+  grates.
+- **Bile.** 34 of 69 complete four-flare volleys with a preceding HP bar
+  at 103/160 or lower are followed by bile. This sample requires all four
+  offsets and a recorded next action within five ticks of the last flare.
+  It excludes volleys near the ambiguous HP-bar boundary. From full HP
+  in A7, Duke has 1,089 HP before the final flare at t98 and casts bile at
+  t102 (A7:L6237–6311). A5 has consecutive casts before enrage and A3
+  has consecutive casts during enrage. These observations constrain
+  eligibility and rule out a mandatory skipped volley. They leave the
+  exact HP comparison, sampling tick, and random or history-dependent rule open.
+  [Published eligibility](https://oldschool.runescape.wiki/w/Duke_Sucellus/Strategies#Awakened_mode)
+- **Orb cutoff.** The table sums all positive splats on the awake NPC
+  from a full-HP opener, including splats without the player-owned flag. At each crossing, the first orb appears three ticks
+  later. An inclusive cutoff must be at least the highest post-hit value
+  and below the lowest pre-hit value. The four crossings still leave
+  every integer from 547 to 569 possible.
+
+| Capture | HP-change tick | HP before → after | First orb | Crossing and spawn lines |
+|---|---:|---:|---:|---|
+| A1 | 224 | 584 → 542 | 227 | L8369–8425 |
+| A6, second attempt | 998 | 570 → 537 | 1001 | L26692–26758 |
+| A7 | 252 | 581 → 547 | 255 | L9307–9382 |
+| A8 | 244 | 582 → 518 | 247 | L8749–8817 |
+
+- **Orb side.** 54 spawns are west and 57 east when the player is alive
+  in the snapshots before and at the spawn. A3:t255 and A8:t247 provide
+  observed west first spawns. A1:t227 and A7:t255 provide east first spawns.
+  Both sides occur while the player starts the tick in each half of the room.
+  A3's seven consecutive west spawns also rule out strict alternation. The
+  sample leaves independence, the exact odds, and dependence on earlier
+  player positions open.
+
+### Damage and cover samples
+
+- **Icicles.** The [melee facts](./duke-facts-spec.md#melee-and-magic) cite
+  protected 8s and an unprotected 13 in Awakened mode. The 13 exceeds the
+  11 cap given for regular mode. If the published melee-prayer halving applies,
+  the protected hits require a cap of at least 16. Neither the maximum nor the
+  defence roll follows from these splats.
+  [Regular and Awakened strategy](https://oldschool.runescape.wiki/w/Duke_Sucellus/Strategies)
+- **Shatter and bolt.** The Wiki gives 81 and about 60 for shatter without
+  and with Protect from Melee, and 71 and 36 for the bolt without and with
+  Protect from Magic. Its general successful-hit rule supports a roll from
+  zero to max, with exceptions for monster mechanics. The positive isolated
+  hits, including a magic-protected 21 in A9:t71 (L5546–5609), do not reveal the
+  pre-prayer roll. The caps support the simulator's chosen multipliers without
+  settling their exact values or rounding.
+  [Awakened strategy](https://oldschool.runescape.wiki/w/Duke_Sucellus/Strategies#Awakened_mode) ·
+  [Successful hit](https://oldschool.runescape.wiki/w/Successful_hit)
+- **Zero and missed bolts.** A0:t128 has a block without the usual impact
+  graphic 2435 or sound 7197 (L6679–6761). A2:t352 has a zero splat and a
+  separate 26 on the same tick as both the scheduled bolt impact and an
+  icicle windup (L11173–11285). The overlap prevents attributing the zero
+  to the bolt. The Wiki documents that a connecting zero can invalidate a
+  perfect kill. The recordings do not include an otherwise clean Awakened
+  kill after a confirmed miss.
+  [Perfect kill rules](https://oldschool.runescape.wiki/w/Duke_Sucellus#Mechanics)
+- **Gaze.** All 88 matched successful Awakened cover checks start on
+  `[27, 51]` or `[35, 51]` before movement. A5 fails from `[31, 50]`
+  and takes 93 at t359. A10 fails from `[33, 49]` despite reaching
+  `[35, 51]` on the check tick and takes 96 at t381
+  (A5:L11238–11385, A10:L11893–12031). The two failed rolls cannot establish
+  a 65 minimum. The rear pillar cover tiles remain untested.
+- **Gas.** Six isolated nonlethal pulse hits are 25, 26, and four 27s.
+  The filter requires a nearby idle smoke sound, one direct splat, and no
+  competing pool, orb or attack at that tick. Low and high examples are
+  A12:t152 (L7303) and A9:t202 (L8311). The equipment records contain
+  Oathplate helms and empty head slots. They cannot measure a gas mask or
+  Slayer helmet's reduction. The sampled range leaves the minimum open.
+- **Bile pool expiry.** All 414 matched appearances and removals are nine
+  ticks apart. In A8 the player holds `[30, 50]` at the end of ticks
+  334–337 while bile is active. The pool placed at 335 still expires at
+  344 (L10850–10990).
+  The only removal tick where the player starts on that exact pool
+  tile is A5:t359. The player stands on the pool at `[29, 50]`,
+  placed at t350, and takes 9 pool damage alongside 93 from Gaze before
+  the removal is reported. Poison immunity is active (A5:L11119,
+  L11183–11385). This is a known discrepancy with the sim's +8 cutoff.
+  The other lifetimes establish visual expiry, while that sole exposure
+  leaves its damage behavior across situations open.
+- **Orb damage.** 35 isolated nonlethal contacts have exactly one direct
+  splat, a shared true tile on the preceding tick, and both the orb
+  despawn and contact sound. Damage is 25 on 16 contacts, 26 on 13,
+  and 27 on six. Lethal hits are excluded because the splat can be
+  clipped to the player's remaining HP. The observed 25 is the sample
+  minimum. The 27 maximum also has a published source.
+  [Awakened strategy](https://oldschool.runescape.wiki/w/Duke_Sucellus/Strategies#Awakened_mode)
+
+### Opener type and feed timing
+
+- **Feeding offsets.** A1 removes its three inventory doses on ticks 7–9
+  and records the matching tolerance splats 125, 125 and 120 on ticks
+  8–10. A6 repeats those offsets at 729–731 and 730–732. These are two
+  complete Awakened feeding sequences (A1:L4432–4502, A6:L21608–21678).
+  Combining the inventory and meter changes in the sim is a presentation choice.
+- **Sleeping type.** A1:t0, A7:t0 and A8:t0 show NPC 12167 at Duke's
+  combat anchor. A6 feeds 12167 during the second opener, after spawning
+  12166 at the room entrance on t499 (A6:L12419 and L21621–21678).
+  Pinned cache 2772 gives 12167 the `Feed` action and has no action on
+  12166. Both use model 49194, idle 10174 and size 7. The sim displays
+  12166 with a local `Feed` action. The on-anchor Feed identity in the
+  captured openers is established.
