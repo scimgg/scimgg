@@ -86,6 +86,9 @@ because these shapes are ours rather than the Wiki's.
   Hold or Ride). The cache is read only for this check; ids it does not contain yet are kept.
 - **Monsters filtered.** `sync-osrs-data.ts` filters `monsters.json` to the NPCs the simulator can
   spawn, the NPC roots the cache trim follows (`collectCacheRoots(discoverCacheUsage(...))`).
+  When the simulator gains NPCs, the filter is re-applied to the same 2026-09-16 retrieval, so the
+  rows it adds are unchanged from that retrieval; the Fortis Colosseum wave monsters (NPCs
+  12810–12813 and 12817–12819) were added this way, with no new request to the Wiki.
 - **Alias derivation.** Two ids alias only when they share a base name after stripping selected
   qualifiers (`(or)`, `(l)`, `(deadman)`, `(beta)`, `(bh)`, `(cr)`, `(ritual)`, `(nz)`), an
   equipment slot, and a byte-identical stat line. Derived mechanically, with no hand-maintained

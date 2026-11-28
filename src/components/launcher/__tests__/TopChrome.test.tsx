@@ -11,6 +11,7 @@ import type { DebugActionInfo } from '../../../core/encounters/types';
 import { SimulationEngine } from '../../../core/SimulationEngine';
 import { InfernoEncounter } from '../../../encounters/inferno/InfernoEncounter';
 import { encounterControlsForKind } from '../../../encounters/modules';
+import { SOL_SECTION } from '../../../encounters/solHeredit/controls';
 import { SolHereditEncounter } from '../../../encounters/solHeredit/SolHereditEncounter';
 import { YamaEncounter } from '../../../encounters/yamaP3/YamaEncounter';
 import { createZukWaveEncounter } from '../../../test/helpers/zukWave';
@@ -291,6 +292,64 @@ describe('encounter-provided layout launcher', () => {
     expect(screen.queryByRole('dialog', { name: 'Edit layout' })).toBeNull();
     fireEvent.click(launcher('Practice'));
     expect(screen.getByRole('spinbutton', { name: 'Start wave' })).toHaveValue(62);
+  });
+});
+
+describe('the Fortis Colosseum layout launcher', () => {
+  function colosseumChrome(startWave: number, overrides: Partial<ComponentProps<typeof TopChrome>> = {}) {
+    const engine = new SimulationEngine({
+      encounter: new SolHereditEncounter(7),
+      mechanics: { colosseumStartWave: String(startWave) },
+    });
+    return renderChrome({
+      engine,
+      simulationState: engine.getState(),
+      mechanicsConfig: engine.getMechanicsConfig(),
+      ...overrides,
+    });
+  }
+
+  it('is left out of a direct Sol start, which has no wave layout', () => {
+    colosseumChrome(12);
+    expect(within(row() as HTMLElement).queryByRole('button', { name: 'Edit layout' })).toBeNull();
+  });
+
+  it('opens the start wave map in the corner workbench, with its warning, and starts the edited wave', () => {
+    const log: string[] = [];
+    const { props } = colosseumChrome(2, {
+      onEncounterToolOpenChange: (open) => log.push(open ? 'held' : 'released'),
+      onExecuteEncounterCommand: (command) => log.push(command.type),
+    });
+    expect(launcher('Edit layout').closest('.top-chrome__item')).not.toBeNull();
+    fireEvent.click(launcher('Edit layout'));
+    const tool = screen.getByRole('dialog', { name: 'Edit layout' });
+    expect(tool).toHaveClass('encounter-workbench');
+    expect(within(tool).getByRole('spinbutton', { name: 'Start wave' })).toHaveValue(2);
+    expect(within(tool).getByTestId('arena-map')).toBeTruthy();
+    // West, inner is 4 from the default start: the game never spawns there.
+    fireEvent.click(within(tool).getByRole('button', { name: /^Javelin/ }));
+    fireEvent.click(within(tool).getByRole('button', { name: /^West, inner:/ }));
+    expect(props.onMechanicsConfigChange).toHaveBeenLastCalledWith(
+      expect.objectContaining({ colosseumSpawnLayout: '2:----------j-' }),
+    );
+    expect(within(tool).getByText('Not possible in the game')).toBeTruthy();
+    fireEvent.click(within(tool).getByRole('button', { name: 'Start wave 2' }));
+    expect(log).toEqual(['held', 'go-to-wave', 'released']);
+    expect(screen.queryByRole('dialog', { name: 'Edit layout' })).toBeNull();
+  });
+
+  it('keeps the launcher visible but disabled once a wave run reaches Sol', () => {
+    const { props, rerender } = colosseumChrome(4);
+    const encounter = props.simulationState.encounter;
+    if (encounter.kind !== 'sol_heredit' || !encounter.state.run) throw new Error('Expected a wave run');
+    const atSol = {
+      ...encounter,
+      state: { ...encounter.state, run: { ...encounter.state.run, wave: 12, stage: 'sol' as const } },
+    };
+    rerender({ simulationState: { ...props.simulationState, encounter: atSol } });
+    expect(launcher('Edit layout')).toHaveAttribute('aria-disabled', 'true');
+    fireEvent.click(launcher('Edit layout'));
+    expect(screen.queryByRole('dialog', { name: 'Edit layout' })).toBeNull();
   });
 });
 
@@ -1256,7 +1315,7 @@ describe('Practice', () => {
     // The body scrolls, so the section shortcuts show; each section's offset in its content is 200
     // CSS px after the last. On screen the zoom draws those 1.5 times as far apart.
     const zoom = 1.5;
-    const contentTop = { fightSetup: 0, mechanics: 200, assists: 400 } as Record<string, number>;
+    const contentTop = { fightSetup: 0, [`section:${SOL_SECTION}`]: 200, assists: 400 } as Record<string, number>;
     const setupBody = (element: HTMLElement) => element.closest<HTMLElement>('.launcher-pane__body--setup');
     vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockImplementation(function (this: HTMLElement) {
       return this.classList.contains('launcher-pane__body--setup') ? 900 : 0;
@@ -1290,7 +1349,7 @@ describe('Practice', () => {
       const sections = within(pane()?.querySelector('.launcher-sections') as HTMLElement);
       const body = pane()?.querySelector<HTMLElement>('.launcher-pane__body--setup') as HTMLElement;
 
-      fireEvent.click(sections.getByRole('button', { name: 'Mechanics' }));
+      fireEvent.click(sections.getByRole('button', { name: SOL_SECTION }));
       expect(body.scrollTop).toBe(200);
       fireEvent.click(sections.getByRole('button', { name: 'Aids' }));
       expect(body.scrollTop).toBe(400);
@@ -1308,7 +1367,8 @@ describe('Practice', () => {
     expect(options).toHaveAttribute('aria-expanded', 'false');
     fireEvent.click(options);
     const titles = Array.from(pane()?.querySelectorAll('.practice-options__heading') ?? []).map((t) => t.textContent);
-    expect(titles).toEqual(['Mechanics', 'Practice aids']);
+    // Sol's own toggles head their own section, as TzKal-Zuk's do on an Inferno run.
+    expect(titles).toEqual([SOL_SECTION, 'Practice aids']);
     expect(screen.getByText('Jump to phase')).toBeDefined();
     expect(screen.queryByText('Practice Aids')).toBeNull();
   });

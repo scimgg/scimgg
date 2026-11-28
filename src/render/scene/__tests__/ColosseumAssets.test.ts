@@ -1,7 +1,9 @@
 import { afterEach, expect, it } from 'vitest';
 import type { LocWithType } from '../../../cache/CacheManager';
+import { isEncounterVisualEvent } from '../../../core/events/encounterVisual';
 import { SOL_MAP_X, SOL_MAP_Y } from '../../../encounters/solHeredit/constants';
 import { SOL_HEREDIT_RENDER_CONFIG } from '../../../encounters/solHeredit/renderConfig';
+import { colossusEngine, resetArena } from '../../../npcs/colosseum/__tests__/colossusReachHarness';
 import {
   BEAM_CRYSTAL_NPC_ID,
   COLOSSEUM_SPOTANIMS,
@@ -9,6 +11,7 @@ import {
   SOL_NPC_ID,
   SOLARFLARE_NPC_ID,
 } from '../../../npcs/colosseum/constants';
+import { createJavelinColossus } from '../../../npcs/colosseum/javelinColossus';
 import { COLOSSEUM_SPOT_ANIM_IDS } from '../../../npcs/colosseum/visualEvents';
 import type { CacheInfo } from '../../../rs/cache/CacheInfo';
 import { CacheSystem } from '../../../rs/cache/CacheSystem';
@@ -99,6 +102,8 @@ it.skipIf(skipWithoutRealCache())(
       expect(loaded?.modelData?.mergedModel?.verticesCount).toBeGreaterThan(0);
       expect(loaded?.animationSet?.idle?.seqId).toBe(configured.idleSeqId);
       expect(loaded?.animationSet?.death?.seqId).toBe(configured.deathSeqId);
+      expect(loaded?.animationSet?.spawn?.seqId).toBe(configured.spawnSeqId);
+      if ((configured.walkSeqId ?? -1) >= 0) expect(loaded?.animationSet?.walk?.seqId).toBe(configured.walkSeqId);
       expect(Object.keys(loaded?.animationSet?.attackClips ?? {}).sort()).toEqual(
         Object.keys(configured.attackClips ?? {}).sort(),
       );
@@ -130,6 +135,26 @@ it.skipIf(skipWithoutRealCache())(
       if (id === COLOSSEUM_SPOTANIMS.warbandArrow) expect(scene['spotAnimRenderer'].getFrameLengths(id)).toEqual([]);
       else expect(scene['spotAnimRenderer'].getFrameLengths(id)?.length).toBeGreaterThan(0);
     }
+
+    // The javelin artillery's warning: its shadow holds its tile from the moment it lands until the blast.
+    const javelin = createJavelinColossus({ id: 'javelin', position: [28, 41], spawnTick: 0 });
+    const engine = colossusEngine(javelin, [22, 38], () => 0.5);
+    const cues = new Map<number, number>();
+    while (!cues.has(COLOSSEUM_SPOTANIMS.javelinArtilleryBlast) && engine.currentTick < 60) {
+      engine.advanceTick([22, 38]);
+      for (const event of engine.getLastTickEvents().filter(isEncounterVisualEvent)) {
+        for (const cue of event.graphics) {
+          if (!cues.has(cue.spotAnimId)) cues.set(cue.spotAnimId, event.tick * 30 + cue.delayCycles);
+        }
+      }
+    }
+    resetArena();
+    const shadow = cues.get(COLOSSEUM_SPOTANIMS.javelinArtilleryShadow);
+    const blast = cues.get(COLOSSEUM_SPOTANIMS.javelinArtilleryBlast);
+    if (shadow === undefined || blast === undefined) throw new Error('no artillery');
+    const cycles = (id: number) => (scene['spotAnimRenderer'].getFrameLengths(id) ?? []).reduce((a, b) => a + b, 0);
+    expect(shadow).toBeLessThan(blast);
+    expect(shadow + cycles(COLOSSEUM_SPOTANIMS.javelinArtilleryShadow)).toBeGreaterThanOrEqual(blast);
   },
   30_000,
 );

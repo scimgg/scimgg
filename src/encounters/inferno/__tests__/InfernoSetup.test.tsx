@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { PracticePane, type PracticePaneProps } from '../../../components/launcher/PracticePane';
 import { MechanicsSettings } from '../../../components/MechanicsSettings';
 import { MobilePracticeControls } from '../../../components/MobilePracticeControls';
+import { nearestMapTarget } from '../../../components/SpawnLayoutMap';
 import { SimulationEngine } from '../../../core/SimulationEngine';
 import type { Coordinate, MechanicsConfig } from '../../../types/simulation';
 import { deleteSetting, loadSetting } from '../../../util/storage';
@@ -20,7 +21,6 @@ import {
 import { InfernoEncounter } from '../InfernoEncounter';
 import { InfernoLayoutTool } from '../InfernoLayoutTool';
 import { INFERNO_SETUP_KEYS, InfernoSetup, type InfernoSetupProps, infernoSetupSummary } from '../InfernoSetup';
-import { nearestMapTarget } from '../SpawnLayoutMap';
 import { dismissInfernoSetupLinkNotice, showInfernoSetupLinkNotice } from '../setupLinkNotice';
 import { buildInfernoSetupUrl, parseInfernoSetupParams, parseSpawnLayout } from '../spawnLayout';
 import { waveCompositionText } from '../waveInfo';

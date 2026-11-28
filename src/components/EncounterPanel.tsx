@@ -35,7 +35,7 @@ import {
   sharedSectionNote,
 } from './MechanicsSettings';
 import { ModifierGrid } from './ModifierSelector';
-import { ResetToDefaultsControl, useResetToDefaults } from './ResetToDefaults';
+import { ModifierDefaultsReset, ResetToDefaultsControl, useResetToDefaults } from './ResetToDefaults';
 import { StartingHitpointsField } from './StartingHitpointsField';
 import { OsrsButton } from './ui/OsrsButton';
 import { WikiLink } from './WikiLink';
@@ -82,7 +82,13 @@ interface EncounterPanelProps {
   /** Optional run modifiers this encounter offers. Omitted encounters render no selector. */
   modifiers?: readonly EncounterModifierDefinition[];
   modifierSelection?: EncounterModifierSelection;
+  /** Every edit saves the selection as the player's own, kept as made (see `onModifierSelectionReset`). */
   onModifierSelectionChange?: (next: EncounterModifierSelection) => void;
+  /**
+   * Drops the saved selection for the setup's default. Present while there is a saved selection to
+   * drop, one equal to the default included: it is still the player's, and would not follow the setup.
+   */
+  onModifierSelectionReset?: () => void;
   /**
    * Advisory notes on the saved loadout and modifier selection (the setup Start runs), shown in one
    * band under the selectors whether or not they name a modifier. Never blocks Start.
@@ -136,6 +142,7 @@ export const EncounterPanel: React.FC<EncounterPanelProps> = ({
   modifiers,
   modifierSelection,
   onModifierSelectionChange,
+  onModifierSelectionReset,
   setupNotes,
   startingHitpoints,
   onStartingHitpointsChange,
@@ -239,21 +246,46 @@ export const EncounterPanel: React.FC<EncounterPanelProps> = ({
     .filter(Boolean)
     .join(' · ');
   const modifierCount = Object.keys(modifierSelection ?? {}).length;
+  // An encounter whose default modifiers follow its setup (a Colosseum start wave) names them for it.
+  const modifierLabels = setupControls?.modifierLabels;
+  const modifierHeading = modifierLabels?.heading(mechanicsConfig) ?? 'Modifiers';
+  // A reset, not an edit back to the default: only it lets the set follow the setup again.
+  const modifierReset = onModifierSelectionReset
+    ? { label: modifierLabels?.resetLabel(mechanicsConfig) ?? 'Reset to default', reset: onModifierSelectionReset }
+    : undefined;
+  // Modifiers that follow the setup (a start wave) come after the control that sets it, as their
+  // heading names it; otherwise the encounter's selection leads the rail.
+  const modifiersFollowSetup = modifierLabels !== undefined;
+  const setupSelection = (
+    <EncounterSetupSelection
+      key={baseEncounterKind ?? encounterKind}
+      variants={variants}
+      selectedKind={encounterKind}
+      baseKind={baseEncounterKind}
+      onVariantChange={onVariantChange}
+      modifiers={modifiers}
+      value={modifierSelection ?? {}}
+      onEdit={onModifierSelectionChange ? () => setView('modifiers') : undefined}
+      heading={modifierHeading}
+    />
+  );
   /**
    * The footer's confirmation line: the choices about to be committed, in the terms they were
-   * made in. Modifiers lead where they are the variable part; otherwise the phase and contract
+   * made in. An encounter's own summary leads where it has one (it is handed the modifiers too);
+   * otherwise modifiers lead where they are the variable part, then the phase and contract
    * do, and here "No Contract" is worth saying, because choosing it was a decision. The title
    * is the last resort — it is already the largest thing on the card, so repeating it
    * confirmed nothing.
    */
   const startHeadline =
-    modifiers !== undefined && modifiers.length > 0 && modifierCount > 0
+    setupControls?.summary?.(mechanicsConfig, modifierSelection ?? {}) ||
+    (modifiers !== undefined && modifiers.length > 0 && modifierCount > 0
       ? `${modifierCount} modifier${modifierCount === 1 ? '' : 's'} selected`
-      : setupControls?.summary?.(mechanicsConfig) ||
-        [encounterPresentation?.setupContext, variants && variants.length > 1 ? activeVariant?.name : undefined]
-          .filter(Boolean)
-          .join(' · ') ||
-        (encounterPresentation?.title ?? displayName);
+      : undefined) ||
+    [encounterPresentation?.setupContext, variants && variants.length > 1 ? activeVariant?.name : undefined]
+      .filter(Boolean)
+      .join(' · ') ||
+    (encounterPresentation?.title ?? displayName);
 
   return (
     <div
@@ -290,7 +322,7 @@ export const EncounterPanel: React.FC<EncounterPanelProps> = ({
             <div className="encounter-panel-title-row">
               <h2>{encounterPresentation?.title ?? displayName}</h2>
               {/* Which phase or wave, and which contract, beside the name they qualify. It used
-                  to be a phone-only line and a desktop-only chip saying half of it each, which
+                  to be a phone-only line and a chip only on desktop saying half of it each, which
                   left the desktop header naming a boss that has three different fights. */}
               {headerContext && <span className="configurer-compact-context">{headerContext}</span>}
               {/* Status rides the end of the name's own line. On its own row it cost the header
@@ -315,8 +347,9 @@ export const EncounterPanel: React.FC<EncounterPanelProps> = ({
         {view === 'modifiers' && modifiers && onModifierSelectionChange && (
           <>
             <div className="configurer-subhead configurer-subhead--modifiers">
-              <h3>Modifiers</h3>
+              <h3>{modifierHeading}</h3>
               <p className="configurer-subhead-note">Changes apply immediately.</p>
+              {modifierReset && <ModifierDefaultsReset {...modifierReset} />}
             </div>
             <div className="configurer-modifier-editor" {...sheet.body}>
               <ModifierGrid
@@ -363,16 +396,7 @@ export const EncounterPanel: React.FC<EncounterPanelProps> = ({
               <h3 className="section-label configurer-rail-heading">{setupControls?.railSection ?? 'Fight setup'}</h3>
               <ResetToDefaultsControl control={resetToDefaults} variant="rail" />
             </div>
-            <EncounterSetupSelection
-              key={baseEncounterKind ?? encounterKind}
-              variants={variants}
-              selectedKind={encounterKind}
-              baseKind={baseEncounterKind}
-              onVariantChange={onVariantChange}
-              modifiers={modifiers}
-              value={modifierSelection ?? {}}
-              onEdit={onModifierSelectionChange ? () => setView('modifiers') : undefined}
-            />
+            {!modifiersFollowSetup && setupSelection}
             {/* Named rather than headed: the encounter's primary control carries the section's
                 visible label itself, on the same row as the value it sets. */}
             {setupControls && (
@@ -397,6 +421,7 @@ export const EncounterPanel: React.FC<EncounterPanelProps> = ({
                 })}
               </section>
             )}
+            {modifiersFollowSetup && setupSelection}
             <section className="rail-section">
               <h3 className="section-label">Preparation</h3>
               <MechanicsSettings

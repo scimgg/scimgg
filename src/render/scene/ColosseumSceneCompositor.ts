@@ -1,21 +1,25 @@
 import { isSolHereditSnapshot } from '../../core/encounters/snapshot';
 import type { EncounterGraphicCue } from '../../core/events/encounterVisual';
 import { COLOSSEUM_SPOTANIMS } from '../../npcs/colosseum/constants';
+import type { ColosseumHeldOrb } from '../../npcs/colosseum/visualEvents';
 import { rgbToHsl } from '../../rs/util/ColorUtil';
-import type { Coordinate, SimulationState } from '../../types/simulation';
+import type { Coordinate, NpcSnapshot, SimulationState } from '../../types/simulation';
 import { DEFAULT_TILE_MARKER_WIDTH } from '../../types/tileMarkers';
 import type { Camera3D, Projection2D, Viewport } from '../core/camera';
 import type { RenderQueue } from '../core/commands';
 import { rgbaFromHex } from '../core/types';
+import { type OneShotSpotAnimRequest, updateOneShotSpotAnim } from '../effects/spotAnimPlayback';
 import { FLOOR_EFFECT_DEPTH_BIAS } from '../effects/spotAnimRenderPolicy';
-import type { SpotAnimStyle } from '../effects/spotAnimTypes';
+import type { SpotAnimStyle, SpotAnimTransform } from '../effects/spotAnimTypes';
+import { PRIMARY_NPC_ACTOR_ID } from '../npc/NpcInstanceManager';
 import { SceneCompositor, Z_LAYERS } from './SceneCompositor';
 import type { RenderContext } from './types';
 
 /**
- * Sol Heredit's scene: his telegraph animations and the cache ground effects those telegraphs
- * paint, plus the warband's projectiles, all played by the shared cue player from Sol's
- * `encounter_visual` batches. Sol's attacks ARE their telegraphs, so the real cache effects are the
+ * Sol Heredit's scene, waves 1-11 included: his telegraph animations and the cache ground effects
+ * those telegraphs paint, plus the warband's and the wave species' projectiles, all played by the
+ * shared cue player from the run's `encounter_visual` batches, and the Manticores' held orbs, drawn
+ * from the snapshot (`ColosseumHeldOrb`). Sol's attacks ARE their telegraphs, so the real cache effects are the
  * warning. Local to Sol: the floor and culling styles of his effects, his effect batching and
  * zero-area beam-part skipping, and the overlays below.
  *
@@ -97,10 +101,19 @@ function isCamera3D(projection: Projection2D): projection is Projection2D & Came
 
 export class ColosseumSceneCompositor extends SceneCompositor {
   private readonly cullSolMeleeOutsideView: boolean;
+  /** This frame's held Manticore orbs, its state, and each drawn orb's request by instance id. */
+  private heldOrbs: readonly ColosseumHeldOrb[] = [];
+  private heldOrbState: SimulationState | null = null;
+  private readonly heldOrbRequests = new Map<
+    string,
+    { readonly orb: ColosseumHeldOrb; readonly request: OneShotSpotAnimRequest }
+  >();
+  private heldOrbPlayerPosition: readonly [number, number] = [0, 0];
 
   constructor(options: ColosseumSceneOptions = {}) {
     super();
     this.cullSolMeleeOutsideView = options.cullSolMeleeOutsideView === true;
+    this.registerTransientReset('colosseum-held-orbs', () => this.clearHeldOrbs());
     // Melee first: the families are admitted in this order against one allowance.
     if (options.batchSolEffects === true)
       this.spotAnimRenderer.setBatchableSpotAnimFamilies([COLOSSEUM_SPOTANIMS.solMelee, SOL_BEAM_SPOTANIMS]);
@@ -108,6 +121,9 @@ export class ColosseumSceneCompositor extends SceneCompositor {
   }
 
   override build(ctx: RenderContext, projection: Projection2D, viewport: Viewport): RenderQueue {
+    const snapshot = ctx.simulationState.encounter;
+    this.heldOrbs = isSolHereditSnapshot(snapshot) ? (snapshot.visuals.heldOrbs ?? []) : [];
+    this.heldOrbState = ctx.simulationState;
     // `build` reads the camera as is and the viewport draws with it unchanged, so this frame's view
     // is the GPU's. It is dropped again afterwards: no camera outlives the frame it was built for.
     const cull = this.cullSolMeleeOutsideView && ctx.options.renderMode === '3d' && isCamera3D(projection);
@@ -121,6 +137,102 @@ export class ColosseumSceneCompositor extends SceneCompositor {
 
   protected override encounterGraphicStyle(cue: EncounterGraphicCue): SpotAnimStyle | undefined {
     return colosseumGraphicStyle(cue);
+  }
+
+  /**
+   * The primary instance is built with Sol's model as soon as it loads and is otherwise kept for the
+   * scene's life. A run on waves 1-11 has no Sol until C, so it goes while his snapshot is absent and
+   * is rebuilt from that snapshot when he is added.
+   */
+  protected override syncNpcInstances(
+    npcs: NpcSnapshot[],
+    is2D: boolean,
+    simulationState?: SimulationState,
+    paused = false,
+  ): void {
+    super.syncNpcInstances(npcs, is2D, simulationState, paused);
+    const primary = this.encounterRenderConfig?.primaryNpc;
+    if (primary && !npcs.some((npc) => npc.id === primary.actorId)) {
+      this.npcInstanceManager.removePresentation(PRIMARY_NPC_ACTOR_ID);
+    }
+  }
+
+  /** After the cue player, once every actor's rendered position is known: the held orbs. */
+  protected override renderEncounterAttackEffects(
+    _currentTick: number,
+    _interpolatedTick: number,
+    playerVisualPosition: [number, number],
+    _npcPosition: Coordinate,
+    _npcFacingAngle: number,
+    _playerFacingAngle: number,
+    _mechanicsConfig: SimulationState['mechanicsConfig'],
+    is2D: boolean,
+  ): void {
+    if (is2D) return;
+    this.heldOrbPlayerPosition = playerVisualPosition;
+    this.renderHeldOrbs();
+  }
+
+  /**
+   * Draws the snapshot's held orbs, each from the start of the frame's tick as the server re-sends
+   * it, and drops the ones it no longer lists. Derived from the frame's snapshot alone, so a replay
+   * seek lands on the frame play shows.
+   */
+  private renderHeldOrbs(): void {
+    const state = this.heldOrbState;
+    if (!state) return;
+    const startCycle = state.currentTick * 30;
+    const listed = new Set<string>();
+    for (const orb of this.heldOrbs) {
+      const id = `colosseum-held-${orb.actorId}-${orb.height}`;
+      listed.add(id);
+      let held = this.heldOrbRequests.get(id);
+      if (held?.orb.spotAnimId !== orb.spotAnimId || held.request.startCycle !== startCycle) {
+        held = {
+          orb,
+          request: {
+            instanceId: id,
+            spotAnimId: orb.spotAnimId,
+            startCycle,
+            transformSource: { kind: 'dynamic', resolve: this.heldOrbTransform(orb) },
+            heightOffsetMode: 'actor',
+            fallbackDurationCycles: 0,
+          },
+        };
+        this.heldOrbRequests.set(id, held);
+      }
+      if (this.resolveAttachedActor(orb.actorId, state, this.heldOrbPlayerPosition) === null)
+        this.spotAnimRenderer.despawn(id);
+      else updateOneShotSpotAnim(this.spotAnimRenderer, held.request, this.displayedCycle);
+    }
+    for (const id of this.heldOrbRequests.keys()) {
+      if (listed.has(id)) continue;
+      this.spotAnimRenderer.despawn(id);
+      this.heldOrbRequests.delete(id);
+    }
+  }
+
+  /** Rides the holder's rendered model `orb.height` (OSRS units) above it, in one record of its own. */
+  private heldOrbTransform(orb: ColosseumHeldOrb): () => SpotAnimTransform | null {
+    const transform: SpotAnimTransform = { position: [0, 0, 0] };
+    const lift = orb.height / 128;
+    return () => {
+      const state = this.heldOrbState;
+      const actor = state && this.resolveAttachedActor(orb.actorId, state, this.heldOrbPlayerPosition);
+      if (!actor) return null;
+      transform.position[0] = actor.position[0];
+      transform.position[1] = actor.position[1];
+      transform.position[2] = actor.position[2] + lift;
+      transform.yaw2048 = actor.yaw2048;
+      transform.pitchRad = actor.pitchRad;
+      transform.scale = actor.scale;
+      return transform;
+    };
+  }
+
+  private clearHeldOrbs(): void {
+    for (const id of this.heldOrbRequests.keys()) this.spotAnimRenderer.despawn(id);
+    this.heldOrbRequests.clear();
   }
 
   protected override renderEncounterDebugOverlays(

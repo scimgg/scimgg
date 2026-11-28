@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { KIND_TO_SLUG, RETIRED_SLUG_TO_KIND, SLUG_TO_KIND, slugToVariantId, variantIdToSlug } from '../slugs';
+import {
+  KIND_TO_SLUG,
+  LEGACY_SLUG_TO_KIND,
+  RETIRED_SLUG_TO_KIND,
+  SLUG_TO_KIND,
+  slugToVariantId,
+  variantIdToSlug,
+} from '../slugs';
 
 describe('slugs', () => {
   it('SLUG_TO_KIND and KIND_TO_SLUG are inverses', () => {
@@ -38,6 +45,18 @@ describe('slugs', () => {
     expect(RETIRED_SLUG_TO_KIND.get('zuk')).toBe('zuk');
   });
 
+  it('routes the Colosseum at /colosseum and keeps its former sol-heredit slug as an entry only', () => {
+    expect(SLUG_TO_KIND.get('colosseum')).toBe('sol_heredit');
+    expect(KIND_TO_SLUG.get('sol_heredit')).toBe('colosseum');
+    expect(SLUG_TO_KIND.get('sol-heredit')).toBeUndefined();
+    expect(LEGACY_SLUG_TO_KIND.get('sol-heredit')).toBe('sol_heredit');
+  });
+
+  it('gives every canonical, retired and legacy slug one meaning', () => {
+    const slugs = [...SLUG_TO_KIND.keys(), ...RETIRED_SLUG_TO_KIND.keys(), ...LEGACY_SLUG_TO_KIND.keys()];
+    expect(slugs).toEqual([...new Set(slugs)]);
+  });
+
   it.each([
     'toString',
     'constructor',
@@ -47,5 +66,6 @@ describe('slugs', () => {
     expect(SLUG_TO_KIND.get(name)).toBeUndefined();
     expect(KIND_TO_SLUG.get(name)).toBeUndefined();
     expect(RETIRED_SLUG_TO_KIND.get(name)).toBeUndefined();
+    expect(LEGACY_SLUG_TO_KIND.get(name)).toBeUndefined();
   });
 });

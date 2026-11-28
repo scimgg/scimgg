@@ -40,6 +40,12 @@ export interface EncounterCatalogEntry {
    * encounter's scene.
    */
   readonly retiredKinds?: readonly RetiredEncounterKind[];
+  /**
+   * Former public slugs of this live kind (`/sol-heredit` before the Colosseum became `/colosseum`),
+   * still accepted on entry but never generated. Unlike a retired kind, no saved data or recording
+   * names one. Where each enters is the owning module's business (`EncounterCoreModule.legacySlugEntries`).
+   */
+  readonly legacySlugs?: readonly string[];
 }
 
 export interface RetiredEncounterKind {
@@ -59,7 +65,7 @@ const YAMA_VARIANT_KINDS = [
 export const ENCOUNTER_CATALOG: readonly EncounterCatalogEntry[] = [
   { kind: 'yama_p3', variantKinds: YAMA_VARIANT_KINDS, slug: 'yama', registered: true },
   { kind: 'lobby', variantKinds: [], slug: null, registered: true },
-  { kind: 'sol_heredit', variantKinds: [], slug: 'sol-heredit', registered: true },
+  { kind: 'sol_heredit', variantKinds: [], slug: 'colosseum', registered: true, legacySlugs: ['sol-heredit'] },
   {
     kind: 'inferno',
     variantKinds: [],

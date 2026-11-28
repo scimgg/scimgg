@@ -111,8 +111,9 @@ export interface EncounterEngineRules {
     blockOverheal?: boolean;
   };
   /**
-   * Subtract floor(base max Hitpoints * reduction) at encounter start.
-   * Applied once in initializeWorld; `undefined` leaves max HP unchanged.
+   * Subtract floor(base max Hitpoints * reduction) at encounter start, and again from base whenever
+   * the encounter asks for a rules refresh (`EncounterContext.refreshEngineRules`) and it has changed.
+   * `undefined` leaves max HP unchanged.
    */
   playerMaxHpReduction?: number;
   modifyPlayerCombatParams?(params: EffectiveCombatParams, ctx: EncounterEngineContext): EffectiveCombatParams;
@@ -253,6 +254,11 @@ export interface EncounterContext {
    * tick's player turn starts from the new tile.
    */
   teleportPlayer: (position: Coordinate, facing: number) => void;
+  /**
+   * The encounter's run state has changed its `getEngineRules()` (a modifier took effect): the engine
+   * re-reads them, applying a changed `playerMaxHpReduction` from base max HP without healing.
+   */
+  refreshEngineRules?: () => void;
   /**
    * Lock the player's actions until `unlockTick`, the first tick that accepts input again (absolute,
    * as {@link disableProtectionPrayersUntil}). Throws a RangeError unless it is a safe integer; one
@@ -584,6 +590,12 @@ export interface Encounter {
    */
   getIntroConfig(mechanics: Readonly<Partial<MechanicsConfig>>): EncounterIntroConfig | null;
 
+  /**
+   * The facing a fresh run with the setup in `mechanics` opens with when no landing intro sets one.
+   * Omit, or answer undefined, for north (1024). Read again on a tick-zero setup edit.
+   */
+  getDefaultPlayerFacing?(mechanics: Readonly<Partial<MechanicsConfig>>): number | undefined;
+
   createNpcs(playerStart: Coordinate): NpcActor[];
   /**
    * Applies the run setup. Called while the world is built (before `createNpcs`, so that can open
@@ -657,6 +669,19 @@ export interface Encounter {
     ctx: EncounterContext,
     mechanicsEnabled: Partial<MechanicsConfig>,
   ): EncounterTickResult;
+  /**
+   * The kill turn of a `queued` NPC whose death the hit queue promoted to its kill tick
+   * (`isNpcKillTurnReleaseDue`): it takes no ordinary turn, so `processNpcTick` is not called. Return only
+   * attacks it had already committed to that fall due on this turn (never a new one). Asked once, in its
+   * turn slot, before any death-animation release; each is committed as a launch from a dying source
+   * (`CombatSystem.processDeathReleaseRequest`, timing `kill-turn`). A pending death keeps its ordinary
+   * turn instead and is never asked.
+   */
+  releaseNpcKillTurn?(
+    actor: NpcActor,
+    ctx: EncounterContext,
+    mechanicsEnabled: Partial<MechanicsConfig>,
+  ): readonly NpcAttackRequest[];
   /**
    * Encounter-wide work after every NPC's turn and before the player band: it sees every NPC's
    * damage, movement and attacks for the tick. Returned damage is applied at once.

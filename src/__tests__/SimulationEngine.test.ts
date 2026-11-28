@@ -1767,6 +1767,38 @@ describe('SimulationEngine', () => {
       expect(state.playerPosition).toEqual([34, 26]);
     });
 
+    it("opens on the setup's own facing without an intro, the intro's with one, and turns on a tick-zero edit", () => {
+      /** Faces east when its setup's `facing` is 'east', else leaves the engine's north. */
+      class FacingEncounter extends InputProbeEncounter {
+        getDefaultPlayerFacing(mechanics: Readonly<Partial<MechanicsConfig>>): number | undefined {
+          return mechanics.facing === 'east' ? 1536 : undefined;
+        }
+        override getIntroConfig() {
+          return { facingAngle: 512, animationSeqId: 1 };
+        }
+      }
+      const open = (facing: string, enableIntro = false) =>
+        new SimulationEngine({
+          encounter: new FacingEncounter(),
+          startPos: [10, 10],
+          mechanics: { facing },
+          enableIntro,
+        });
+      expect(open('east').getState().playerFacingAngle).toBe(1536);
+      expect(open('none').getState().playerFacingAngle).toBe(1024);
+      expect(open('east', true).getState().playerFacingAngle).toBe(512);
+
+      const edited = open('none');
+      edited.setMechanicsConfig({ ...edited.getMechanicsConfig(), facing: 'east' });
+      expect(edited.getState().playerFacingAngle).toBe(1536);
+      edited.setMechanicsConfig({ ...edited.getMechanicsConfig(), facing: 'none' });
+      expect(edited.getState().playerFacingAngle).toBe(1024);
+      // Past tick 0 the setup's facing is the next run's.
+      edited.advanceTick([10, 10]);
+      edited.setMechanicsConfig({ ...edited.getMechanicsConfig(), facing: 'east' });
+      expect(edited.getState().playerFacingAngle).toBe(1024);
+    });
+
     it('takes no damage at tick 0 regardless of position', () => {
       const testEngine = new SimulationEngine({ encounter: new YamaEncounter(), startPos: [10, 10] as Coordinate });
       const state = testEngine.getState();

@@ -1,24 +1,13 @@
 import type { EncounterModifierDefinition } from '../../core/encounters/encounterFactory';
 import { type EncounterSetupNoteRule, loadoutHasItem } from '../../core/encounters/setupNotes';
-import { COLOSSEUM_MODIFIERS, type ColosseumModifierId } from '../colosseum/modifiers/definitions';
+import { COLOSSEUM_MODIFIERS, SIMULATED_COLOSSEUM_MODIFIER_IDS } from '../colosseum/modifiers/definitions';
 
 /**
- * Wave-12-eligible modifiers in selector order: alphabetical, like the wiki's modifier table, since the
- * game offers random picks and has no fixed order. Shared behavior lives in colosseum/modifiers.
+ * The modifiers a run's configured set may hold, for every start wave, in selector order: every
+ * simulated modifier. Dynamic Duo and Red Flag only act in waves 1-11 (wave 12 has no shockwaves or
+ * minotaurs). Shared behavior lives in colosseum/modifiers.
  */
-const OFFERED: readonly ColosseumModifierId[] = [
-  'bees',
-  'blasphemy',
-  'doom',
-  'frailty',
-  'myopia',
-  'quartet',
-  'relentless',
-  'solarflare',
-  'totemic',
-  'volatility',
-];
-export const SOL_HEREDIT_MODIFIERS: readonly EncounterModifierDefinition[] = OFFERED.map(
+export const SOL_HEREDIT_MODIFIERS: readonly EncounterModifierDefinition[] = SIMULATED_COLOSSEUM_MODIFIER_IDS.map(
   (id) => COLOSSEUM_MODIFIERS.find((definition) => definition.id === id)!,
 );
 

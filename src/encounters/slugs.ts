@@ -32,3 +32,13 @@ export function slugToVariantId(slug: string): string {
 export const RETIRED_SLUG_TO_KIND: ReadonlyMap<string, string> = new Map(
   RETIRED_ENCOUNTER_KINDS.map(({ retired }) => [retired.slug, retired.kind] as const),
 );
+
+/**
+ * Former slugs of live kinds (`/sol-heredit`), accepted on entry: each names the kind it now routes
+ * under, entered at its module's `legacySlugEntries` setup. Never generated as a canonical path.
+ */
+export const LEGACY_SLUG_TO_KIND: ReadonlyMap<string, string> = new Map(
+  ENCOUNTER_CATALOG.flatMap((entry) =>
+    entry.registered ? (entry.legacySlugs ?? []).map((slug) => [slug, entry.kind] as const) : [],
+  ),
+);

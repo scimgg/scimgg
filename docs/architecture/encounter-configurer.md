@@ -74,9 +74,18 @@ encounter whose sets name no section draws no section heading. Names are data, n
 - **Edits save at once** from the configurer, desktop and mobile Practice and the Inferno layout
   workbench.
 - **Modifiers** are saved per encounter kind as the whole selection: `{}` is "every modifier off",
-  an absent entry the descriptor's `defaultModifierSelection`. The Modifiers picker's restart saves
-  its selection too. Unknown modifiers and tiers are dropped on read (`filterModifierSelection`).
-  The field rides the settings blob, through `normalizeSettings`.
+  an absent entry the descriptor's `defaultModifiers` for the run's setup (a Fortis Colosseum start
+  wave's suggestion). A present entry is always the player's, even one equal to today's default, so
+  it never starts following the setup again; only a reset (the modifier editor's own, or Reset to
+  defaults) removes it, and the editor offers its reset whenever there is an entry. The Modifiers
+  picker's restart saves its selection too. Unknown modifiers and tiers are dropped on read
+  (`filterModifierSelection`). The field rides the settings blob, through `normalizeSettings`,
+  which migrates it once to `MODIFIER_SETTINGS_VERSION` (version 1 clears Sol Heredit's saved
+  Blasphemy III, which older builds saved for an untouched selection).
+- **Restart** resolves the modifiers exactly as an entry would. Where they differ from what the
+  running engine was built with, the run restarts on a fresh engine
+  (`useEncounterManager.createRestartEngine`), with the restart's loadout, countdown and one
+  recording; otherwise the running engine is reset.
 - **Reset to defaults** (`SetupContextControls.onReset`) clears the shown variant's mechanics,
   modifiers and starting hitpoints entries, and nothing else: not gear, named presets, account
   unlocks or sibling variants. `isDefault` says whether there is anything to reset (account unlocks
@@ -96,7 +105,8 @@ encounter whose sets name no section draws no section heading. Names are data, n
 - **Alias kinds** (`resolveEncounterEntry`): the Zuk statue and `/zuk` save only their own keys
   (`infernoStartWave: '69'`) over the saved Inferno setup, on Configure and on entry alike. Wave 69
   is also the Inferno's default start, which Reset to defaults returns to; the statue still writes
-  it, so a saved other wave gives way.
+  it, so a saved other wave gives way. The Colosseum's former `/sol-heredit` link
+  (`resolveLegacySlugEntry`) saves `colosseumStartWave: '12'` over its saved setup the same way.
 - **Tutorials** run in a tutorial setup that is never saved: the encounter's defaults, the account
   unlocks, the lesson's mechanics (`TutorialDirector` `setMechanics`, checkpoints) and forced
   Infinite Health, played in the lesson's preset gear when it declares one. Practice edits and
@@ -333,6 +343,28 @@ Tap a pillar to toggle it; tap bare floor to move You, as the single caption exp
 only when moved. The terrain anchors are west `[17,37]`, south `[27,23]`, north-east `[34,39]`.
 Landscape windows keep the map beside their title, progress and actions. Fresh start defaults are
 `[34,44]` on waves 2–68; wave 1 landing and wave 69 start are fixed. Restarts keep where the player stood.
+
+The map itself is shared (`src/components/SpawnLayoutMap.tsx`, its plane math in `spawnMapGeometry.ts`):
+the encounter supplies the drawing bounds, terrain, named spots, spot size, kind labels and sizes,
+obstacles (pressable only with a toggle handler) and whether the start moves; the map owns chips,
+arming, the spot picker, nearest-target arbitration and floor taps. The Fortis Colosseum's **Wave &
+modifiers** rail puts the same **Edit layout** row under its start-wave text for waves 1–11 (none
+for a direct Sol start). Its map is the waves floor drawn tile by tile (x16..48, y18..51, no image),
+the four pillars as fixed squares, the 12 spawn points as 3×3 spots and the start tile, which any
+floor tap moves. The chips are the start wave's initial monsters only. Clear spawns and Reset start
+work as the Inferno's. A placement the game would not make from the start tile
+(`colosseumSpawnLayoutWarnings`) rings each such point in the warning color, adds a note to its
+name, and shows a warning box under the map; the summary row adds "Not possible in game". It never
+blocks the layout. The footer line names a custom layout ("Waves 4–12 · Custom layout · 2 modifiers"),
+as the Inferno's does. Practice has no layout editor: as in the Inferno, the top chrome's **Edit
+layout** workbench (`ColosseumLayoutTool`) edits the start wave, its layout and start tile, with the
+same warning under its map. It opens on a copy of the wave being fought (the snapshot's
+`runSetup.waveSpawnLayout` and the tile its points were drawn from), unsaved until edited or started;
+**Start wave M** saves it and sends `go-to-wave`, which keeps the run's seed for the wave being fought
+and draws new ones for another. Practice's start-wave control says a saved change is waiting for a
+restart whenever the start wave, the layout or a moved start tile differs from the run's own
+(`colosseumRunSetupKey`, from `runSetup.startSpawnLayout` and `startPlayerTile`). Restart fight and
+Ctrl+R start the saved setup with new seeds: a saved layout and tile repeat, random spawns stay random.
 
 `hasFooterActions` reserves a single `actionFooter` destination in the configurer. The encounter portals
 Include gear and Copy link there; shared hosts have no Inferno switches. Copy link immediately copies

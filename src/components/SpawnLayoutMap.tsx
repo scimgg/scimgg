@@ -1,44 +1,15 @@
 import type React from 'react';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { useEscapeLayer } from '../../hooks/useEscapeLayer';
-import { infernoIdentity } from '../../npcs/inferno/actors';
-import type { Coordinate } from '../../types/simulation';
-import { ZUK_PLAYER_START } from '../zuk/constants';
-import { arenaTileBox, fitArenaTileSize, INFERNO_ARENA_MAP_IMAGE } from './arenaMapImage';
-import { INFERNO_ARENA_BOUNDS, INFERNO_LANDING_TILE, INFERNO_SPAWN_SLOTS, LAST_PILLAR_WAVE } from './constants';
-import { INFERNO_PILLARS, PILLAR_SIZE, type PillarKey } from './pillars';
-import type { SlotKind } from './spawnLayout';
-import { startTileApplies } from './startTile';
-import { WAVE_NPC_NAMES } from './waveInfo';
+import { useEscapeLayer } from '../hooks/useEscapeLayer';
+import type { Coordinate } from '../types/simulation';
+import { fitSpawnMapTileSize, type SpawnMapBounds, type SpawnMapBox, spawnMapTileBox } from './spawnMapGeometry';
+import './SpawnLayoutMap.css';
 
-const SLOT_NAMES = [
-  'North-west',
-  'West',
-  'South-west',
-  'Inner south-west',
-  'South',
-  'South-east',
-  'Center',
-  'East',
-  'North-east',
-];
-// The diagram includes two tiles of terrain beyond the playable bounds, so edge pillars
-// sit inside the arena picture rather than being mistaken for part of its frame.
-const MAP_BOUNDS = INFERNO_ARENA_MAP_IMAGE.bounds;
-const MAP_WIDTH = MAP_BOUNDS.maxX - MAP_BOUNDS.minX + 1;
-const MAP_HEIGHT = MAP_BOUNDS.maxY - MAP_BOUNDS.minY + 1;
-const ARENA_WIDTH = INFERNO_ARENA_BOUNDS.maxX - INFERNO_ARENA_BOUNDS.minX + 1;
-const ARENA_HEIGHT = INFERNO_ARENA_BOUNDS.maxY - INFERNO_ARENA_BOUNDS.minY + 1;
-const GRID_PATH = [
-  ...Array.from({ length: ARENA_WIDTH + 1 }, (_, x) => `M${x} 0V${ARENA_HEIGHT}`),
-  ...Array.from({ length: ARENA_HEIGHT + 1 }, (_, y) => `M0 ${y}H${ARENA_WIDTH}`),
-].join('');
+export type { SpawnMapBounds } from './spawnMapGeometry';
 
-export function kindLabel(kind: SlotKind): string {
-  const name = WAVE_NPC_NAMES[kind].one;
-  return name.charAt(0).toUpperCase() + name.slice(1);
-}
+/** A footprint's box on the plane, from its southwest tile. */
+export type SpawnMapTileBox = (position: Readonly<Coordinate>, size: number, height?: number) => SpawnMapBox;
 
 /** Drawn boxes win over expanded targets. In overlapping touch margins, choose the nearest box. */
 export function nearestMapTarget(
@@ -62,48 +33,94 @@ export function nearestMapTarget(
   return best?.index ?? null;
 }
 
-export interface SpawnLayoutMapProps {
-  readonly wave: number;
-  readonly kinds: readonly SlotKind[];
-  readonly slots: readonly (SlotKind | null)[];
-  readonly destroyedPillars: Readonly<Record<PillarKey, boolean>>;
+/** A spawn point: its name in pickers and labels, and its southwest tile. */
+export interface SpawnMapSpot {
+  readonly name: string;
+  readonly position: Readonly<Coordinate>;
+}
+
+/** A pillar or other block on the floor. Pressable where the map has `onObstacleToggle`. */
+export interface SpawnMapObstacle {
+  readonly key: string;
+  readonly position: Readonly<Coordinate>;
+  readonly size: number;
+  readonly ariaLabel: string;
+  readonly label?: string;
+  readonly down?: boolean;
+}
+
+export interface SpawnLayoutMapProps<K extends string> {
+  /** The plane's tiles: the arena and any margin drawn around it. */
+  readonly bounds: SpawnMapBounds;
+  /** Drawn first on the plane, under everything else: the floor and its grid. */
+  readonly terrain: (tileBox: SpawnMapTileBox) => React.ReactNode;
+  readonly spots: readonly SpawnMapSpot[];
+  /** Each spot's square side, which holds the largest kind; a smaller kind sits in its SW corner. */
+  readonly spotSize: number;
+  /** The monsters to place, one entry each. */
+  readonly kinds: readonly K[];
+  /** Indexed as `spots`. */
+  readonly slots: readonly (K | null)[];
+  readonly kindLabel: (kind: K) => string;
+  readonly kindSize: (kind: K) => number;
+  readonly obstacles?: readonly SpawnMapObstacle[];
+  readonly onObstacleToggle?: (key: string) => void;
   readonly playerTile: Readonly<Coordinate>;
-  readonly onSlotsChange: (slots: (SlotKind | null)[]) => void;
-  readonly onPillarChange: (key: PillarKey) => void;
+  /** Whether a tap on bare floor moves the start (`onStartChange`); otherwise it is fixed. */
+  readonly startMovable: boolean;
+  readonly onSlotsChange: (slots: (K | null)[]) => void;
   readonly onStartChange: (tile: Coordinate) => void;
+  /** Spots to mark with a warning, by index, each with the words it adds to the spot's name. */
+  readonly flaggedSpots?: ReadonlyMap<number, string>;
   readonly actions?: React.ReactNode;
   readonly caption?: React.ReactNode;
 }
 
-/** One pointer surface: spots place/replace/remove, pillars toggle, and bare floor sets the start. */
-export function SpawnLayoutMap({
-  wave,
+/**
+ * One pointer surface for placing an encounter's monsters on its spawn spots: spots
+ * place/replace/remove (`kinds`, armed from the progress chips or picked per spot), pressable
+ * obstacles toggle, and bare floor sets the start. The encounter supplies the plane, spots,
+ * obstacles and terrain; the map owns the interaction.
+ */
+export function SpawnLayoutMap<K extends string>({
+  bounds,
+  terrain,
+  spots,
+  spotSize,
   kinds,
   slots,
-  destroyedPillars,
+  kindLabel,
+  kindSize,
+  obstacles = [],
+  onObstacleToggle,
   playerTile,
+  startMovable,
   onSlotsChange,
-  onPillarChange,
   onStartChange,
+  flaggedSpots,
   actions,
   caption,
-}: SpawnLayoutMapProps) {
+}: SpawnLayoutMapProps<K>) {
+  const mapWidth = bounds.maxX - bounds.minX + 1;
+  const mapHeight = bounds.maxY - bounds.minY + 1;
   const [picker, setPicker] = useState<{ index: number; left: number; top: number } | null>(null);
-  const [armedKind, setArmedKind] = useState<SlotKind | null>(null);
+  const [armedKind, setArmedKind] = useState<K | null>(null);
   const pickerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<HTMLDivElement>(null);
   const planeRef = useRef<HTMLDivElement>(null);
   const [plane, setPlane] = useState({ tileSize: 8, left: 0, top: 0 });
+  const { minX, maxX, minY, maxY } = bounds;
   useLayoutEffect(() => {
     const map = mapRef.current!;
+    const fit = { minX, maxX, minY, maxY };
     const measure = () => {
       if (!map.clientWidth || !map.clientHeight) return;
-      const tileSize = fitArenaTileSize(map.clientWidth, map.clientHeight);
+      const tileSize = fitSpawnMapTileSize(fit, map.clientWidth, map.clientHeight);
       const rect = map.getBoundingClientRect();
       // Bias toward the leading edge: a half-pixel centered host must not gain a
       // trailing overflow pixel when the integer plane exactly fills its width.
-      const left = Math.floor(rect.left + (map.clientWidth - MAP_WIDTH * tileSize) / 2) - rect.left;
-      const top = Math.floor(rect.top + (map.clientHeight - MAP_HEIGHT * tileSize) / 2) - rect.top;
+      const left = Math.floor(rect.left + (map.clientWidth - (maxX - minX + 1) * tileSize) / 2) - rect.left;
+      const top = Math.floor(rect.top + (map.clientHeight - (maxY - minY + 1) * tileSize) / 2) - rect.top;
       setPlane((old) =>
         old.tileSize === tileSize && old.left === left && old.top === top ? old : { tileSize, left, top },
       );
@@ -112,9 +129,9 @@ export function SpawnLayoutMap({
     const observer = new ResizeObserver(measure);
     observer.observe(map);
     return () => observer.disconnect();
-  }, []);
-  const tileBox = (position: Readonly<Coordinate>, size: number, height = size) =>
-    arenaTileBox(position, size, plane.tileSize, height);
+  }, [minX, maxX, minY, maxY]);
+  const tileBox: SpawnMapTileBox = (position, size, height = size) =>
+    spawnMapTileBox(bounds, position, size, plane.tileSize, height);
   useEscapeLayer(1400, picker !== null, () => setPicker(null));
   useEffect(() => {
     if (!picker) return;
@@ -147,14 +164,13 @@ export function SpawnLayoutMap({
     picker !== null && slots[picker.index]
       ? slots.flatMap((kind, index) => (kind && kind !== slots[picker.index] ? [{ kind, index }] : []))
       : [];
-  const place = (kind: SlotKind | null) => {
+  const place = (kind: K | null) => {
     if (!picker) return;
     const next = [...slots];
     next[picker.index] = kind;
     onSlotsChange(next);
     setPicker(null);
   };
-  const shownTile = wave === 1 ? INFERNO_LANDING_TILE : wave === 69 ? ZUK_PLAYER_START : playerTile;
   const selectSlot = (index: number, rect: DOMRect) => {
     const kind = slots[index];
     if (!kind && remaining.length === 0) return;
@@ -208,7 +224,7 @@ export function SpawnLayoutMap({
         <div
           ref={mapRef}
           className="spawn-map"
-          style={{ aspectRatio: `${MAP_WIDTH} / ${MAP_HEIGHT}` }}
+          style={{ aspectRatio: `${mapWidth} / ${mapHeight}` }}
           data-testid="arena-map"
           onClick={(event) => {
             const box = planeRef.current!.getBoundingClientRect();
@@ -218,7 +234,7 @@ export function SpawnLayoutMap({
               event.clientY >= box.top &&
               event.clientY < box.bottom;
             const targets = [
-              ...event.currentTarget.querySelectorAll<HTMLButtonElement>('[data-spawn-slot], [data-pillar]'),
+              ...event.currentTarget.querySelectorAll<HTMLButtonElement>('[data-spawn-slot], button[data-pillar]'),
             ].filter((button) => !button.disabled);
             const nearest = inside
               ? nearestMapTarget(
@@ -236,13 +252,13 @@ export function SpawnLayoutMap({
               return;
             }
             if (target?.dataset.pillar) {
-              onPillarChange(target.dataset.pillar as PillarKey);
+              onObstacleToggle?.(target.dataset.pillar);
               return;
             }
-            if (!inside || !startTileApplies(wave)) return;
+            if (!inside || !startMovable) return;
             onStartChange([
-              MAP_BOUNDS.minX + Math.floor(((event.clientX - box.left) / box.width) * MAP_WIDTH),
-              MAP_BOUNDS.maxY - Math.floor(((event.clientY - box.top) / box.height) * MAP_HEIGHT),
+              minX + Math.floor(((event.clientX - box.left) / box.width) * mapWidth),
+              maxY - Math.floor(((event.clientY - box.top) / box.height) * mapHeight),
             ]);
           }}
         >
@@ -254,51 +270,30 @@ export function SpawnLayoutMap({
             style={{
               left: plane.left,
               top: plane.top,
-              width: MAP_WIDTH * plane.tileSize,
-              height: MAP_HEIGHT * plane.tileSize,
+              width: mapWidth * plane.tileSize,
+              height: mapHeight * plane.tileSize,
             }}
           >
-            <img
-              className="spawn-map__terrain"
-              src={INFERNO_ARENA_MAP_IMAGE.url}
-              width={INFERNO_ARENA_MAP_IMAGE.width}
-              height={INFERNO_ARENA_MAP_IMAGE.height}
-              crossOrigin="anonymous"
-              alt=""
-              aria-hidden="true"
-              draggable={false}
-            />
-            <span className="spawn-map__terrain-wash" aria-hidden="true" />
-            <svg
-              className="spawn-map__grid"
-              style={tileBox([INFERNO_ARENA_BOUNDS.minX, INFERNO_ARENA_BOUNDS.minY], ARENA_WIDTH, ARENA_HEIGHT)}
-              viewBox={`0 0 ${ARENA_WIDTH} ${ARENA_HEIGHT}`}
-              preserveAspectRatio="none"
-              shapeRendering="crispEdges"
-              aria-hidden="true"
-            >
-              <path d={GRID_PATH} vectorEffect="non-scaling-stroke" />
-            </svg>
+            {terrain(tileBox)}
             {kinds.length > 0 &&
-              INFERNO_SPAWN_SLOTS.map((position, index) => {
+              spots.map(({ name, position }, index) => {
                 const kind = slots[index];
-                const size = kind
-                  ? infernoIdentity(kind === 'mager' || kind === 'ranger' ? { kind, variant: 'ordinary' } : kind).size
-                  : 4;
+                const size = kind ? kindSize(kind) : spotSize;
+                const note = flaggedSpots?.get(index);
                 return (
                   <span
-                    key={SLOT_NAMES[index]}
-                    className={`spawn-map__spot${size < 4 ? ' has-small-npc' : ''}`}
+                    key={name}
+                    className={`spawn-map__spot${size < spotSize ? ' has-small-npc' : ''}${note ? ' is-flagged' : ''}`}
                     data-spawn-hit={index}
-                    style={tileBox(position, 4)}
+                    style={tileBox(position, spotSize)}
                   >
                     <button
                       type="button"
                       tabIndex={-1}
                       data-spawn-slot={index}
-                      className={`spawn-map__slot${kind ? ` is-filled spawn-kind--${kind}` : ''}${size < 4 ? ' is-small' : ''}`}
+                      className={`spawn-map__slot${kind ? ` is-filled spawn-kind--${kind}` : ''}${size < spotSize ? ' is-small' : ''}`}
                       style={{ left: 0, bottom: 0, width: size * plane.tileSize, height: size * plane.tileSize }}
-                      aria-label={`${SLOT_NAMES[index]}: ${kind ? kindLabel(kind) : 'empty spawn'}`}
+                      aria-label={`${name}: ${kind ? kindLabel(kind) : 'empty spawn'}${note ? `, ${note}` : ''}`}
                       aria-expanded={picker?.index === index}
                       onMouseDown={(event) => event.preventDefault()}
                     >
@@ -307,36 +302,41 @@ export function SpawnLayoutMap({
                   </span>
                 );
               })}
-            {wave <= LAST_PILLAR_WAVE &&
-              INFERNO_PILLARS.map((pillar) => {
-                const down = destroyedPillars[pillar.key];
-                return (
-                  <button
-                    key={pillar.key}
-                    type="button"
-                    tabIndex={-1}
-                    className={`spawn-map__pillar${down ? ' is-down' : ''}`}
-                    data-pillar={pillar.key}
-                    style={tileBox(pillar.position, PILLAR_SIZE)}
-                    aria-label={`${pillar.key === 'northEast' ? 'North-east' : pillar.key === 'west' ? 'West' : 'South'} pillar`}
-                    aria-pressed={down}
-                    onMouseDown={(event) => event.preventDefault()}
-                  >
-                    <span className="spawn-map__pillar-label">{down ? 'Down' : 'Pillar'}</span>
-                  </button>
-                );
-              })}
+            {obstacles.map((obstacle) =>
+              onObstacleToggle ? (
+                <button
+                  key={obstacle.key}
+                  type="button"
+                  tabIndex={-1}
+                  className={`spawn-map__pillar${obstacle.down ? ' is-down' : ''}`}
+                  data-pillar={obstacle.key}
+                  style={tileBox(obstacle.position, obstacle.size)}
+                  aria-label={obstacle.ariaLabel}
+                  aria-pressed={obstacle.down === true}
+                  onMouseDown={(event) => event.preventDefault()}
+                >
+                  {obstacle.label && <span className="spawn-map__pillar-label">{obstacle.label}</span>}
+                </button>
+              ) : (
+                <span
+                  key={obstacle.key}
+                  className="spawn-map__pillar is-fixed"
+                  data-pillar={obstacle.key}
+                  style={tileBox(obstacle.position, obstacle.size)}
+                  role="img"
+                  aria-label={obstacle.ariaLabel}
+                >
+                  {obstacle.label && <span className="spawn-map__pillar-label">{obstacle.label}</span>}
+                </span>
+              ),
+            )}
             <span
               className="spawn-map__player"
-              style={tileBox(shownTile, 1)}
+              style={tileBox(playerTile, 1)}
               role="img"
-              aria-label={`Your start: ${shownTile[0]}, ${shownTile[1]}${startTileApplies(wave) ? '. Tap floor to move.' : ' (fixed)'}`}
+              aria-label={`Your start: ${playerTile[0]}, ${playerTile[1]}${startMovable ? '. Tap floor to move.' : ' (fixed)'}`}
             >
-              <span
-                className={`spawn-map__player-label${shownTile[1] >= INFERNO_ARENA_BOUNDS.maxY - 1 ? ' is-below' : ''}`}
-              >
-                You
-              </span>
+              <span className={`spawn-map__player-label${playerTile[1] >= maxY - 3 ? ' is-below' : ''}`}>You</span>
             </span>
           </div>
         </div>
@@ -347,9 +347,9 @@ export function SpawnLayoutMap({
               className="spawn-picker"
               style={{ left: picker.left, top: picker.top }}
               role="dialog"
-              aria-label={`Monster at ${SLOT_NAMES[picker.index]}`}
+              aria-label={`Monster at ${spots[picker.index]!.name}`}
             >
-              <p className="spawn-picker__heading">{SLOT_NAMES[picker.index]} spot</p>
+              <p className="spawn-picker__heading">{spots[picker.index]!.name} spot</p>
               {choices.map((kind) => (
                 <button
                   type="button"
@@ -369,11 +369,11 @@ export function SpawnLayoutMap({
                   tabIndex={-1}
                   key={index}
                   className={`spawn-picker__choice spawn-kind--${kind}`}
-                  aria-label={`Swap with ${SLOT_NAMES[index]} ${kindLabel(kind)}`}
+                  aria-label={`Swap with ${spots[index]!.name} ${kindLabel(kind)}`}
                   onMouseDown={(event) => event.preventDefault()}
                   onClick={() => {
                     const next = [...slots];
-                    [next[index], next[picker.index]] = [next[picker.index], next[index]];
+                    [next[index], next[picker.index]] = [next[picker.index]!, next[index]!];
                     onSlotsChange(next);
                     setPicker(null);
                   }}
@@ -381,7 +381,7 @@ export function SpawnLayoutMap({
                   <span aria-hidden="true" />
                   <span className="spawn-picker__swap">
                     Swap {kindLabel(kind)}
-                    <small>{SLOT_NAMES[index]}</small>
+                    <small>{spots[index]!.name}</small>
                   </span>
                 </button>
               ))}

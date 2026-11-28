@@ -12,6 +12,7 @@ import {
   applyUpdate,
   infoboxPinTargetUnavailableReason,
   MOBILE_PLATFORM_DEFAULTS,
+  MODIFIER_SETTINGS_VERSION,
   normalizeFixedLayoutScale,
   normalizeInnerZoomLevel,
   normalizeMobileHotkeys,
@@ -183,6 +184,7 @@ const MALFORMED_SETTINGS = {
   mechanicsConfigPerEncounter: [],
   startingHpPerEncounter: [],
   modifiersPerEncounter: [],
+  modifierSettingsVersion: 'two',
   logLevel: 'verbose',
   gamePanelPosition: { x: 'left', y: 0 },
   minimapPosition: { x: 'left', y: 0 },
@@ -460,6 +462,50 @@ describe('usePersistedSettings exhaustive untrusted boundary', () => {
         },
       }).modifiersPerEncounter,
     ).toEqual({ sol_heredit: { doom: 2, blasphemy: 3 }, all_off: {} });
+  });
+
+  describe('the version 1 modifier migration', () => {
+    const LEGACY = { sol_heredit: { blasphemy: 3 }, yama_p3: { blasphemy: 3 }, inferno: {} };
+
+    it("clears only Sol's saved Blasphemy III, once, and keeps everything else as saved", () => {
+      const migrated = normalizeSettings({ modifiersPerEncounter: LEGACY });
+      expect(migrated.modifiersPerEncounter).toEqual({ yama_p3: { blasphemy: 3 }, inferno: {} });
+      expect(migrated.modifierSettingsVersion).toBe(MODIFIER_SETTINGS_VERSION);
+      // Other saved Colosseum sets, an all-off one included, are the player's.
+      for (const kept of [{}, { blasphemy: 2 }, { blasphemy: 3, doom: 1 }]) {
+        expect(normalizeSettings({ modifiersPerEncounter: { sol_heredit: kept } }).modifiersPerEncounter).toEqual({
+          sol_heredit: kept,
+        });
+      }
+    });
+
+    it('is idempotent, and a Blasphemy III saved at the current version stays explicit', () => {
+      const once = normalizeSettings({ modifiersPerEncounter: LEGACY });
+      expect(normalizeSettings(once)).toEqual(once);
+      const chosen = {
+        ...once,
+        modifiersPerEncounter: { ...once.modifiersPerEncounter, sol_heredit: { blasphemy: 3 } },
+      };
+      expect(normalizeSettings(chosen).modifiersPerEncounter.sol_heredit).toEqual({ blasphemy: 3 });
+      expect(normalizeSettings(normalizeSettings(chosen))).toEqual(normalizeSettings(chosen));
+    });
+
+    it('holds across reloads: an explicit Blasphemy III saved after migrating survives the next load', () => {
+      localStorage.setItem(SETTINGS_KEY, JSON.stringify({ modifiersPerEncounter: LEGACY }));
+      const first = renderHook(() => usePersistedSettings());
+      expect(first.result.current[0].modifiersPerEncounter).toEqual({ yama_p3: { blasphemy: 3 }, inferno: {} });
+      act(() =>
+        first.result.current[1]('modifiersPerEncounter', {
+          ...first.result.current[0].modifiersPerEncounter,
+          sol_heredit: { blasphemy: 3 },
+        }),
+      );
+      first.unmount();
+      expect(readPersistedSettings().modifierSettingsVersion).toBe(MODIFIER_SETTINGS_VERSION);
+      const second = renderHook(() => usePersistedSettings());
+      expect(second.result.current[0].modifiersPerEncounter.sol_heredit).toEqual({ blasphemy: 3 });
+      second.unmount();
+    });
   });
 
   it('persists modifier selections and reads them back', () => {

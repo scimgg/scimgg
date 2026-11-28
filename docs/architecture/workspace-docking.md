@@ -62,7 +62,12 @@ Unavailable items are omitted without reordering the rest; Replay joins and leav
 `encounters/practiceChrome.tsx`. Its launcher sits before Replay; TopChrome does not branch on
 encounter names. Inferno provides **Edit layout**, using the tile-plan icon when the row switches
 to icons. Its matching mobile Tools destination opens the same `EncounterWorkbench` surface.
-Sol has no workbench; it uses the Modifiers picker.
+The Fortis Colosseum provides the same **Edit layout** for a run started on waves 1–11, under the
+same rules, for its start wave's layout and start tile. `EncounterTool.offered` leaves it out of a
+direct Sol start, which has no wave layout (its modifiers use the Modifiers picker); a wave run that
+reaches Sol keeps it visible but disabled ("Wave 12 has a fixed layout."), as wave 69 does.
+The workbench's frame and its short-landscape columns are shared (`.spawn-layout-tool` in
+`SpawnLayoutMap.css`); each encounter supplies the head, the map and the footer's actions.
 
 This workbench alone may cover the protected play area: spatial editing requires a legible arena
 map that cannot fit the ordinary 152px Fixed 1× control column. It is opaque and non-modal, with

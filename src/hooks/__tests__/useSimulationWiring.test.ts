@@ -1,9 +1,10 @@
 // @vitest-environment happy-dom
 
 import { act, cleanup, renderHook } from '@testing-library/react';
-import { type SetStateAction, StrictMode, useState } from 'react';
+import { type SetStateAction, StrictMode, useRef, useState } from 'react';
 import { afterEach, assert, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AudioEngine, EventAudioPlayer, FrameSoundTracker } from '../../audio';
+import { CacheManager } from '../../cache/CacheManager';
 import { visibleInPractice } from '../../components/MechanicsSettings';
 import { prayerFlickTimeline } from '../../components/prayerFlickTimeline';
 import {
@@ -13,11 +14,13 @@ import {
   setArenaConfig,
   setResolvedArenaConfig,
 } from '../../core/constants';
-import type { InfernoSnapshot } from '../../core/encounters/snapshot';
+import type { EncounterModifierSelection } from '../../core/encounters/encounterFactory';
+import { type InfernoSnapshot, isSolHereditSnapshot } from '../../core/encounters/snapshot';
 import type { EquipmentClickSlot } from '../../core/encounters/types';
 import { ReplayRecorder } from '../../core/ReplayRecorder';
 import { SimulationEngine } from '../../core/SimulationEngine';
 import type { WorldState } from '../../core/WorldState';
+import { colosseumRunState } from '../../encounters/colosseum/waves/snapshot';
 import { loadInfernoArena } from '../../encounters/inferno/__tests__/infernoArenaFixture';
 import { INFERNO_SPAWN_LAYOUT_KEY } from '../../encounters/inferno/controls';
 import { buildInfernoControls, InfernoEncounter } from '../../encounters/inferno/InfernoEncounter';
@@ -28,6 +31,7 @@ import { encounterModuleForKind } from '../../encounters/modules';
 import { encounterSetupStage } from '../../encounters/practiceChrome';
 import * as engineFactory from '../../encounters/simulationEngineFactory';
 import { SolHereditEncounter } from '../../encounters/solHeredit/SolHereditEncounter';
+import type { SolHereditPublicState } from '../../encounters/solHeredit/snapshot';
 import { YamaEncounter } from '../../encounters/yamaP3/YamaEncounter';
 import { runSyntheticInput } from '../../input/inputProvenance';
 import { diffResumableState } from '../../replay/resumableState';
@@ -42,6 +46,7 @@ import { type Coordinate, DEFAULT_MECHANICS_CONFIG, type MechanicsConfig, Prayer
 import { cloneInventory, type WornLoadout } from '../../util/loadoutUtils';
 import { resetPageActivityForTests } from '../pageActivity';
 import { type UseAudioManagerReturn, useAudioManager } from '../useAudioManager';
+import { type EncounterManagerBindings, useEncounterManager } from '../useEncounterManager';
 import { committedPrayerPresentation, type SceneState, useSimulationWiring } from '../useSimulationWiring';
 import { useViewportInteraction } from '../useViewportInteraction';
 
@@ -5195,4 +5200,326 @@ describe('useSimulationWiring restored practice on the real clock', () => {
     expect(branch.frames).toHaveLength(9);
     view.unmount();
   }, 10_000);
+});
+
+describe('Practice Restart across the Colosseum default modifier tiers', () => {
+  const KIND = 'sol_heredit';
+  let nowMs: number;
+  let frames: Map<number, FrameRequestCallback>;
+  let audio: AudioEngine | null = null;
+  let arena: ReturnType<typeof getArenaConfig>;
+  let allowUnbounded: boolean;
+
+  beforeEach(() => {
+    resetPageActivityForTests();
+    arena = getArenaConfig();
+    allowUnbounded = getArenaAllowUnboundedFallback();
+    nowMs = 0;
+    frames = new Map();
+    let nextId = 0;
+    vi.spyOn(performance, 'now').mockImplementation(() => nowMs);
+    vi.spyOn(document, 'hasFocus').mockReturnValue(true);
+    vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
+      frames.set(++nextId, callback);
+      return nextId;
+    });
+    vi.spyOn(window, 'cancelAnimationFrame').mockImplementation((id) => {
+      frames.delete(id);
+    });
+  });
+
+  afterEach(() => {
+    audio?.dispose();
+    audio = null;
+    setArenaConfig(arena, allowUnbounded);
+    resetPageActivityForTests();
+  });
+
+  function advanceFrame(timeMs: number): void {
+    nowMs = timeMs;
+    const queued = [...frames.values()];
+    frames.clear();
+    act(() => {
+      for (const callback of queued) callback(timeMs);
+    });
+  }
+
+  /** The encounter manager and the wiring composed as App composes them, over saved maps in state. */
+  function renderColosseum(startWave: number, saved?: EncounterModifierSelection) {
+    const params = createParams({
+      autoAdvance: true,
+      isFullyLoaded: true,
+      rendererType: 'none',
+      fightStartCountdownTicks: 3,
+    });
+    audio = params.audioEngine;
+    const startRun = vi.spyOn(ReplayRecorder.prototype, 'startRun');
+    const view = renderHook(() => {
+      const [mechanicsConfigPerEncounter, setMechanics] = useState<Record<string, Partial<MechanicsConfig>>>({
+        [KIND]: { colosseumStartWave: String(startWave) },
+      });
+      const [modifiersPerEncounter, setModifiers] = useState<Record<string, EncounterModifierSelection>>(
+        saved ? { [KIND]: saved } : {},
+      );
+      const bindingsRef = useRef<EncounterManagerBindings | null>(null);
+      const manager = useEncounterManager({
+        attackStylePerCategory: {},
+        bindingsRef,
+        cacheManagerRef: { current: new CacheManager() },
+        getEncounterEquipment: () => ({}),
+        getEncounterInventory: createEmptyInventory,
+        getEncounterSupplies: createEmptyCombatSupplies,
+        isFullyLoaded: false,
+        mechanicsConfigPerEncounter,
+        modifiersPerEncounter,
+        startingHpPerEncounter: {},
+        objTypeLoader: null,
+        playerStats: DEFAULT_PLAYER_CONFIG.stats,
+        setEncounterEquipment: vi.fn(),
+        setEncounterInventory: vi.fn(),
+        setEncounterSupplies: vi.fn(),
+        updateMechanicsConfigPerEncounter: setMechanics,
+        updateModifiersPerEncounter: setModifiers,
+        updateStartingHpPerEncounter: vi.fn(),
+      });
+      const wiring = useSimulationWiring({
+        ...params,
+        activeMechanicsConfig: manager.activeMechanicsConfig,
+        sceneState: manager.sceneState,
+        setSceneState: manager.setSceneState,
+        createRestartEngine: manager.createRestartEngine,
+      });
+      bindingsRef.current = {
+        engineRef: wiring.engineRef,
+        playerEquipmentRef: wiring.playerEquipmentRef,
+        playerInventoryRef: wiring.playerInventoryRef,
+        playerCombatSuppliesRef: wiring.playerCombatSuppliesRef,
+        replay: wiring.replay,
+        setEngine: wiring.setEngine,
+        setIsSceneReady: wiring.setIsSceneReady,
+        setPlayerConfig: params.setPlayerConfig,
+        setSimulationState: wiring.setSimulationState,
+        setTargetTile: wiring.setTargetTile,
+        simulationStateRef: { current: wiring.simulationState },
+        targetTileRef: wiring.targetTileRef,
+      };
+      return { manager, wiring };
+    });
+    act(() => view.result.current.manager.enterEncounter(KIND));
+    expect(view.result.current.manager.sceneState.kind).toBe('encounter');
+    const current = () => view.result.current;
+    const setWave = (wave: number) =>
+      act(() => {
+        const mechanics = current().manager.getSavedSetup(KIND).mechanics;
+        current().manager.persistEncounterMechanicsConfig(KIND, { ...mechanics, colosseumStartWave: String(wave) });
+      });
+    const restart = () => {
+      startRun.mockClear();
+      act(() => current().wiring.handleReset());
+    };
+    /** What the live run, its recording and a reconstruction from that recording each start with. */
+    const runModifiers = () => {
+      const engine = current().wiring.engine;
+      const recorded = current().wiring.replay.exportReplayData().runConfig;
+      if (!recorded) expect.fail('Expected a recorded bootstrap');
+      const rebuilt = engineFactory.createSimulationEngineFromRunConfig(recorded, null);
+      if (!rebuilt) expect.fail('Expected the recording to rebuild');
+      return {
+        live: engine.getRunConfig().bootstrap?.encounterConfig,
+        recorded: recorded.bootstrap?.encounterConfig,
+        rebuilt: rebuilt.getRunConfig().bootstrap?.encounterConfig,
+        inForce: snapshotState(engine).modifiers,
+        rebuiltInForce: snapshotState(rebuilt).modifiers,
+      };
+    };
+    const offer = () => colosseumRunState(snapshotState(current().wiring.engine)).offer;
+    return { current, setWave, restart, runModifiers, offer, startRun };
+  }
+
+  function snapshotState(engine: SimulationEngine): SolHereditPublicState {
+    const snapshot = engine.getState().encounter;
+    if (!isSolHereditSnapshot(snapshot)) expect.fail('Expected a Fortis Colosseum snapshot');
+    return snapshot.state;
+  }
+
+  it('restarts an untouched direct Sol start on wave 1 with no modifiers and its fixed first offer', () => {
+    const run = renderColosseum(12);
+    expect(run.runModifiers().live).toEqual({ modifiers: { blasphemy: 3 } });
+    const entered = run.current().wiring.engine;
+    run.setWave(1);
+    nowMs = 1000;
+    run.restart();
+    // A fresh engine, as an entry would build it, started and recorded once.
+    expect(run.current().wiring.engine).not.toBe(entered);
+    expect(run.startRun).toHaveBeenCalledOnce();
+    expect(run.runModifiers()).toEqual({
+      live: undefined,
+      recorded: undefined,
+      rebuilt: undefined,
+      inForce: {},
+      rebuiltInForce: {},
+    });
+    expect(run.offer()).toMatchObject({
+      wave: 1,
+      options: [
+        { id: 'blasphemy', tier: 1 },
+        { id: 'relentless', tier: 1 },
+        { id: 'frailty', tier: 1 },
+      ],
+    });
+    // A wave start opens on its choice, which starts the wave: no countdown holds it.
+    expect(run.current().wiring.fightStartCountdown).toBeNull();
+    advanceFrame(1599);
+    expect(run.current().wiring.engine.currentTick).toBe(0);
+    advanceFrame(1600);
+    expect(run.current().wiring.engine.currentTick).toBe(1);
+    expect(entered.currentTick).toBe(0);
+  });
+
+  it('counts down only a direct Sol start, on entry and on every restart; a wave start opens on its choice', () => {
+    const wave = renderColosseum(4);
+    expect(wave.current().wiring.fightStartCountdown).toBeNull();
+    expect(wave.offer()).toMatchObject({ wave: 4 });
+    nowMs = 1000;
+    wave.restart();
+    expect(wave.current().wiring.fightStartCountdown).toBeNull();
+    advanceFrame(1600);
+    expect(wave.current().wiring.engine.currentTick).toBe(1);
+    // The offer is open from tick 0, as with the countdown off; nothing about it waited.
+    expect(wave.offer()).toMatchObject({ wave: 4 });
+    // The setup changed to Sol: the next restart counts down, and the one after back to a wave does not.
+    wave.setWave(12);
+    nowMs = 2000;
+    wave.restart();
+    expect(wave.current().wiring.fightStartCountdown).toMatchObject({ startsAtMs: 2000, endsAtMs: 3800 });
+    advanceFrame(3799);
+    expect(wave.current().wiring.engine.currentTick).toBe(0);
+    wave.setWave(4);
+    nowMs = 3000;
+    wave.restart();
+    // The restart drops the Sol run's countdown with its run.
+    expect(wave.current().wiring.fightStartCountdown).toBeNull();
+    advanceFrame(3599);
+    expect(wave.current().wiring.engine.currentTick).toBe(0);
+    advanceFrame(3600);
+    expect(wave.current().wiring.engine.currentTick).toBe(1);
+    cleanup();
+
+    nowMs = 0;
+    const sol = renderColosseum(12);
+    expect(sol.current().wiring.fightStartCountdown).toMatchObject({ startsAtMs: 0, endsAtMs: 1800 });
+  });
+
+  it('repeats a saved layout and start tile on every restart (Ctrl+R), while random spawns stay random', () => {
+    const run = renderColosseum(4);
+    const save = (patch: Partial<MechanicsConfig>) =>
+      act(() => {
+        const mechanics = run.current().manager.getSavedSetup(KIND).mechanics;
+        run.current().manager.persistEncounterMechanicsConfig(KIND, { ...mechanics, ...patch });
+      });
+    const started = () => {
+      const engine = run.current().wiring.engine;
+      return {
+        setup: snapshotState(engine).runSetup,
+        tile: engine.getState().playerPosition,
+        seeds: engine.getRunConfig().encounter.seeds,
+      };
+    };
+    // Random: each restart draws a new seed, so its spawns are new.
+    run.restart();
+    const firstRandom = started();
+    run.restart();
+    expect(started().seeds).not.toEqual(firstRandom.seeds);
+    expect(started().setup).toMatchObject({ startSpawnLayout: '', startPlayerTile: '23,38' });
+
+    save({ colosseumSpawnLayout: '4:s----------m', colosseumStartTile: '30,40' });
+    for (let attempt = 0; attempt < 2; attempt++) {
+      run.restart();
+      expect(started()).toMatchObject({
+        setup: { startSpawnLayout: '4:s----------m', startPlayerTile: '30,40' },
+        tile: [30, 40],
+      });
+      // The recording keeps the setup, so its replay opens the same way.
+      expect(run.current().wiring.replay.exportReplayData().runConfig?.bootstrap?.mechanicsConfig).toMatchObject({
+        colosseumSpawnLayout: '4:s----------m',
+        colosseumStartTile: '30,40',
+      });
+    }
+    // Back to random spawns: the next restart is random again.
+    save({ colosseumSpawnLayout: '', colosseumStartTile: '' });
+    run.restart();
+    expect(started()).toMatchObject({ setup: { startSpawnLayout: '' }, tile: [23, 38] });
+  });
+
+  it("starts the layout tool's wave as the Inferno's Go does: the wave being fought keeps its seed", () => {
+    const run = renderColosseum(4);
+    const seeds = () => run.current().wiring.engine.getRunConfig().encounter.seeds;
+    const before = seeds();
+    act(() => {
+      run.current().wiring.handleExecuteEncounterCommand({ encounter: 'sol_heredit', type: 'go-to-wave', wave: 4 });
+    });
+    expect(seeds()).toEqual(before);
+    expect(run.current().wiring.fightStartCountdown).toBeNull();
+    act(() => {
+      run.current().wiring.handleExecuteEncounterCommand({ encounter: 'sol_heredit', type: 'go-to-wave', wave: 6 });
+    });
+    expect(seeds()).not.toEqual(before);
+    expect(colosseumRunState(snapshotState(run.current().wiring.engine)).startWave).toBe(6);
+  });
+
+  it('restarts an untouched wave 1 start as the direct Sol fight with Blasphemy III', () => {
+    const run = renderColosseum(1);
+    expect(run.runModifiers().live).toBeUndefined();
+    run.setWave(12);
+    run.restart();
+    expect(run.startRun).toHaveBeenCalledOnce();
+    expect(run.runModifiers()).toEqual({
+      live: { modifiers: { blasphemy: 3 } },
+      recorded: { modifiers: { blasphemy: 3 } },
+      rebuilt: { modifiers: { blasphemy: 3 } },
+      inForce: { blasphemy: 3 },
+      rebuiltInForce: { blasphemy: 3 },
+    });
+    expect(run.offer()).toBeNull();
+  });
+
+  it('resolves a restart exactly as a fresh entry at the same setup', () => {
+    for (const [from, to] of [
+      [12, 1],
+      [1, 12],
+      [3, 8],
+    ]) {
+      const restarted = renderColosseum(from);
+      restarted.setWave(to);
+      restarted.restart();
+      const entered = renderColosseum(to);
+      expect(restarted.runModifiers()).toEqual(entered.runModifiers());
+      // Offers past wave 1 are drawn from each run's own seed; the wave they lead into is the setup's.
+      expect(restarted.offer()?.wave).toEqual(entered.offer()?.wave);
+      cleanup();
+    }
+  });
+
+  it('keeps a saved set, an all-off one included, through restarts both ways on the same engine', () => {
+    for (const saved of [{}, { doom: 2 }, { blasphemy: 3 }] as EncounterModifierSelection[]) {
+      const run = renderColosseum(12, saved);
+      const expected = Object.keys(saved).length > 0 ? { modifiers: saved } : undefined;
+      const entered = run.current().wiring.engine;
+      for (const wave of [1, 12, 6]) {
+        run.setWave(wave);
+        const attempt = run.current().wiring.runAttempt;
+        run.restart();
+        expect(run.startRun).toHaveBeenCalledOnce();
+        expect(run.current().wiring.engine).toBe(entered);
+        // Another attempt on the same engine, which run-local UI keys its state by.
+        expect(run.current().wiring.runAttempt).not.toBe(attempt);
+        const modifiers = run.runModifiers();
+        expect(modifiers.live).toEqual(expected);
+        expect(modifiers.recorded).toEqual(expected);
+        expect(modifiers.rebuilt).toEqual(expected);
+      }
+      cleanup();
+    }
+  });
 });

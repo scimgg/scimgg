@@ -500,6 +500,11 @@ export interface GridProps {
   };
   /** Where the window-fixed hint toast rests on the bottom-left corner this lays out (ZoomHintToast). */
   onHintToastAnchorChange?: (anchor: HintToastAnchor) => void;
+  /**
+   * The visible scene (what the sidebars leave of it, the Fixed client's own viewport), in window
+   * CSS pixels, reported on a change: window-level prompts center on it (the Colosseum's choice).
+   */
+  onVisibleSceneRectChange?: (rect: Rect) => void;
   uiScale?: number;
   /** Auto over the game view: every plugin overlay's size. */
   overlayScale?: number;
@@ -1214,6 +1219,7 @@ export const Grid: React.FC<Partial<GridProps>> = (props) => {
     liveSafeAreaInsets,
     mobileTools,
     onHintToastAnchorChange,
+    onVisibleSceneRectChange,
     statusBarsShowValues = true,
     uiScale,
     overlayScale = 1,
@@ -1819,6 +1825,16 @@ export const Grid: React.FC<Partial<GridProps>> = (props) => {
     const right = Math.min(scene.x + scene.width, size.width - (effectiveViewportInsets?.right ?? 0));
     return right > left ? { ...scene, x: left, width: right - left } : scene;
   }, [fixedSceneRect, size.width, size.height, effectiveViewportInsets]);
+  // Reported in window pixels through the frame's measured placement, not measured again.
+  useEffect(() => {
+    if (!onVisibleSceneRectChange) return;
+    onVisibleSceneRectChange({
+      x: framePlacement.x + visibleSceneRect.x * framePlacement.scaleX,
+      y: framePlacement.y + visibleSceneRect.y * framePlacement.scaleY,
+      width: visibleSceneRect.width * framePlacement.scaleX,
+      height: visibleSceneRect.height * framePlacement.scaleY,
+    });
+  }, [onVisibleSceneRectChange, visibleSceneRect, framePlacement]);
   // One rectangle for rendering and scene-owned presentation. The latter sits
   // above client chrome without promoting the renderer over interactive panels.
   const sceneViewportStyle: React.CSSProperties = {

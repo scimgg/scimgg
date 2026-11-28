@@ -43,7 +43,10 @@ import {
   SOL_VOLATILITY_DELAY_TICKS,
 } from './constants';
 
-/** Sol owns modifier spawn/death schedules; shared helpers own hit selection and damage ranges. */
+/**
+ * Sol owns modifier spawn/death schedules; shared helpers own hit selection and damage ranges. Spawn
+ * deadlines are relative to `controlTick`, the world tick Sol is added (0 for a direct wave-12 start).
+ */
 export class SolModifierEffects {
   private spawned = false;
   private beesSpawned = false;
@@ -60,7 +63,10 @@ export class SolModifierEffects {
   /** Totems spawned this run, so a new totem never reuses a corpse's id. */
   private totemCount = 0;
 
-  constructor(private readonly selection: EncounterModifierSelection) {}
+  constructor(
+    private readonly selection: EncounterModifierSelection,
+    private readonly controlTick = 0,
+  ) {}
 
   reset(): void {
     this.spawned = false;
@@ -167,7 +173,7 @@ export class SolModifierEffects {
     const orbIds = new Set(this.orbs(ctx.world).map((orb) => orb.id));
     const movements = [...(ctx.npcMovements?.values() ?? [])].filter((move) => orbIds.has(move.npcId));
     const damages = tier ? this.solarflareDamage.resolveTick(ctx, movements, tier) : [];
-    if (bossAlive && this.selection.bees && !this.beesSpawned && ctx.tick >= SOL_BEES_SPAWN_TICK) {
+    if (bossAlive && this.selection.bees && !this.beesSpawned && ctx.tick >= this.controlTick + SOL_BEES_SPAWN_TICK) {
       this.beesSpawned = true;
       for (const bee of createBeeSwarms({
         tier: this.selection.bees,
@@ -183,7 +189,12 @@ export class SolModifierEffects {
         });
       }
     }
-    if (bossAlive && this.selection.quartet && !this.quartetSpawned && ctx.tick >= SOL_QUARTET_SPAWN_TICK) {
+    if (
+      bossAlive &&
+      this.selection.quartet &&
+      !this.quartetSpawned &&
+      ctx.tick >= this.controlTick + SOL_QUARTET_SPAWN_TICK
+    ) {
       // One warbander for the whole fight: it is never replaced after dying. Both draws come from
       // the encounter stream only while Quartet is on, so other runs keep their seeded rolls.
       this.quartetSpawned = true;
@@ -207,7 +218,7 @@ export class SolModifierEffects {
         damages.push(...this.beeRules.resolveLocalEffects(bee, { ...ctx, random }));
       }
     }
-    if (tier && bossAlive && !this.spawned && ctx.tick >= SOL_SOLARFLARE_SPAWN_TICK) {
+    if (tier && bossAlive && !this.spawned && ctx.tick >= this.controlTick + SOL_SOLARFLARE_SPAWN_TICK) {
       this.spawned = true;
       for (const [index, corners] of SOL_SOLARFLARE_ROUTES.entries()) {
         ctx.spawnNpc(
@@ -216,7 +227,7 @@ export class SolModifierEffects {
             corners,
             tier,
             spawnTick: ctx.tick,
-            firstStepTick: SOL_SOLARFLARE_FIRST_STEP_TICK,
+            firstStepTick: this.controlTick + SOL_SOLARFLARE_FIRST_STEP_TICK,
           }),
         );
       }

@@ -34,6 +34,29 @@ describe('useTileMarkers', () => {
     expect(result.current.effectiveMarkers).toEqual(preset.markers);
   });
 
+  it('enables the Colosseum pack on a fresh install and keeps it off once switched off', () => {
+    const preset = getPresetById('sol_heredit_colosseum');
+    expect(preset).toBeDefined();
+    if (!preset) return;
+
+    const first = renderHook(() => useTileMarkers('sol_heredit'));
+    expect(first.result.current.activePresetIds).toEqual(['sol_heredit_colosseum']);
+    expect(first.result.current.effectiveMarkers).toEqual(preset.markers);
+
+    act(() => {
+      first.result.current.togglePreset('sol_heredit_colosseum');
+    });
+    expect(first.result.current.activePresetIds).toEqual([]);
+    first.unmount();
+
+    expect(JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '{}').presetOverrides).toEqual({
+      sol_heredit: { sol_heredit_colosseum: false },
+    });
+    const { result } = renderHook(() => useTileMarkers('sol_heredit'));
+    expect(result.current.activePresetIds).toEqual([]);
+    expect(result.current.effectiveMarkers).toEqual([]);
+  });
+
   it("loads the encounter's markers and the display settings from localStorage", () => {
     localStorage.setItem(
       STORAGE_KEY,

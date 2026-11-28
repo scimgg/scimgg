@@ -448,6 +448,10 @@ export class SceneCompositor {
   private readonly failedNpcTypeLoadAttempts = new Set<number>();
   protected effectTick = 0;
   private primaryCycle = 0;
+  /** The client cycle this frame displays (30 per tick), for an encounter drawing its own effects. */
+  protected get displayedCycle(): number {
+    return this.primaryCycle;
+  }
   private replayProjectileWork: ReplayProjectileWork | undefined;
   /**
    * The history cutoff of the context this build actually renders. A restored presentation gains its
@@ -1213,7 +1217,7 @@ export class SceneCompositor {
    * Where an `attached` graphic rides `actorId` this frame: the player's rendered tile center on the
    * ground, or an NPC's rendered model (position and facing) while it stands; null while it is not drawn.
    */
-  private resolveAttachedActor(
+  protected resolveAttachedActor(
     actorId: string,
     state: Pick<SimulationState, 'npcs'>,
     playerVisualPosition: readonly [number, number],

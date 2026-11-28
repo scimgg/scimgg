@@ -9,19 +9,20 @@ settle it, is in the [unverified behavior register](./sol-heredit-unverified.md)
 
 The captures are private; the facts the tests use are extracted into
 `src/encounters/solHeredit/__tests__/fixtures/`, `src/npcs/colosseum/__tests__/fixtures/` and
-`src/encounters/colosseum/modifiers/__tests__/fixtures/`. K, M, N, L, A and B are contiguous over the
-listed ticks.
+`src/encounters/colosseum/modifiers/__tests__/fixtures/`. All seven are contiguous over the listed
+ticks. C and K are one run: K continues C at wave 12 (C:3728..K:3958 is not captured). The wave
+captures are described in the [Fortis Colosseum facts spec](./fortis-colosseum-facts-spec.md#sources).
 Sim coordinates are world coordinates minus `(1792, 3072)`.
 
 | Alias | File | Ticks | Contents | Outcome |
 |---|---|---|---|---|
-| K | `colosseum-sol-heredit-packet-data.txt` | 3959..4237 | Sol; Frailty and Doom records present | Sol killed |
+| K | `colosseum-sol-heredit-packet-data.txt` | 3959..4237 | Sol, wave 12 of C's run; Frailty and Doom records present | Sol killed |
 | M | `colosseum-sol-heredit-solar-flare-doom-volatility-packet-data.txt` | 8266..8537 | Sol; Solarflare I, Doom, Volatility | Sol killed |
 | N | `colosseum-sol-heredit-packet-data-2.txt` | 7279..7796 | Sol; Doom and Volatility records present | Sol killed |
 | L | `colosseum-sol-heredit-long-fight-packet-data-3.txt` | 3422..5848 | Sol; Relentless II from L:3440 (stacks 1→2), Solarflare | Sol killed |
-| A | `colosseum-waves-1-12-damage-trials-solarflare3-volatility3-bees1-totemic-doom1-death-packet-data.txt` | 770..5369 | Waves 1–11 and Sol; Solarflare III, Volatility III, Bees I, Totemic, Doom; Relentless rank 0 throughout | Player death at A:5308; Sol not killed |
-| B | `colosseum-waves-bees-death(no-sol)-packet-data-1.txt` | 1821..3435 | Waves only; Bees I at wave 5 (B:2356), II at waves 6–7 (B:2625), III at wave 8 (B:3342); Relentless III from B:2366; antipoison active (negative `poison` varp) | No Sol fight |
-| C | `colosseum-no-sol-packet-data.txt` | — | Waves 1–11 only | No Sol fight |
+| A | `colosseum-waves-1-12-damage-trials-solarflare3-volatility3-bees1-totemic-doom1-death-packet-data.txt` | 770..5369 | Waves 3–11 and Sol (it opens in the wave-3 intermission; first `Wave: 3` at A:837); Solarflare III, Volatility III, Bees I, Totemic, Doom; Relentless rank 0 throughout | Player death at A:5308; Sol not killed |
+| B | `colosseum-waves-bees-death(no-sol)-packet-data-1.txt` | 1821..3435 | Waves only; Bees I at wave 5 (B:2356), II at waves 6–7 (B:2625), III at wave 8 (B:3342); Relentless III from B:2032 (in force from wave 3, B:2037); antipoison active (negative `poison` varp) | No Sol fight |
+| C | `colosseum-no-sol-packet-data.txt` | 1418..3727 | Waves 1–11, ending in the 11→12 intermission; K continues the same run | No Sol fight in C (Sol killed in K) |
 
 | Sol fight | K | M | N | L | A |
 |---|---|---|---|---|---|

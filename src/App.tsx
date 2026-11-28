@@ -10,6 +10,7 @@ import {
   useState,
 } from 'react';
 import { createPortal } from 'react-dom';
+import { INTERFACE_SOUNDS, type PlayInterfaceSound } from './audio/interfaceSounds';
 import './App.css';
 import './components/LoadingScreen.css';
 import { CacheManager } from './cache/CacheManager';
@@ -82,6 +83,7 @@ import { canonicalEncounterKind } from './encounters/catalog';
 import { INFERNO_KIND } from './encounters/inferno/constants';
 import { infernoSetupQuery } from './encounters/inferno/setupLink';
 import { encounterControlsForKind } from './encounters/modules';
+import { EncounterRunPrompt } from './encounters/practiceChrome';
 import { encounterRegistry } from './encounters/registry';
 import type { DevHarnessBoot, DevHarnessSource } from './harness/devHarnessTypes';
 import { useAntiDrag } from './hooks/useAntiDrag';
@@ -124,7 +126,7 @@ import { useZukSetTimer } from './hooks/useZukSetTimer';
 import { osmChromeScale } from './layout/osmClientLayout';
 import { osmFrame, osmFramePlaced } from './layout/osmFrame';
 import { DEFAULT_MOBILE_TOOL_WINDOW, type MobileToolWindowState, toolWindowReducer } from './layout/osmToolWindowState';
-import { fixedFrameSizeAtScale, placeFixedFrame } from './layout/osrsClientLayout';
+import { fixedFrameSizeAtScale, placeFixedFrame, type Rect } from './layout/osrsClientLayout';
 import { overlaySpacesForLayout } from './layout/overlayScale';
 import { fitReplayWorkspace, recordedWorkspace, resolveViewportSizeWarning } from './layout/replayWorkspaceLayout';
 import type { RenderStatus } from './render/core/renderer';
@@ -450,6 +452,11 @@ function AppShell({ devHarness }: { devHarness?: DevHarnessBoot } = {}) {
     tickAudioMetronomeVolume,
     soundEffectCache: cacheManagerRef.current,
   });
+  // The client's own interface sounds (a press or hover on an interface), on the SFX channel.
+  const playInterfaceSound = useCallback<PlayInterfaceSound>(
+    (sound) => audioEngine.play(INTERFACE_SOUNDS[sound], undefined, `interface:${sound}`),
+    [audioEngine],
+  );
   const {
     bootstrapState: { cacheDownloadState, isFullyLoaded },
     loaders,
@@ -543,6 +550,8 @@ function AppShell({ devHarness }: { devHarness?: DevHarnessBoot } = {}) {
     mapLocs,
     persistEncounterMechanicsConfig,
     saveEncounterModifiers,
+    resetEncounterModifiers,
+    createRestartEngine,
     saveEncounterStartingHp,
     resetSavedSetup,
     persistEquipmentEncounterKind,
@@ -1173,6 +1182,7 @@ function AppShell({ devHarness }: { devHarness?: DevHarnessBoot } = {}) {
     fightStartCountdownActive,
     fightStartCountdownPhase,
     fightStartPresentation,
+    runAttempt,
     handleFightStartCountdownFinished,
     fastForwardTicks,
     setTutorialPaused,
@@ -1265,6 +1275,7 @@ function AppShell({ devHarness }: { devHarness?: DevHarnessBoot } = {}) {
     speedMultiplier,
     inputLagMs,
     updateAttackStylePerCategory: (next) => updateSetting('attackStylePerCategory', next),
+    createRestartEngine,
   });
   // What the graphics hold has paused, for the 3D view's status notice to name: the replay being
   // viewed, or a fight still in progress. Nothing in the lobby, while loading or once a fight ends.
@@ -1432,6 +1443,8 @@ function AppShell({ devHarness }: { devHarness?: DevHarnessBoot } = {}) {
   // Where the window-fixed hint toast rests, reported by Grid, which lays out the bottom-left corner
   // it sits on.
   const [hintToastAnchor, setHintToastAnchor] = useState<HintToastAnchor | null>(null);
+  // The visible scene in window CSS pixels, as Grid reports it on a change: a desktop's run prompt centers on it.
+  const [visibleSceneRect, setVisibleSceneRect] = useState<Rect | null>(null);
   // The Mobile chrome's scale on this screen, from the whole frame and its safe area. One value
   // for the gameframe Grid draws, the left column drawn here and the recording, so a recording
   // carries exactly the scale that was on screen.
@@ -1999,9 +2012,15 @@ function AppShell({ devHarness }: { devHarness?: DevHarnessBoot } = {}) {
       setEncounterLoadout(INFERNO_KIND, loadout);
     },
   });
+  // A former slug's run setup (`/sol-heredit` is wave 12) is saved and started as a link's would be.
+  const enterRoute = useCallback(
+    (kind: string, mechanics?: Readonly<Partial<MechanicsConfig>>) =>
+      enterEncounter(kind, undefined, mechanics ? { mechanics } : undefined),
+    [enterEncounter],
+  );
   useRouting(
     sceneState,
-    enterEncounter,
+    enterRoute,
     enterLobby,
     encounterRegistry,
     infernoRouteQuery,
@@ -2733,6 +2752,7 @@ function AppShell({ devHarness }: { devHarness?: DevHarnessBoot } = {}) {
                 modifiers={desc?.modifiers}
                 modifierSelection={saved.modifiers}
                 onModifierSelectionChange={(selection) => saveEncounterModifiers(setupKind, selection)}
+                onModifierSelectionReset={saved.modifiersSaved ? () => resetEncounterModifiers(setupKind) : undefined}
                 setupNotes={desc?.setupNotes}
                 startingHitpoints={saved.startingHp}
                 onStartingHitpointsChange={(hitpoints) => saveEncounterStartingHp(setupKind, hitpoints)}
@@ -3319,6 +3339,7 @@ function AppShell({ devHarness }: { devHarness?: DevHarnessBoot } = {}) {
                             liveSafeAreaInsets={liveSafeAreaInsets}
                             mobileTools={mobileTools}
                             onHintToastAnchorChange={setHintToastAnchor}
+                            onVisibleSceneRectChange={setVisibleSceneRect}
                           />
                         </GridProviders>
                       </ReplayPresentationProvider>
@@ -3340,6 +3361,19 @@ function AppShell({ devHarness }: { devHarness?: DevHarnessBoot } = {}) {
                   isReplaying={replay.replayMode}
                   onReturnToLobby={handleReturnToLobby}
                 />
+                {/* The run's prompt between stages (the Colosseum's modifier choice): live fights only. */}
+                {!replay.replayMode && terminalDialog === 'none' && (
+                  <EncounterRunPrompt
+                    snapshot={simulationState.encounter}
+                    attempt={runAttempt}
+                    currentTick={simulationState.currentTick}
+                    execute={handleExecuteEncounterCommand}
+                    mobileLayout={isMobileLayout}
+                    mobileFrame={mobileMenuFrame}
+                    sceneRect={visibleSceneRect}
+                    playSound={playInterfaceSound}
+                  />
+                )}
                 {victoryDescriptor && (
                   <VictoryModal
                     replayPractice={replay.replayPractice}

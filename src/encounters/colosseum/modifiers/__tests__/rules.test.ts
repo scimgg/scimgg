@@ -7,6 +7,7 @@ import type {
   EncounterPlayerDamageInfo,
 } from '../../../../core/encounters/types';
 import { SimulationEngine } from '../../../../core/SimulationEngine';
+import { JAVELIN_ARTILLERY_SOURCE } from '../../../../npcs/colosseum/javelinColossus';
 import { createUnusedPlayerControlOps } from '../../../../test/helpers/playerControlStubs';
 import { createDefaultStats } from '../../../../types/playerState';
 import { type Coordinate, type MechanicsConfig, PrayerType } from '../../../../types/simulation';
@@ -128,6 +129,26 @@ describe('Doom', () => {
     expect(player.vitals.hp).toBe(93);
   });
 
+  it('adds two stacks for a javelin artillery hit (Wiki Javelin Colossus rev 15411467)', () => {
+    const { encounter, engine, player } = setup({ doom: 3 });
+    engine['applyEnvironmentalDamage']({ baseDamage: 20, attackType: 'typeless', source: JAVELIN_ARTILLERY_SOURCE }, 0);
+    expect(encounter.modifiers.doomStacks).toBe(2);
+    const events = engine['tickEvents'].flush();
+    expect(events.filter((event) => event.type === 'hitsplat_spawned')).toMatchObject([
+      { amount: 20, hitsplatType: 'damage' },
+      { amount: 2, hitsplatType: 'doom' },
+    ]);
+    expect(events.filter((event) => event.type === 'game_message')).toMatchObject([
+      { segments: [{ text: 'You now have ' }, { text: '2/5 points' }, { text: ' of ' }, { text: 'doom!' }] },
+    ]);
+    engine['applyDamage'](1, 'typeless', 'TestHazard', engine['worldState'].tick);
+    expect(encounter.modifiers.doomStacks).toBe(3);
+    engine['applyEnvironmentalDamage']({ baseDamage: 1, attackType: 'typeless', source: JAVELIN_ARTILLERY_SOURCE }, 0);
+    expect(encounter.modifiers.doomStacks).toBe(5);
+    expect(player.alive).toBe(false);
+    expect(engine.getState().failedCondition).toBe('Doom');
+  });
+
   it('keeps stacking without killing when infinite health is enabled', () => {
     const { encounter, engine, hit, player } = setup({ doom: 3 });
     engine.setMechanicsConfig({ infiniteHealth: true });
@@ -148,6 +169,13 @@ describe('Blasphemy', () => {
     engine['applyEnvironmentalDamage']({ baseDamage: 20, attackType: 'typeless', source }, 0);
     expect(player.prayerState.points).toBe(99);
     expect(encounter.modifiers.doomStacks).toBe(1);
+  });
+
+  it('drains prayer for javelin artillery, an enemy hit taken off-prayer', () => {
+    const { engine, player } = setup({ blasphemy: 3 });
+    player.prayerState.points = 99;
+    engine['applyEnvironmentalDamage']({ baseDamage: 33, attackType: 'typeless', source: JAVELIN_ARTILLERY_SOURCE }, 0);
+    expect(player.prayerState.points).toBe(99 - 18);
   });
 
   it.each([
@@ -208,6 +236,99 @@ describe('Frailty', () => {
     expect(player.vitals).toEqual({ hp: expected, maxHp: expected });
     expect(player.stats.hitpoints).toEqual({ current: expected, max: expected });
     expect(encounter.getEngineRules().itemRestrictions?.blockOverheal).toBe(true);
+  });
+});
+
+describe('Frailty tier changes', () => {
+  /** Accepts the next Frailty tier and has the engine re-read the rules, as a wave start does. */
+  const upgrade = ({ encounter, engine }: ReturnType<typeof setup>, tier: number) => {
+    encounter.modifiers.acceptModifier('frailty', tier);
+    engine['refreshEncounterRules'](false);
+  };
+
+  it('lowers max HP 99 -> 90 -> 80 from base, never compounding (B:2975, C:3064, K:3992)', () => {
+    const run = setup();
+    expect(run.player.vitals).toEqual({ hp: 99, maxHp: 99 });
+    upgrade(run, 1);
+    expect(run.player.vitals).toEqual({ hp: 90, maxHp: 90 });
+    upgrade(run, 2);
+    // II from 99 is 80, not 72 from 90.
+    expect(run.player.vitals).toEqual({ hp: 80, maxHp: 80 });
+    expect(run.player.stats.hitpoints).toEqual({ current: 80, max: 80 });
+    upgrade(run, 3);
+    expect(run.player.vitals).toEqual({ hp: 60, maxHp: 60 });
+  });
+
+  it('clamps HP to the new ceiling and never heals one already below it', () => {
+    const run = setup();
+    upgrade(run, 1);
+    run.player.vitals.hp = 85;
+    upgrade(run, 2);
+    expect(run.player.vitals).toEqual({ hp: 80, maxHp: 80 });
+    run.player.vitals.hp = 50;
+    upgrade(run, 3);
+    expect(run.player.vitals).toEqual({ hp: 50, maxHp: 60 });
+  });
+
+  it.each([
+    [10, 3, 6],
+    [1, 3, 1],
+  ] as const)('keeps at least 1 max HP: base %i at tier %i has %i', (base, frailty, expected) => {
+    expect(setup({ frailty }, base).player.vitals.maxHp).toBe(expected);
+  });
+});
+
+describe('live modifier changes', () => {
+  it('raises one tier per acceptance and refuses skipped, repeated or maxed tiers', () => {
+    const modifiers = new ColosseumModifierState({ blasphemy: 1 });
+    const before = modifiers.selection;
+    modifiers.acceptModifier('doom', 1);
+    modifiers.acceptModifier('blasphemy', 2);
+    expect(modifiers.selection).toEqual({ blasphemy: 2, doom: 1 });
+    expect(before).toEqual({ blasphemy: 1 });
+    expect(Object.isFrozen(modifiers.selection)).toBe(true);
+    expect(() => modifiers.acceptModifier('doom', 1)).toThrow(RangeError);
+    expect(() => modifiers.acceptModifier('doom', 3)).toThrow(RangeError);
+    modifiers.acceptModifier('quartet', 1);
+    expect(() => modifiers.acceptModifier('quartet', 2)).toThrow(RangeError);
+    modifiers.acceptModifier('blasphemy', 3);
+    expect(() => modifiers.acceptModifier('blasphemy', 4)).toThrow(RangeError);
+  });
+
+  it('builds rules from the live tiers and restores the opening selection on reset', () => {
+    const modifiers = new ColosseumModifierState();
+    expect(modifiers.getEngineRules()).toEqual({});
+    modifiers.acceptModifier('frailty', 1);
+    modifiers.acceptModifier('frailty', 2);
+    expect(modifiers.getEngineRules()).toMatchObject({
+      playerMaxHpReduction: 0.2,
+      itemRestrictions: { blockOverheal: true },
+    });
+    modifiers.doomStacks = 4;
+    modifiers.reset();
+    expect(modifiers.selection).toEqual({});
+    expect(modifiers.doomStacks).toBe(0);
+  });
+
+  it('kills at the threshold of the tier accepted mid-run once the rules are re-read', () => {
+    const { encounter, engine, hit, player } = setup({ doom: 1 });
+    encounter.modifiers.acceptModifier('doom', 2);
+    engine['encounterRules'] = encounter.getEngineRules();
+    for (let n = 1; n < 10; n++) hit(1);
+    expect(player.alive).toBe(true);
+    hit(1);
+    expect(engine.getState().failedCondition).toBe('Doom');
+  });
+
+  it('resets Doom points but not the tier at each wave start, announcing only a non-zero reset', () => {
+    const modifiers = new ColosseumModifierState({ doom: 2 });
+    expect(modifiers.startWave()).toBeNull();
+    modifiers.doomStacks = 3;
+    // C:1641 and A:4970: the green line on the wave's start tick.
+    expect(modifiers.startWave()).toEqual([{ text: 'Your Doom points have reset to 0.', color: '#229628' }]);
+    expect(modifiers.doomStacks).toBe(0);
+    expect(modifiers.selection).toEqual({ doom: 2 });
+    expect(modifiers.startWave()).toBeNull();
   });
 });
 

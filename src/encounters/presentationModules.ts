@@ -28,9 +28,11 @@ import { createYamaSceneBuilder } from '../render/scene/yamaSceneBuilder';
 import { createZukSceneBuilder } from '../render/scene/zukSceneBuilder';
 import { YAMA_NPC_ID } from '../rs/model/NpcModelLoader';
 import type { Coordinate, MechanicsConfig } from '../types/simulation';
+import { FIRST_COLOSSEUM_WAVE, LAST_COLOSSEUM_WAVE } from './colosseum/waves/waveTable';
 import { FIRST_INFERNO_WAVE, INFERNO_PRACTICE_START_TILE, WAVE_67_JAD_TILE, ZUK_WAVE } from './inferno/constants';
 import { INFERNO_START_WAVE_KEY } from './inferno/controls';
 import { ENCOUNTER_CORE_MODULES, encounterKindsOf } from './modules';
+import { COLOSSEUM_START_WAVE_KEY } from './solHeredit/controls';
 
 /** Orbit camera the scene opens on. Omit to accept the default south-facing view. */
 export interface EncounterCameraConfig {
@@ -125,6 +127,9 @@ const INFERNO_WAVES_ZOOM = 300;
 /** The ordinary waves' opening pitch: about halfway between the game's level default and top-down. */
 export const INFERNO_WAVES_PITCH = -50;
 
+/** The Fortis Colosseum waves' opening view: east (yaw 270), at the Inferno waves' pitch. */
+const COLOSSEUM_WAVES_CAMERA: EncounterCameraConfig = { yaw: 270, pitch: INFERNO_WAVES_PITCH, zoom: 220 };
+
 /** The view an encounter opens on when it declares no camera of its own. */
 export const FALLBACK_ENCOUNTER_CAMERA: EncounterCameraConfig = { yaw: 180, pitch: DEFAULT_ORBIT_PITCH };
 
@@ -165,11 +170,20 @@ export const ENCOUNTER_PRESENTATION_MODULES: readonly EncounterPresentationModul
     // arena (capture colosseum-sol-heredit-packet-data-2.txt, tick 7301). It sets no zoom,
     // so the player's own zoom carries over; we open at the game's default.
     defaultCamera: { yaw: 0, pitch: (-181 * 360) / 2048 },
+    // A wave start opens looking east across the arena from its west-side start tile, somewhat zoomed
+    // out (docs/encounters/fortis-colosseum-policy.md). One entry per wave rather than a waves
+    // default, so a start wave that is absent or unreadable (a direct Sol start) keeps Sol's view.
+    setupCameras: Array.from({ length: LAST_COLOSSEUM_WAVE - FIRST_COLOSSEUM_WAVE + 1 }, (_, index) => ({
+      mechanics: { [COLOSSEUM_START_WAVE_KEY]: String(FIRST_COLOSSEUM_WAVE + index) },
+      camera: COLOSSEUM_WAVES_CAMERA,
+    })),
     presentation: {
-      title: 'Sol Heredit',
-      tagline: 'Fortis Colosseum · Wave 12',
-      setupContext: 'Wave 12',
-      blurb: "Face Sol Heredit in the Fortis Colosseum's final wave, accessible now.",
+      // The whole Colosseum; Sol Heredit is its wave 12 and stays the portrait. The tagline's parts
+      // are the quick search's words for it, so "sol" still finds it.
+      title: 'Fortis Colosseum',
+      tagline: 'Colosseum · Waves 1–11 · Sol Heredit',
+      setupContext: 'Waves 1–12',
+      blurb: 'Practice the Fortis Colosseum from any wave, or go straight to Sol Heredit at wave 12.',
       wikiUrl: 'https://oldschool.runescape.wiki/w/Fortis_Colosseum/Strategies',
       // Include the tall crest while centering the face and shoulders, not the helmet alone.
       portrait: { npcTypeId: SOL_NPC_ID, framing: { yaw: -30, pitch: -12, focusHeight: 0.74, span: 0.58 } },

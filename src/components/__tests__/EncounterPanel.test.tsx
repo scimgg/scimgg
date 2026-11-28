@@ -992,7 +992,7 @@ describe('EncounterPanel setup notes', () => {
         expect(row.firstElementChild).toBe(label);
         expect(row.querySelector('button, a, img')).toBeNull();
       });
-      expect(screen.getByRole('heading', { name: `Modifiers (${count})` })).toBeVisible();
+      expect(screen.getByRole('heading', { name: `Modifiers going into wave 12 (${count})` })).toBeVisible();
     }
     expect(document.querySelector('.modifier-tiers')).toBeNull();
     expect(document.querySelector('.modifier-effect')).toBeNull();
@@ -1033,7 +1033,9 @@ describe('EncounterPanel setup notes', () => {
     expect(screen.queryByRole('list', { name: 'Selected modifiers' })).toBeNull();
     expect(screen.getByText('No modifiers selected.')).toBeVisible();
     fireEvent.click(modifiersHeader());
-    expect(document.querySelectorAll('.configurer-modifier-editor .modifier-row')).toHaveLength(10);
+    expect(document.querySelectorAll('.configurer-modifier-editor .modifier-row')).toHaveLength(
+      SOL_HEREDIT_MODIFIERS.length,
+    );
     fireEvent.click(screen.getByRole('button', { name: 'Quartet tier I' }));
     fireEvent.click(screen.getByRole('button', { name: 'Return to setup' }));
     expect(screen.getByRole('list', { name: 'Selected modifiers' })).toHaveTextContent('Quartet I');

@@ -128,6 +128,17 @@ Entering it goes through `resolveEncounterEntry` in `modules.ts`, which returns 
 Inferno's `retiredEntries` run setup (start wave 69), saved as a setup pick would be. Once entered,
 the address becomes `/inferno/`, and the saved start wave keeps a reload there at wave 69.
 
+### Legacy slugs
+
+The Fortis Colosseum is routed at `/colosseum`; its former `/sol-heredit` still opens a direct Sol
+Heredit start (wave 12). Its kind stays `sol_heredit`, so only the route changed.
+
+In code, `sol-heredit` is listed in the Colosseum's catalog entry as `legacySlugs`, which
+[`slugs.ts`](../../src/encounters/slugs.ts) derives into `LEGACY_SLUG_TO_KIND`. A legacy slug, unlike
+a retired kind, is a route alone: no saved data, command or recording names it. The router enters it
+through `resolveLegacySlugEntry` in `modules.ts`, at the module's `legacySlugEntries` run setup
+(start wave 12), saved over the rest as `/zuk`'s is. The address then becomes `/colosseum/`.
+
 ## Map footprint
 
 The core descriptor owns an encounter's map squares. `mapSquare` is the origin square: its
@@ -228,6 +239,9 @@ practice changes use `engine.setMechanicsConfig` without resetting ticks or acto
   `getDefaultPlayerStart(mechanics)` and `createNpcs` open that setup (the Inferno's wave 69 starts
   stages apart). A tick-zero mechanics edit calls `configureRunStart` again with an
   `EncounterRunStartContext` to swap the opening actors and start tile when the setup's stage changes.
+- The player opens facing the landing intro's `facingAngle`, else the setup's own
+  `getDefaultPlayerFacing(mechanics)` (a Colosseum wave start faces east), else north. A tick-zero
+  mechanics edit that changes that facing turns the unstarted player to it.
 - `createNpcs(playerStart)` and run-start setup must not derive NPC or encounter state from the
   player's start tile. Countdown start positioning commits a new start after the world is built
   ([movement and facing](movement-and-facing.md#countdown-start-positioning)); the Inferno (wave 69 included),

@@ -11,10 +11,11 @@ import {
   canReceiveKillTickSpell,
   canReceiveNewAttack,
   isCurrentActorInstance,
-  isNpcDeathReleaseDue,
+  isNpcDeathReleaseDueAt,
   isNpcLiving,
   lifeGenerationOf,
   type NpcDeathCauseStage,
+  type NpcDeathReleaseTiming,
   promoteHitQueueDeath,
   recordNpcLethalTransition,
 } from '../npcDeath';
@@ -426,15 +427,21 @@ export class CombatSystem {
   }
 
   /**
-   * The launch of an attack a dying NPC committed to before its death, on its death-animation tick
-   * (`isNpcDeathReleaseDue`). The only path that accepts a dying source; the target must still accept
-   * a new attack, and the hit then follows its own `sourceDeathPolicy` like any other.
+   * The launch of an attack a dying NPC committed to before its death, on the turn `timing` names: its
+   * promoted kill turn (`isNpcKillTurnReleaseDue`) or its death-animation tick (`isNpcDeathReleaseDue`).
+   * The only path that accepts a dying source; the target must still accept a new attack, and the hit
+   * then follows its own `sourceDeathPolicy` like any other.
    */
-  processDeathReleaseRequest(world: WorldState, request: PrevalidatedAttackRequest, bridge: CombatBridge): boolean {
+  processDeathReleaseRequest(
+    world: WorldState,
+    request: PrevalidatedAttackRequest,
+    bridge: CombatBridge,
+    timing: NpcDeathReleaseTiming,
+  ): boolean {
     const { attacker } = request;
     if (
       !this.isNpcActor(attacker) ||
-      !isNpcDeathReleaseDue(attacker, world.tick) ||
+      !isNpcDeathReleaseDueAt(attacker, world.tick, timing) ||
       !canReceiveNewAttack(request.target)
     )
       return false;

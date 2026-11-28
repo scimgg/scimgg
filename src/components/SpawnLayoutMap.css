@@ -1,0 +1,407 @@
+/* The spawn layout map (SpawnLayoutMap.tsx), shared by the encounters that edit a start layout.
+   Each encounter colors its own kinds (`.spawn-kind--<kind>` setting `--spawn-kind`) and draws
+   its own terrain; everything here is the map's interaction and look. Pointer and touch only. */
+
+.spawn-map-frame {
+  width: min(100%, 396px);
+  margin-inline: 0;
+}
+.spawn-progress {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  max-width: 396px;
+  min-height: 44px;
+}
+.spawn-progress__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  min-height: 44px;
+  flex: 0 0 auto;
+  justify-content: center;
+  white-space: nowrap;
+  padding: 4px 3px;
+  border: 1px solid var(--color-border);
+  border-radius: 0;
+  background: var(--color-surface);
+  color: var(--color-secondary);
+  font:
+    16px / 18px "RuneScape Plain 11",
+    sans-serif;
+  cursor: pointer;
+}
+.spawn-progress__swatch {
+  width: 8px;
+  height: 8px;
+  flex: none;
+  background: var(--spawn-kind);
+}
+.spawn-progress__chip:hover:not(:disabled) {
+  border-color: var(--color-secondary);
+}
+.spawn-progress__chip[aria-pressed="true"],
+.spawn-progress__chip[aria-pressed="true"]:hover {
+  border-color: var(--spawn-kind);
+  background: color-mix(in srgb, var(--spawn-kind) 15%, var(--color-surface));
+  color: var(--color-heading);
+}
+.spawn-progress__chip.is-complete {
+  border-color: var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+  cursor: default;
+}
+.spawn-progress__chip.is-complete .spawn-progress__swatch {
+  background: color-mix(in srgb, var(--spawn-kind) 35%, var(--color-surface));
+}
+.spawn-map__tools {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 44px;
+}
+.spawn-map__tools button {
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--color-secondary);
+  font:
+    16px / 18px "RuneScape Plain 11",
+    sans-serif;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.spawn-map__tools button:hover {
+  color: var(--color-accent-text);
+}
+.spawn-map__tools button:disabled {
+  color: var(--color-text-dim);
+  cursor: default;
+  text-decoration: none;
+}
+.spawn-map {
+  position: relative;
+  width: 100%;
+  box-sizing: border-box;
+  border: 0;
+  outline: 1px solid var(--color-border);
+  outline-offset: -1px;
+  background: var(--color-surface-inset);
+}
+.spawn-map__plane {
+  position: absolute;
+  background: var(--color-surface-inset);
+}
+.spawn-map__grid {
+  position: absolute;
+  overflow: hidden;
+  pointer-events: none;
+  fill: none;
+  stroke: color-mix(in srgb, var(--color-heading) 6%, transparent);
+  stroke-width: 1px;
+}
+.spawn-map__slot {
+  position: absolute;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  place-items: center;
+  box-sizing: border-box;
+  padding: 0;
+  min-width: 0;
+  min-height: 0;
+  border: 1px dashed var(--color-primary-structure);
+  border-radius: 0;
+  background: transparent;
+  color: var(--color-heading);
+  font:
+    16px / 16px "RuneScape Plain 11",
+    sans-serif;
+  cursor: pointer;
+}
+.spawn-map__spot {
+  position: absolute;
+}
+.spawn-map__spot.has-small-npc {
+  outline: 1px dashed var(--color-border);
+  outline-offset: -1px;
+}
+.spawn-map__spot:hover .spawn-map__slot {
+  border-color: var(--color-secondary);
+}
+.spawn-map__slot.is-filled {
+  border: 1px solid var(--spawn-kind);
+  background: color-mix(in srgb, var(--spawn-kind) 25%, var(--color-surface-inset));
+}
+.spawn-map__spot:hover .spawn-map__slot.is-filled {
+  border-color: var(--color-heading);
+  background: color-mix(in srgb, var(--spawn-kind) 32%, var(--color-surface-inset));
+}
+.spawn-map__slot[aria-expanded="true"],
+.spawn-map__slot[aria-expanded="true"]:hover {
+  border-style: solid;
+  border-color: var(--color-primary);
+}
+/* A spot the encounter warns about: a warning ring outside its square, so the monster's own
+   color and label stay as they are. */
+.spawn-map__spot.is-flagged::before {
+  content: "";
+  position: absolute;
+  inset: -3px;
+  border: 2px solid var(--color-warning);
+  pointer-events: none;
+}
+.spawn-map__pillar {
+  position: absolute;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  place-items: center;
+  box-sizing: border-box;
+  padding: 0;
+  border: 1px solid var(--color-border);
+  border-radius: 0;
+  background: var(--color-surface-inset);
+  color: var(--color-heading);
+  cursor: pointer;
+}
+.spawn-map__pillar.is-fixed {
+  cursor: inherit;
+}
+.spawn-map__spot::after,
+button.spawn-map__pillar::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: max(100%, 44px);
+  height: max(100%, 44px);
+  transform: translate(-50%, -50%);
+}
+.spawn-map__spot::after {
+  /* The map arbitrates the full spot + margin; don't intercept its child button. */
+  pointer-events: none;
+}
+.spawn-map__npc-label {
+  position: relative;
+  background: var(--color-surface-inset);
+  pointer-events: none;
+}
+.spawn-map__slot.is-small .spawn-map__npc-label {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 2px);
+  white-space: nowrap;
+}
+.spawn-map__pillar-label {
+  position: relative;
+  /* Only the text keeps a backing when the footprint is down and unfilled. */
+  background: var(--color-surface-inset);
+  font:
+    16px / 16px "RuneScape Plain 11",
+    sans-serif;
+  pointer-events: none;
+}
+.spawn-map__plane[data-compact="true"] .spawn-map__pillar-label {
+  /* Native text can exceed a 3-tile footprint at 8px/tile. Keep its east edge inside
+     the pillar so the touching west spawn's drawn border stays unobstructed. */
+  justify-self: end;
+}
+.spawn-map__pillar.is-down {
+  border: 1px dotted var(--color-text-dim);
+  background: transparent;
+  color: var(--color-text-muted);
+}
+button.spawn-map__pillar:hover {
+  border-color: var(--color-secondary);
+  color: var(--color-heading);
+}
+.spawn-map__pillar.is-down:hover {
+  background: transparent;
+  color: var(--color-text-muted);
+}
+.spawn-map__player {
+  position: absolute;
+  z-index: 2;
+  box-sizing: border-box;
+  border: 2px solid var(--color-spawn-player);
+  background: color-mix(in srgb, var(--color-spawn-player) 25%, var(--color-surface-inset));
+  pointer-events: none;
+}
+.spawn-map__player-label {
+  position: absolute;
+  bottom: calc(100% + 3px);
+  left: -4px;
+  padding: 0 2px;
+  background: var(--color-surface-inset);
+  color: var(--color-spawn-player);
+  font:
+    16px / 16px "RuneScape Plain 11",
+    sans-serif;
+}
+.spawn-map__player-label.is-below {
+  bottom: auto;
+  top: calc(100% + 3px);
+}
+.spawn-picker__heading {
+  margin: 0;
+  padding: 4px 8px;
+  color: var(--color-text-muted);
+  background: var(--color-bg-solid);
+  font:
+    16px / 18px "RuneScape Plain 11",
+    sans-serif;
+}
+.spawn-picker {
+  position: fixed;
+  z-index: 1400;
+  box-sizing: border-box;
+  width: 180px;
+  max-height: min(320px, calc(100vh - 16px));
+  /* biome-ignore lint/suspicious/noDuplicateProperties: dynamic viewport fallback. */
+  max-height: min(320px, calc(100dvh - 16px));
+  overflow-y: auto;
+  padding: 6px;
+  background: var(--color-bg-solid);
+  border: 1px solid var(--color-primary-structure);
+}
+.spawn-picker button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 44px;
+  padding: 8px;
+  background: var(--color-bg-solid);
+  border: 0;
+  color: var(--color-secondary);
+  font:
+    16px / 20px "RuneScape Plain 12",
+    sans-serif;
+  text-align: left;
+  cursor: pointer;
+}
+.spawn-picker button:hover {
+  background: var(--color-surface-hover);
+  color: var(--color-heading);
+}
+.spawn-picker__choice > span:first-child {
+  width: 8px;
+  height: 8px;
+  background: var(--spawn-kind);
+}
+.spawn-picker__swap small {
+  display: block;
+  color: var(--color-text-muted);
+  font:
+    16px / 16px "RuneScape Plain 11",
+    sans-serif;
+}
+.spawn-picker .spawn-picker__remove {
+  border-top: 1px solid var(--color-border);
+}
+
+/* An encounter's Edit layout tool around the map (the Inferno's and the Colosseum's): its setup head
+   (`__setup`), the map with any note under it (`__arena`, `__caption`, `__note`), then a footer of
+   actions. Opaque throughout, on the workbench's own solid surface. */
+.spawn-layout-tool {
+  padding: 8px 12px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.spawn-layout-tool__footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--color-border);
+  align-items: center;
+  flex-wrap: wrap;
+}
+/* A footer with only its primary action keeps it at the trailing edge. */
+.spawn-layout-tool__footer > .osrs-btn--primary:only-child {
+  margin-left: auto;
+}
+.spawn-layout-tool__footer .osrs-btn {
+  min-height: 44px;
+  padding-inline: 8px;
+}
+.spawn-layout-tool__footer > .osrs-btn--primary {
+  min-width: 120px;
+}
+/* A wave whose spawns and start are fixed, in the map's place. */
+.spawn-map-space {
+  position: relative;
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-inset);
+  aspect-ratio: 33 / 34;
+  display: grid;
+  place-items: center;
+  color: var(--color-text-muted);
+  font:
+    16px / 18px "RuneScape Plain 11",
+    sans-serif;
+}
+/* A short, wide window: the map takes the left column, the rest stacks on the right. */
+@media (max-height: 600px) and (min-width: 600px) {
+  .spawn-layout-tool {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 340px;
+    grid-template-rows: auto auto auto auto 1fr auto;
+    gap: 0 12px;
+    padding: 8px;
+  }
+  .spawn-layout-tool__arena,
+  .spawn-layout-tool .spawn-map-frame {
+    display: contents;
+  }
+  .spawn-layout-tool .spawn-map,
+  .spawn-layout-tool .spawn-map-space {
+    grid-column: 1;
+    grid-row: 1 / 6;
+    align-self: start;
+    justify-self: center;
+    width: min(100%, calc((100vh - var(--workbench-top) - 100px) * 33 / 34));
+    /* biome-ignore lint/suspicious/noDuplicateProperties: dynamic viewport fallback. */
+    width: min(100%, calc((100dvh - var(--workbench-top) - 100px) * 33 / 34));
+  }
+  .spawn-layout-tool__setup {
+    grid-column: 2;
+    grid-row: 1;
+    margin-bottom: 8px;
+  }
+  .spawn-layout-tool .spawn-progress {
+    grid-column: 2;
+    grid-row: 2;
+    margin-bottom: 8px;
+  }
+  .spawn-layout-tool .spawn-map__tools {
+    grid-column: 2;
+    grid-row: 3;
+  }
+  .spawn-layout-tool__caption {
+    grid-column: 2;
+    grid-row: 4;
+    align-self: start;
+  }
+  .spawn-layout-tool__note {
+    grid-column: 2;
+    grid-row: 5;
+    align-self: start;
+  }
+  .spawn-layout-tool__footer {
+    grid-column: 1 / -1;
+    grid-row: 6;
+    padding-top: 4px;
+    margin-top: 4px;
+  }
+}

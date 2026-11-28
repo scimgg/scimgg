@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import type { EncounterRegistry } from '../core/encounters/encounterFactory';
 import { canonicalEncounterKind } from '../encounters/catalog';
+import { resolveLegacySlugEntry } from '../encounters/modules';
 import {
   KIND_TO_SLUG,
   RETIRED_SLUG_TO_KIND,
@@ -8,6 +9,7 @@ import {
   slugToVariantId,
   variantIdToSlug,
 } from '../encounters/slugs';
+import type { MechanicsConfig } from '../types/simulation';
 
 export type SceneState =
   | { kind: 'lobby' }
@@ -68,6 +70,12 @@ export function replaceRouteQuery(search: string, routeQuery: RouteQuery): strin
   return parts.length > 0 ? `?${parts.join('&')}` : '';
 }
 
+/** What a path enters: a kind, and for a former slug the run setup it stands for. */
+interface RouteTarget {
+  readonly kind: string;
+  readonly mechanics?: Readonly<Partial<MechanicsConfig>>;
+}
+
 /**
  * Resolve a full URL path to an encounter kind.
  *
@@ -77,27 +85,31 @@ export function replaceRouteQuery(search: string, routeQuery: RouteQuery): strin
  *   /yama/glyphic-attenuation → yama_p3_glyphic
  *   /zuk                     → zuk (retired: entering it starts the Inferno at wave 69, and the
  *                              state-to-URL sync then rewrites the address to /inferno/)
+ *   /sol-heredit             → sol_heredit at wave 12 (a former slug: the sync then rewrites the
+ *                              address to /colosseum/)
  */
-function resolvePathToKind(segments: string[], encounterRegistry: EncounterRegistry): string | null {
+function resolvePathToTarget(segments: string[], encounterRegistry: EncounterRegistry): RouteTarget | null {
   if (segments.length === 0) return null;
 
   const baseSlug = segments[0];
   const retiredKind = RETIRED_SLUG_TO_KIND.get(baseSlug);
-  if (retiredKind !== undefined) return retiredKind;
+  if (retiredKind !== undefined) return { kind: retiredKind };
+  const legacyEntry = resolveLegacySlugEntry(baseSlug);
+  if (legacyEntry !== undefined) return legacyEntry;
   const baseKind = SLUG_TO_KIND.get(baseSlug) ?? baseSlug;
   const desc = encounterRegistry.getDescriptor(baseKind);
 
   if (!desc || baseKind === 'lobby') return null;
 
-  if (segments.length === 1) return baseKind;
+  if (segments.length === 1) return { kind: baseKind };
 
   const variantSlug = segments[1];
   const variantId = slugToVariantId(variantSlug);
   const variant = desc.variants?.find((v) => v.id === variantId);
 
-  if (variant) return variant.encounterKind;
+  if (variant) return { kind: variant.encounterKind };
 
-  return baseKind;
+  return { kind: baseKind };
 }
 
 /**
@@ -133,7 +145,8 @@ function resolveKindToPath(encounterKind: string, encounterRegistry: EncounterRe
  */
 export function useRouting(
   sceneState: SceneState,
-  enterEncounter: (kind: string) => void,
+  /** `mechanics`, a former slug's run setup, are saved over the saved setup and started with. */
+  enterEncounter: (kind: string, mechanics?: Readonly<Partial<MechanicsConfig>>) => void,
   enterLobby: () => void,
   encounterRegistry: EncounterRegistry,
   routeQuery: RouteQuery = NO_ROUTE_QUERY,
@@ -195,9 +208,10 @@ export function useRouting(
         return;
       }
 
-      const targetEncounter = resolvePathToKind(segments, encounterRegistry);
+      const target = resolvePathToTarget(segments, encounterRegistry);
 
-      if (targetEncounter && targetEncounter !== 'lobby') {
+      if (target && target.kind !== 'lobby') {
+        const targetEncounter = target.kind;
         // Resolve current encounter to its base kind so contract variants
         // are recognized as belonging to the same base encounter as the URL.
         const currentKind =
@@ -208,13 +222,14 @@ export function useRouting(
               : null;
 
         // Compared as owning kinds, so `/zuk` does not re-enter the Inferno it already entered while
-        // the URL catches up.
+        // the URL catches up (nor `/sol-heredit` the Colosseum).
         if (
           sceneState.kind === 'lobby' ||
           (currentKind !== null && canonicalEncounterKind(currentKind) !== canonicalEncounterKind(targetEncounter))
         ) {
           isNavigatingRef.current = true;
-          enterEncounter(targetEncounter);
+          if (target.mechanics) enterEncounter(targetEncounter, target.mechanics);
+          else enterEncounter(targetEncounter);
           setTimeout(() => {
             isNavigatingRef.current = false;
           }, 0);

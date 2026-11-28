@@ -14,6 +14,7 @@ import '../index.css';
 import '../App.css';
 import { installInputModality } from '../util/inputModality';
 import { log } from '../util/Logger';
+import { seedHarnessColosseumStartWave } from './ui/harnessColosseumFixture';
 import { installHarnessEnvironment } from './ui/harnessEnvironment';
 import { parseHarnessOptions } from './ui/harnessOptions';
 import { UiHarnessApp } from './ui/UiHarnessApp';
@@ -25,6 +26,7 @@ installInputModality();
 const options = parseHarnessOptions(window.location.search);
 
 installHarnessEnvironment(options.open);
+seedHarnessColosseumStartWave(options);
 
 log.init();
 

@@ -308,7 +308,7 @@ async function openEncounter(
     loadout.equipment ?? DEFAULT_PLAYER_CONFIG.equipment,
   );
 
-  const modifiers = options.modifiers ?? descriptor.defaultModifierSelection;
+  const modifiers = options.modifiers ?? descriptor.defaultModifiers?.(options.mechanics ?? {});
   random = mulberry32(options.randomSeed ?? DEFAULT_RANDOM_SEED);
   const engine = createSimulationEngineForNewRun({
     encounterConfig: {

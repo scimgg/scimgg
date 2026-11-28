@@ -6,15 +6,21 @@ import { COLOSSEUM_SPOT_ANIM_IDS, colosseumBeamGraphics } from './visualEvents';
 
 const DIRECTIONS: readonly CardinalDirection[] = ['south', 'west', 'north', 'east'];
 
-it('preloads and discovers the modifier and warband projectile cache dependencies', async () => {
-  expect(COLOSSEUM_SPOT_ANIM_IDS).toEqual(expect.arrayContaining([2724, 131, 9, 130]));
+/**
+ * The ids the captures show each emitter sending: the modifier and warband effects, then the wave species'
+ * (javelin, shockwave, manticore orbs, shaman Water Surge, minotaur heal) and Volatility's four explosions.
+ */
+const CAPTURED_SPOT_ANIM_IDS = [
+  2724, 131, 9, 130, 2673, 2676, 2674, 1446, 2265, 2520, 2254, 2681, 2683, 2685, 1458, 1459, 1460, 444, 2713, 2721,
+  2722, 2723,
+];
+
+it('preloads every captured effect, and the cache trim discovers everything it preloads', async () => {
+  expect(COLOSSEUM_SPOT_ANIM_IDS).toEqual(expect.arrayContaining(CAPTURED_SPOT_ANIM_IDS));
   const usage = await discoverCacheUsage();
   expect(usage.npcIds.has(12826)).toBe(true);
   expect(usage.seqIds.has(10817)).toBe(true);
-  expect(usage.spotAnimIds.has(2724)).toBe(true);
-  expect(usage.spotAnimIds.has(131)).toBe(true);
-  expect(usage.spotAnimIds.has(9)).toBe(true);
-  expect(usage.spotAnimIds.has(130)).toBe(true);
+  expect(COLOSSEUM_SPOT_ANIM_IDS.filter((id) => !usage.spotAnimIds.has(id))).toEqual([]);
 });
 
 describe('directional Colosseum beam graphics', () => {

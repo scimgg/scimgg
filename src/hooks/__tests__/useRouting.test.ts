@@ -30,6 +30,13 @@ function createRegistry() {
     mapSquare: { x: 35, y: 83 },
     playerStart: [0, 0],
   });
+  registry.register('sol_heredit', () => ({}) as never, {
+    kind: 'sol_heredit',
+    displayName: 'Fortis Colosseum',
+    description: 'Waves 1 to 12',
+    mapSquare: { x: 28, y: 48 },
+    playerStart: [0, 0],
+  });
   registry.register('lobby', () => ({}) as never, {
     kind: 'lobby',
     displayName: 'Lobby',
@@ -177,6 +184,54 @@ describe('useRouting', () => {
       expect(replaceStateSpy).toHaveBeenLastCalledWith(null, '', '/inferno/');
       expect(window.location.pathname).toBe('/inferno/');
       rerender({ sceneState: { kind: 'encounter', encounterKind: 'inferno' } });
+      expect(enterEncounter).toHaveBeenCalledOnce();
+      expect(enterLobby).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('enters the Colosseum on its saved setup from /colosseum and writes that address back', () => {
+    const encounterRegistry = createRegistry();
+    const enterEncounter = vi.fn();
+    window.history.pushState(null, '', '/colosseum/');
+
+    const { rerender } = renderHook(
+      ({ sceneState }: { sceneState: SceneState }) =>
+        useRouting(sceneState, enterEncounter, vi.fn(), encounterRegistry),
+      { initialProps: { sceneState: { kind: 'lobby' } as SceneState } },
+    );
+    expect(enterEncounter).toHaveBeenCalledExactlyOnceWith('sol_heredit');
+
+    rerender({ sceneState: { kind: 'encounter', encounterKind: 'sol_heredit' } });
+    expect(window.location.pathname).toBe('/colosseum/');
+    expect(enterEncounter).toHaveBeenCalledOnce();
+  });
+
+  it('enters a direct Sol start from the former /sol-heredit link and settles the address on /colosseum/', () => {
+    vi.useFakeTimers();
+    try {
+      const encounterRegistry = createRegistry();
+      const enterEncounter = vi.fn();
+      const enterLobby = vi.fn();
+      window.history.pushState(null, '', '/sol-heredit/');
+      const replaceStateSpy = vi.spyOn(window.history, 'replaceState');
+
+      const { rerender } = renderHook(
+        ({ sceneState }: { sceneState: SceneState }) =>
+          useRouting(sceneState, enterEncounter, enterLobby, encounterRegistry),
+        { initialProps: { sceneState: { kind: 'lobby' } as SceneState } },
+      );
+      expect(enterEncounter).toHaveBeenCalledExactlyOnceWith('sol_heredit', { colosseumStartWave: '12' });
+
+      // Loading the Colosseum while the address still reads /sol-heredit/ is not a second entry.
+      rerender({ sceneState: { kind: 'loading', targetEncounter: 'sol_heredit' } });
+      vi.runAllTimers();
+      rerender({ sceneState: { kind: 'encounter', encounterKind: 'sol_heredit' } });
+
+      expect(replaceStateSpy).toHaveBeenLastCalledWith(null, '', '/colosseum/');
+      expect(window.location.pathname).toBe('/colosseum/');
+      rerender({ sceneState: { kind: 'encounter', encounterKind: 'sol_heredit' } });
       expect(enterEncounter).toHaveBeenCalledOnce();
       expect(enterLobby).not.toHaveBeenCalled();
     } finally {

@@ -333,7 +333,8 @@
 /* The contracts and modifiers blocks are the rail's first section, so they need the same seam
    every later section draws. Without it the rail's only break was a gap, and the gap had to be
    large enough to do a rule's job. */
-.encounter-panel-card :is(.configurer-contracts, .configurer-modifiers, .configurer-encounter-setup) + .rail-section {
+.encounter-panel-card :is(.configurer-contracts, .configurer-modifiers, .configurer-encounter-setup) + .rail-section,
+.encounter-panel-card .configurer-encounter-setup + .configurer-modifiers {
   padding-top: 16px;
   margin-top: 0;
   border-top: 1px solid var(--color-border);
@@ -492,6 +493,11 @@
   font:
     16px / 20px "RuneScape Plain 12",
     sans-serif;
+}
+/* Back to the start wave's suggestion, at the editor subhead's trailing edge beside the note. The
+   rail has one reset only: the column's own Reset to defaults, which clears the set too. */
+.configurer-subhead .configurer-modifier-reset {
+  margin: 0 0 0 auto;
 }
 .configurer-modifier-editor .modifier-effect > :first-child.modifier-effect-spacer {
   display: none;

@@ -1,5 +1,4 @@
 import { isNpcBound, type NpcActor } from '../../core/actors/NpcActor';
-import type { PlayerActor } from '../../core/actors/PlayerActor';
 import type { DamageType } from '../../core/actors/types';
 import { npcHitDelayFromEndTime } from '../../core/combat/hitDelay';
 import { type AttackPlan, resolveAttackRequest } from '../../core/combat/npcAttackRequest';
@@ -21,14 +20,13 @@ import {
   COLOSSEUM_SEQS,
   COLOSSEUM_SPOTANIMS,
   type ColosseumRelentlessRank,
-  RELENTLESS_DEFENCE_BYPASS_PERCENT,
-  RELENTLESS_MAX_HIT_BONUS,
   WARBAND_ARCHER_NPC_ID,
   WARBAND_BERSERKER_NPC_ID,
   WARBAND_PROJECTILES,
   WARBAND_SEER_IMPACT_HEIGHT,
   WARBAND_SEER_NPC_ID,
 } from './constants';
+import { withRelentlessDefence, withRelentlessPlan } from './relentless';
 
 /**
  * Fortis Colosseum Fremennik warband. Capture facts and their status labels live in
@@ -142,21 +140,6 @@ interface WarbanderState {
   readonly relentless: ColosseumRelentlessRank;
 }
 export type WarbanderActor = DefinedNpcActor<WarbanderState>;
-
-/**
- * Relentless (Wiki /w/Fortis_Colosseum/Modifiers) acts on the defence roll by lowering the player's
- * Defence level by the bypassed share, rounded down (MODEL; the current, boosted level is used).
- */
-function withRelentlessDefence(player: PlayerActor, rank: ColosseumRelentlessRank): PlayerActor {
-  const defence = player.stats.defence;
-  const bypassed = Math.floor((defence.current * RELENTLESS_DEFENCE_BYPASS_PERCENT[rank]) / 100);
-  return { ...player, stats: { ...player.stats, defence: { ...defence, current: defence.current - bypassed } } };
-}
-
-/** Relentless raises the max hit, and rank III skips the accuracy roll (Wiki; UNVERIFIED for warbanders). */
-function withRelentlessPlan(plan: WarbanderProfile['plan'], rank: ColosseumRelentlessRank): AttackPlan {
-  return { ...plan, maxHit: plan.maxHit + RELENTLESS_MAX_HIT_BONUS[rank], ...(rank === 3 ? { alwaysHits: true } : {}) };
-}
 
 function spawnTickOf(actor: NpcActor): number {
   return actor.spawnTick ?? 0;
