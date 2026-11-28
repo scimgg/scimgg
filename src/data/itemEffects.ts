@@ -212,7 +212,7 @@ export const ITEM_ACTIONS: Readonly<Record<number, ItemActionDef>> = {
   },
 
   // 20261127-014756-Duke-Sucellus_5.jsonl:4204 and :10965–10996.
-  // https://secure.runescape.com/m=news/sailing---resources--skilling-activities-poll?oldschool=1
+  // https://oldschool.runescape.wiki/w/Halibut
   [HALIBUT_ITEM_ID]: {
     track: 'combo_food',
     delayTicks: 3,
