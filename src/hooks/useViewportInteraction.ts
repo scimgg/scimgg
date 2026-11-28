@@ -1,4 +1,5 @@
 import { type Dispatch, type MutableRefObject, type SetStateAction, useEffect, useRef, useState } from 'react';
+import type { NpcClickAction } from '../components/npcInteraction';
 import type { ReplayUiState } from '../core/ReplayRecorder';
 import type { SimulationEngine } from '../core/SimulationEngine';
 import { LOBBY_NPC_ENCOUNTERS, LOBBY_PORTALS, type LobbyEncounterCard } from '../encounters/lobby/metadata';
@@ -33,7 +34,12 @@ interface UseViewportInteractionArgs {
 }
 
 interface UseViewportInteractionReturn {
-  handleTileClick: (coord: Coordinate, ctrlKey?: boolean, hoveredNpcActorId?: string | null) => void;
+  handleTileClick: (
+    coord: Coordinate,
+    ctrlKey?: boolean,
+    hoveredNpcActorId?: string | null,
+    npcAction?: NpcClickAction,
+  ) => void;
   handleTakeGroundItem: (groundItemId: string) => void;
   introFadeFading: boolean;
 }
@@ -111,7 +117,12 @@ export function useViewportInteraction({
     };
   }, [engineRef, setSimulationState, simulationState.introActive]);
 
-  const handleTileClick = (coord: Coordinate, ctrlKey?: boolean, hoveredNpcActorId?: string | null) => {
+  const handleTileClick = (
+    coord: Coordinate,
+    ctrlKey?: boolean,
+    hoveredNpcActorId?: string | null,
+    npcAction?: NpcClickAction,
+  ) => {
     if (replay.replayMode || graphicsHeld) return;
 
     if (hoveredNpcActorId) {
@@ -125,19 +136,33 @@ export function useViewportInteraction({
         return;
       }
 
-      const manualSpell = armedSpell;
+      const interaction = { kind: 'npcInteraction', targetId: hoveredNpcActorId } as const;
+      const npcInteraction = engineRef.current.acceptsEncounterInput(interaction);
+      if (npcAction === 'Feed' && !npcInteraction) return;
+      if (npcAction === 'Attack' && npcInteraction) return;
+      const manualSpell = npcAction === 'Feed' ? null : armedSpell;
+      // Keep the spell armed when the clicked NPC only offers Feed.
+      if (manualSpell && npcInteraction) return;
       if (manualSpell) setArmedSpell(null);
       const retireTargetPreview = previewTargetTile(null);
 
       // Lag-buffer the whole click (run/walk override + target/attack) so it
       // reaches the engine together at the tick boundary after it "arrives".
       dispatchInput(() => {
+        if (npcInteraction && !engineRef.current.acceptsEncounterInput(interaction)) {
+          retireTargetPreview();
+          return;
+        }
         replay.recordAction({ type: 'ctrlClick', ctrlKey: ctrlKey ?? false });
         engineRef.current.setCtrlClickOverride(ctrlKey ?? false);
         setTargetTile(null);
         targetTileRef.current = null;
         retireTargetPreview();
-        if (manualSpell) {
+        if (npcInteraction) {
+          const action = { type: 'npcInteraction', targetId: hoveredNpcActorId } as const;
+          replay.recordAction(action);
+          engineRef.current.applyAction(action);
+        } else if (manualSpell) {
           // Manual cast: the armed spell is spent on this one target and put away,
           // matching OSRS where casting again needs another spell + target click.
           replay.recordAction({ type: 'manualCast', spellName: manualSpell, targetId: hoveredNpcActorId });

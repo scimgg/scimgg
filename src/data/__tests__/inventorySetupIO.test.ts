@@ -3,6 +3,7 @@ import { createEmptyCombatSupplies, type EncounterLoadout } from '../../types/en
 import { createEmptyInventory } from '../../types/inventory';
 import { getGearCatalog } from '../customEquipmentPresets';
 import { exportInventorySetup, importInventorySetup } from '../inventorySetupIO';
+import { ARDER_MUSCA_POISON_ITEM_ID } from '../itemIds';
 
 describe('RuneLite Inventory Setups interchange', () => {
   it('imports equipment, inventory, ammunition, rune pouch, quiver, and spellbook', () => {
@@ -264,6 +265,18 @@ describe('RuneLite Inventory Setups interchange', () => {
       const imported = importInventorySetup(exportInventorySetup('Counted', loadout, loader));
 
       expect(imported.kind === 'success' ? imported.loadout.inventory[0] : null).toEqual({ id: DEATH_RUNE });
+    });
+
+    it('round-trips poison as an unlimited loadout stack', () => {
+      const inventory = createEmptyInventory();
+      const poison = { id: ARDER_MUSCA_POISON_ITEM_ID };
+      inventory[27] = { ...poison, quantity: 3 };
+      const loadout: EncounterLoadout = { equipment: {}, inventory, supplies: createEmptyCombatSupplies() };
+
+      const text = exportInventorySetup('Duke opener', loadout);
+      expect(JSON.parse(text).setup.inv[27]).toEqual({ id: poison.id, q: 100000 });
+      const imported = importInventorySetup(text);
+      expect(imported.kind === 'success' ? imported.loadout.inventory[27] : null).toEqual(poison);
     });
   });
 });

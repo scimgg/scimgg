@@ -44,8 +44,8 @@ export interface EncounterCatalogEntry {
 
 export interface RetiredEncounterKind {
   readonly kind: string;
-  /** Its public slug, accepted on entry so links to it resolve to the owning encounter. */
-  readonly slug: string;
+  /** Its former public slug, when it differs from the owning encounter’s slug. */
+  readonly slug?: string;
 }
 
 const YAMA_VARIANT_KINDS = [
@@ -55,6 +55,9 @@ const YAMA_VARIANT_KINDS = [
   'yama_p3_bloodied',
   'yama_p3_glyphic',
 ] as const satisfies readonly YamaEncounterKind[];
+
+export const DUKE_KIND = 'duke';
+export const LEGACY_DUKE_KIND = 'duke_practice';
 
 export const ENCOUNTER_CATALOG: readonly EncounterCatalogEntry[] = [
   { kind: 'yama_p3', variantKinds: YAMA_VARIANT_KINDS, slug: 'yama', registered: true },
@@ -66,6 +69,13 @@ export const ENCOUNTER_CATALOG: readonly EncounterCatalogEntry[] = [
     slug: 'inferno',
     registered: true,
     retiredKinds: [{ kind: 'zuk', slug: 'zuk' }],
+  },
+  {
+    kind: DUKE_KIND,
+    variantKinds: [],
+    slug: 'awakened-duke',
+    registered: true,
+    retiredKinds: [{ kind: LEGACY_DUKE_KIND }],
   },
 ];
 

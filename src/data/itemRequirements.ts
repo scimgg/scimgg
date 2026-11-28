@@ -58,6 +58,7 @@ export const ITEM_WIELD_REQUIREMENTS: Record<number, PresetRequirements> = {
   28254: { defence: 80 }, // Sanguine torva full helm (cosmetic Torva variant)
   26384: { defence: 80 }, // Torva platebody — /w/Torva_platebody
   26386: { defence: 80 }, // Torva platelegs — /w/Torva_platelegs
+  30750: { defence: 78 }, // Oathplate helm — /w/Oathplate_helm
   30753: { defence: 78 }, // Oathplate chest — /w/Oathplate_chest
   30756: { defence: 78 }, // Oathplate legs — /w/Oathplate_legs
   30779: { defence: 78 }, // Radiant oathplate chest (recolor of Oathplate chest)

@@ -12,6 +12,7 @@ import type { TileEdge, TileEdgeRef } from '../../types/lineMarkers';
 import type { NpcHighlightMode } from '../../types/npcHighlight';
 import type { Coordinate } from '../../types/simulation';
 import { log } from '../../util/Logger';
+import { isNpcClickAction, type NpcClickAction } from '../npcInteraction';
 import type { ContextMenuContent, ContextMenuEntry } from './contextMenuTypes';
 
 const TARGET_COLORS = {
@@ -289,8 +290,8 @@ export interface ViewportMenuInputs {
   entityContext?: ViewportEntityContext;
   ray?: Ray3D | null;
   screenPx?: { x: number; y: number };
-  onNpcAction?: (coord: Coordinate) => void;
-  onNpcAttackByTarget?: (actorId: string, position: Coordinate) => void;
+  onNpcAction?: (coord: Coordinate, action: NpcClickAction) => void;
+  onNpcActionByTarget?: (actorId: string, position: Coordinate, action: NpcClickAction) => void;
   groundItemContext?: GroundItemMenuContext;
   customMenuSwaps?: readonly CustomMenuSwap[];
   tileMarkerContext?: TileMarkerContext;
@@ -320,7 +321,7 @@ function buildViewportMenuParts(inputs: ViewportMenuInputs): ViewportMenuParts {
     ray,
     screenPx,
     onNpcAction,
-    onNpcAttackByTarget,
+    onNpcActionByTarget,
     groundItemContext,
     npcHighlightContext,
   } = inputs;
@@ -337,7 +338,7 @@ function buildViewportMenuParts(inputs: ViewportMenuInputs): ViewportMenuParts {
         onTileClick,
         onNpcAction,
         npcHighlightContext,
-        onNpcAttackByTarget,
+        onNpcActionByTarget,
       ),
       actions,
       examines,
@@ -545,9 +546,9 @@ function buildNpcEntriesForRay(
   ctx: ViewportEntityContext,
   screenPx?: { x: number; y: number },
   onTileClick?: (coord: Coordinate) => void,
-  onNpcAction?: (coord: Coordinate) => void,
+  onNpcAction?: (coord: Coordinate, action: NpcClickAction) => void,
   npcHighlightContext?: NpcHighlightMenuContext,
-  onNpcAttackByTarget?: (actorId: string, position: Coordinate) => void,
+  onNpcActionByTarget?: (actorId: string, position: Coordinate, action: NpcClickAction) => void,
 ): ContextMenuEntry[] {
   const pickNpcs = ctx.pickNpcs;
   const npcTypeLoader = ctx.npcTypeLoader;
@@ -566,8 +567,8 @@ function buildNpcEntriesForRay(
         continue;
       }
 
-      const clickHandler = onNpcAttackByTarget
-        ? (_coord: Coordinate) => onNpcAttackByTarget(picked.actorId, picked.position)
+      const clickHandler = onNpcActionByTarget
+        ? (_coord: Coordinate, action: NpcClickAction) => onNpcActionByTarget(picked.actorId, picked.position, action)
         : onNpcAction;
       const isAttackTarget = ctx.attackTargetActorId === picked.actorId;
       const targetColor = ctx.npcMenuColor?.(picked.npcTypeId, picked.actorId) ?? TARGET_COLORS.npc;
@@ -624,7 +625,7 @@ function buildNpcContextEntries(
   targetColor: string,
   npcPosition?: Coordinate,
   onTileClick?: (coord: Coordinate) => void,
-  onNpcAction?: (coord: Coordinate) => void,
+  onNpcAction?: (coord: Coordinate, action: NpcClickAction) => void,
   /** Marks the NPC the player is already attacking, so stacked NPCs stay distinguishable. */
   isAttackTarget = false,
 ): ContextMenuEntry[] {
@@ -635,16 +636,12 @@ function buildNpcContextEntries(
 
   for (const action of npcType.actions) {
     if (action === undefined || action === null) continue;
-    // Only the OSRS "Attack" action routes a red-X left-click at the actor; other
-    // cache actions (e.g. Talk-to) are inert here rather than silently attacking.
-    const clickHandler = action === 'Attack' ? (onNpcAction ?? onTileClick) : undefined;
-    entries.push({
-      action,
-      target,
-      targetColor: color,
-      onClick: npcPosition && clickHandler ? () => clickHandler(npcPosition) : undefined,
-      clickType: npcPosition && clickHandler ? ('red' as const) : undefined,
-    });
+    let onClick: (() => void) | undefined;
+    if (npcPosition && isNpcClickAction(action)) {
+      if (onNpcAction) onClick = () => onNpcAction(npcPosition, action);
+      else if (action === 'Attack' && onTileClick) onClick = () => onTileClick(npcPosition);
+    }
+    entries.push({ action, target, targetColor: color, onClick, clickType: onClick ? 'red' : undefined });
   }
 
   entries.push({

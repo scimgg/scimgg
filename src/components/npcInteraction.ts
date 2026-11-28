@@ -3,13 +3,15 @@ import type { NpcType } from '../rs/config/npctype/NpcType';
 import type { NpcTypeLoader } from '../rs/config/npctype/NpcTypeLoader';
 import { log } from '../util/Logger';
 
-// True only when the NPC exposes the OSRS "Attack" action, i.e. it is a valid
-// red-X left-click attack target. A picked NPC without it - like the Zuk shield
-// (no cache actions), or an NPC whose only option is Talk-to - must not consume a
-// left click as an attack. The action array is sparse (holes for unset slots), so
-// a non-Attack option never makes the NPC attackable.
-export function isNpcAttackable(npcType: Pick<NpcType, 'actions'>): boolean {
-  return npcType.actions.some((action): action is string => action === 'Attack');
+/** NPC actions supported by the viewport's actor-click path. */
+export type NpcClickAction = 'Attack' | 'Feed';
+
+export function isNpcClickAction(action: string | null | undefined): action is NpcClickAction {
+  return action === 'Attack' || action === 'Feed';
+}
+
+export function hasNpcClickAction(npcType: Pick<NpcType, 'actions'>): boolean {
+  return npcType.actions.some(isNpcClickAction);
 }
 
 // True when the NPC's cache type carries at least one op, i.e. it contributes a

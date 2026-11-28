@@ -1,5 +1,5 @@
 import type { MonsterStatOverrides } from '../../types/monsterStatOverride';
-import type { CombatSkill } from '../../types/playerState';
+import type { RestorableStat } from '../../types/playerState';
 import type { Coordinate, FailCondition, MechanicsConfig, PrayerType, SimulationEvent } from '../../types/simulation';
 import type { NpcActor } from '../actors/NpcActor';
 import type { PlayerActor } from '../actors/PlayerActor';
@@ -66,8 +66,8 @@ export interface EncounterHookEffect {
   /** Delta applied to player run energy (0-10000 scale). Negative = drain. */
   runEnergyDelta?: number;
   prayerPointsDelta?: number;
-  /** Levels drained from the player's current combat stats (floored at 0), e.g. a Jal-MejRah hit. */
-  playerStatDrains?: Readonly<Partial<Record<CombatSkill, number>>>;
+  /** Levels drained from the player's current skill stats (floored at 0). */
+  playerStatDrains?: Readonly<Partial<Record<RestorableStat, number>>>;
   /** Additional splats emitted at the hook's normal timing (after the triggering damage splat). */
   playerHitsplats?: readonly { amount: number; hitsplatType: HitsplatType }[];
   /** A game chat line emitted with the hook. */
@@ -169,7 +169,10 @@ export interface EncounterInputState {
  * The encounter answers whether it claims an interaction so generic UI does not inspect
  * encounter-specific state or use replay data as a command-routing API.
  */
-export type EncounterInput = { readonly kind: 'equipmentSlotClick'; readonly slot: EquipmentClickSlot };
+export type EncounterNpcInteraction = { readonly kind: 'npcInteraction'; readonly targetId: ActorId };
+export type EncounterInput =
+  | { readonly kind: 'equipmentSlotClick'; readonly slot: EquipmentClickSlot }
+  | EncounterNpcInteraction;
 
 export interface NpcMovementRequest {
   npcId: string;
@@ -234,6 +237,8 @@ export interface EncounterContext {
    * otherwise the next. The attacker must be registered and alive.
    */
   queueNpcHit?: (attack: NpcAttackRequest) => void;
+  /** Read the combat stream when the encounter calculates an NPC hit outside its normal turn. */
+  rollCombat?: () => number;
   /** Tick-local player inputs the encounter may react to (parry clicks, etc.). */
   inputs?: EncounterInputState;
   /** NPC movements applied so far this tick: empty in resolveHazards, complete by `completeNpcBand`. */
@@ -368,6 +373,8 @@ export interface EnvironmentalDamage {
   baseDamage: DamageValue;
   attackType: DamageType;
   source: FailCondition;
+  /** Chance for a hit on an eligible tile. Omit for damage that bypasses defence. */
+  accuracy?: number;
   prayerReduction?: PrayerReduction;
   playerPosition?: Coordinate;
   /** Ordinary poison/venom severity, applied through the engine's existing immunity/timer policy. */
@@ -689,7 +696,9 @@ export interface Encounter {
    * routes the accepted input through the engine's normal input-lag + replay-recording path, so
    * that a replay reproduces the click exactly.
    */
-  acceptsInput?(input: EncounterInput): boolean;
+  acceptsInput?(input: EncounterInput, ctx: EncounterEngineContext): boolean;
+  /** Resolve a claimed non-combat interaction once the player is adjacent to its NPC. */
+  onNpcInteraction?(input: EncounterNpcInteraction, ctx: EncounterContext): void;
 
   getSnapshot(ctx: EncounterSnapshotContext): EncounterSnapshot;
   getOutcome(): EncounterOutcome;

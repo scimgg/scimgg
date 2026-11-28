@@ -2,9 +2,12 @@
 import { act, renderHook } from '@testing-library/react';
 import type { SetStateAction } from 'react';
 import { describe, expect, it, vi } from 'vitest';
+import { buildViewportContextMenu } from '../../components/ContextMenu/contextMenuBuilders';
 import type { GameEvent } from '../../core/events/types';
 import type { SimulationEngine } from '../../core/SimulationEngine';
 import { LOBBY_NPC_ENCOUNTERS } from '../../encounters/lobby/metadata';
+import type { NpcType } from '../../rs/config/npctype/NpcType';
+import type { NpcTypeLoader } from '../../rs/config/npctype/NpcTypeLoader';
 import { tickBus } from '../../tutorial/runtime/tickBus';
 import type { GroundItem } from '../../types/groundItems';
 import type { Coordinate, SimulationState } from '../../types/simulation';
@@ -44,6 +47,7 @@ function makeEngine(paused: boolean, events: GameEvent[] = []): SimulationEngine
   const state = makeState(1);
   return {
     applyAction: vi.fn(),
+    acceptsEncounterInput: vi.fn(() => false),
     advanceTick: vi.fn(),
     canAdvance: vi.fn(() => true),
     didLastTickDiscardWalkTarget: vi.fn(() => false),
@@ -265,6 +269,66 @@ describe('useViewportInteraction', () => {
     });
 
     expect(engine.applyAction).toHaveBeenCalledWith({ type: 'attackTarget', targetId: 'yama' });
+  });
+
+  it('records a claimed NPC interaction from an ordinary click', () => {
+    const engine = makeEngine(false);
+    vi.mocked(engine.acceptsEncounterInput).mockReturnValue(true);
+    const { result, replay } = renderInteraction(engine);
+
+    act(() => result.current.handleTileClick([28, 52], false, 'duke'));
+
+    const action = { type: 'npcInteraction', targetId: 'duke' };
+    expect(engine.applyAction).toHaveBeenCalledExactlyOnceWith(action);
+    expect(replay.recordAction).toHaveBeenLastCalledWith(action);
+  });
+
+  it.each([false, true])('binds Feed to its menu entry while a spell is armed (lagged %s)', (lagged) => {
+    const engine = makeEngine(false);
+    vi.mocked(engine.acceptsEncounterInput).mockReturnValue(true);
+    const pending: Array<() => void> = [];
+    const { result, replay, setArmedSpell } = renderInteraction(engine, {
+      armedSpell: 'Fire Surge',
+      dispatchInput: (apply) => pending.push(apply),
+    });
+    const tile = [28, 52] as Coordinate;
+    const npcType = { name: 'Duke Sucellus', combatLevel: 0, actions: ['Feed'] } as NpcType;
+    const menu = buildViewportContextMenu({
+      tile,
+      entityContext: {
+        npcPosition: tile,
+        npcSize: 7,
+        npcId: 12167,
+        npcActorId: 'duke',
+        npcTypeLoader: { load: () => npcType, getCount: () => 1, clearCache: () => {} } satisfies NpcTypeLoader,
+      },
+      onNpcAction: (position, action) => result.current.handleTileClick(position, false, 'duke', action),
+    });
+    const feed = menu?.entries.find((entry) => entry.action === 'Feed')?.onClick;
+    expect(feed).toBeDefined();
+
+    if (!lagged) vi.mocked(engine.acceptsEncounterInput).mockReturnValue(false);
+    act(() => feed?.());
+    vi.mocked(engine.acceptsEncounterInput).mockReturnValue(false);
+    act(() => {
+      for (const apply of pending) apply();
+    });
+
+    expect(setArmedSpell).not.toHaveBeenCalled();
+    expect(engine.applyAction).not.toHaveBeenCalled();
+    expect(replay.recordAction).not.toHaveBeenCalled();
+  });
+
+  it('preserves the armed spell when a clicked NPC only offers a claimed interaction', () => {
+    const engine = makeEngine(false);
+    vi.mocked(engine.acceptsEncounterInput).mockReturnValue(true);
+    const { result, replay, setArmedSpell } = renderInteraction(engine, { armedSpell: 'Fire Surge' });
+
+    act(() => result.current.handleTileClick([28, 52], false, 'duke'));
+
+    expect(setArmedSpell).not.toHaveBeenCalled();
+    expect(engine.applyAction).not.toHaveBeenCalled();
+    expect(replay.recordAction).not.toHaveBeenCalled();
   });
 
   it('shows a walk destination immediately while movement remains buffered', () => {

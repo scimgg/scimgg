@@ -506,6 +506,7 @@ async function traceScenarios(store: MemoryStore, revision: number, xteas: Map<n
   for (const spotAnimId of roots.spotAnims.keys()) {
     traceSpotAnim(spotAnimId, spotAnimModelLoader, modelLoader, warmupSeq);
   }
+  for (const modelId of roots.models.keys()) safe(() => modelLoader.getModel(modelId));
 
   console.log('[trim-cache] Tracing sequences...');
   for (const seqId of roots.seqs.keys()) {

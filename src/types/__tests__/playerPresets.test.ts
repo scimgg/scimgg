@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { findEquipmentCatalogItem, getCanonicalEquipmentItemId } from '../../data/equipmentCatalog';
+import { findInventoryItem } from '../../data/inventoryItemCatalog';
+import { ARDER_MUSCA_POISON_ITEM_ID } from '../../data/itemIds';
 import { EQUIPMENT_PRESETS } from '../../data/playerPresets';
+import { getDefaultLoadout, normalizeEncounterLoadout } from '../../hooks/encounterLoadoutStorage';
 
 describe('shipped preset equipment coverage', () => {
   it.each(['yama_p3_sensory', 'yama_p3_divine'] as const)('packs the powered sceptre switch for %s', (encounter) => {
@@ -24,7 +27,40 @@ describe('shipped preset equipment coverage', () => {
     expect(Object.keys(EQUIPMENT_PRESETS.inferno)[0]).toBe('max_tbow');
   });
 
-  it('resolves every initially equipped slot in all 31 real encounter presets', () => {
+  it('opens Duke with Burning claws and all 28 inventory slots filled', () => {
+    const { equipment, inventory } = getDefaultLoadout('duke');
+
+    expect(equipment.weapon).toBe(29577);
+    expect(equipment.head).toBe(30750); // Oathplate helm
+    expect(equipment.shield).toBeUndefined();
+    expect(inventory).toHaveLength(28);
+    const names = inventory.map(
+      (item) => item && (findInventoryItem(item.id) ?? findEquipmentCatalogItem(item.id))?.name,
+    );
+    expect(names[0]).toBe('Emberlight');
+    expect(names[3]).toBe('Scythe of Vitur');
+    expect(names[4]).toBe('Avernic defender');
+    expect(names).not.toContain('Saradomin godsword');
+    expect(names.filter((name) => name === 'Super combat potion(4)')).toHaveLength(2);
+    expect(names.filter((name) => name === 'Super restore(4)')).toHaveLength(5);
+    expect(names.filter((name) => name === 'Saradomin brew(4)')).toHaveLength(5);
+    expect(names.filter((name) => name === 'Halibut')).toHaveLength(3);
+    expect(names.filter((name) => name === 'Anglerfish')).toHaveLength(9);
+    expect(names.filter((name) => name === 'Arder-musca poison')).toHaveLength(1);
+    const poison = { id: ARDER_MUSCA_POISON_ITEM_ID };
+    expect(inventory[27]).toEqual(poison);
+    expect(normalizeEncounterLoadout({ equipment, inventory }).inventory[27]).toEqual(poison);
+  });
+
+  it('can open Duke from every shipped loadout', () => {
+    const presets = EQUIPMENT_PRESETS.duke;
+    for (const preset of Object.values(presets)) {
+      expect(preset.inventory[27], preset.name).toEqual({ id: ARDER_MUSCA_POISON_ITEM_ID });
+    }
+    expect(Object.keys(presets)).toEqual(['burning_claws', 'naked']);
+  });
+
+  it('resolves every initially equipped slot in all 32 real encounter presets', () => {
     const unresolved: string[] = [];
     let realPresetCount = 0;
 
@@ -40,16 +76,18 @@ describe('shipped preset equipment coverage', () => {
       }
     }
 
-    expect(realPresetCount).toBe(31);
+    expect(realPresetCount).toBe(32);
     expect(unresolved).toEqual([]);
   });
 
-  it('carries no inventory stack counts, since stacks never deplete', () => {
+  it('omits stack counts for unlimited supplies', () => {
     const counted: string[] = [];
     for (const [encounterKey, presets] of Object.entries(EQUIPMENT_PRESETS)) {
       for (const [presetKey, preset] of Object.entries(presets)) {
         preset.inventory.forEach((slot, index) => {
-          if (slot && slot.quantity !== undefined) counted.push(`${encounterKey}.${presetKey}[${index}]:${slot.id}`);
+          if (slot?.quantity !== undefined) {
+            counted.push(`${encounterKey}.${presetKey}[${index}]:${slot.id}`);
+          }
         });
       }
     }

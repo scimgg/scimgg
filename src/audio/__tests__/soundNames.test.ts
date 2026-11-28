@@ -12,9 +12,7 @@ describe('ALL_SOUND_IDS', () => {
     // Every encounter's rules, whichever encounter is displayed: the inventory is what can ever play.
     const player = new EventAudioPlayer(null as never, ...encounterAudioRules(), coreAudioRules);
     const used = [...new Set([...player.getAllSoundIds(), ...FRAME_SOUND_IDS])].sort((a, b) => a - b);
-
-    expect(used.filter((id) => !ALL_SOUND_IDS.includes(id))).toEqual([]);
-    expect(ALL_SOUND_IDS.filter((id) => !used.includes(id))).toEqual([]);
+    expect(used).toEqual(ALL_SOUND_IDS);
   });
 
   it('names no sound the app cannot play', () => {

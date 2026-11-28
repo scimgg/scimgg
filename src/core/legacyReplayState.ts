@@ -1,4 +1,8 @@
+import { DUKE_KIND, LEGACY_DUKE_KIND } from '../encounters/catalog';
+import { migrateDukeMechanics } from '../types/duke';
 import type { PrayerType, SimulationState } from '../types/simulation';
+import type { EncounterSnapshot } from './encounters/snapshot';
+import type { EngineRunConfig } from './engineRunConfig';
 
 /**
  * The prayer fields of a state recorded while boost prayers had a single offensive slot.
@@ -28,5 +32,28 @@ export function decodeLegacyPrayerState(state: SimulationState): SimulationState
     ...rest,
     boostPrayers: slotAsSet(offensivePrayer),
     pendingBoostPrayers: [pendingOffensivePrayer?.[0] ?? false, slotAsSet(pendingOffensivePrayer?.[1])],
+  };
+}
+
+/** Duke recordings used the same snapshot fields under the retired encounter key. */
+export function decodeLegacyDukeState(state: SimulationState): SimulationState {
+  if ((state.encounter?.kind as string) !== LEGACY_DUKE_KIND) return state;
+
+  const encounter = { ...state.encounter, kind: DUKE_KIND } as Extract<EncounterSnapshot, { kind: typeof DUKE_KIND }>;
+  const mechanicsConfig = state.mechanicsConfig ? migrateDukeMechanics(state.mechanicsConfig) : state.mechanicsConfig;
+  return { ...state, encounter, mechanicsConfig };
+}
+
+export function decodeLegacyDukeRunConfig(config: EngineRunConfig | null): EngineRunConfig | null {
+  if (config?.encounter.kind !== LEGACY_DUKE_KIND) return config;
+
+  const { bootstrap } = config;
+  const mechanics = bootstrap?.mechanicsConfig;
+  return {
+    ...config,
+    encounter: { ...config.encounter, kind: DUKE_KIND },
+    ...(bootstrap && mechanics && typeof mechanics === 'object' && !Array.isArray(mechanics)
+      ? { bootstrap: { ...bootstrap, mechanicsConfig: migrateDukeMechanics(mechanics) } }
+      : {}),
   };
 }

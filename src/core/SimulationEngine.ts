@@ -45,7 +45,6 @@ import type {
   SpecialAttackState,
 } from '../types/playerState';
 import {
-  COMBAT_SKILLS,
   cloneBaseStats,
   createDefaultPoisonState,
   createDefaultRunEnergy,
@@ -55,6 +54,7 @@ import {
   LIGHTBEARER_ITEM_ID,
   POISON_TICK_INTERVAL,
   PURGING_STAFF_ITEM_ID,
+  RESTORABLE_STATS,
   RING_OF_ENDURANCE_ITEM_ID,
   RUN_ENERGY_MAX,
 } from '../types/playerState';
@@ -375,6 +375,7 @@ export type EngineAction =
   | { type: 'swapInventory'; from: number; to: number }
   | { type: 'attackTarget'; targetId: ActorId | null }
   | { type: 'manualCast'; spellName: string; targetId: ActorId }
+  | { type: 'npcInteraction'; targetId: ActorId }
   | { type: 'equipmentSlotClick'; slot: EquipmentClickSlot }
   | { type: 'attackStyleChange'; index: number }
   | { type: 'selectedSpellChange'; spellName: string }
@@ -587,6 +588,7 @@ export class SimulationEngine {
       spawnNpc: (actor: NpcActor): void => this.spawnEncounterNpc(actor),
       despawnNpc: (npcId: ActorId): void => this.despawnEncounterNpc(npcId),
       queueNpcHit: (attack) => this.queueNpcHit(attack),
+      rollCombat: this.rollCombat,
       inputs,
       npcMovements,
       setProtectionPrayer,
@@ -629,6 +631,7 @@ export class SimulationEngine {
     const player = this.player();
     clearPlayerAttackIntent(player);
     player.pendingItemPickup = null;
+    player.pendingNpcInteraction = undefined;
     this.walkTargetDiscarded = true;
   }
 
@@ -741,7 +744,7 @@ export class SimulationEngine {
     if (result.playerStatDrains !== undefined) {
       const player = this.player();
       let stats = player.stats;
-      for (const skill of COMBAT_SKILLS) {
+      for (const skill of RESTORABLE_STATS) {
         const amount = result.playerStatDrains[skill];
         if (amount !== undefined) stats = withStatCurrent(stats, skill, drainStat(stats[skill].current, amount));
       }
@@ -1425,9 +1428,12 @@ export class SimulationEngine {
 
     let movementResult: MovementResult;
     const attackNpc = player.attackTarget ? this.worldState.actors.get(player.attackTarget) : undefined;
+    const interactionNpc = this.getNpcInteractionTarget(player);
     // Locked or teleported earlier this tick: the walk target is no longer the player's to follow.
     if (this.walkTargetDiscarded) {
       movementResult = { position: [...player.position] as Coordinate, stepTiles: [] };
+    } else if (interactionNpc) {
+      movementResult = playerMoveToNpc(player.position, interactionNpc.position, interactionNpc.size, shouldRun);
     } else if (attackNpc !== undefined && canPlayerStartAttackOn(player, attackNpc) && attackNpc.kind === 'npc') {
       const npc = attackNpc as NpcActor;
       const { attackRange, meleeReach } = resolvePlayerAttackParams(player, {
@@ -1501,6 +1507,15 @@ export class SimulationEngine {
       npcMovements,
       setProtectionPrayer,
     );
+    if (
+      interactionNpc &&
+      !this.walkTargetDiscarded &&
+      isInAttackRange(player.position, interactionNpc.position, interactionNpc.size, 1, true) &&
+      !isUnderNpc(player.position, interactionNpc.position, interactionNpc.size)
+    ) {
+      player.pendingNpcInteraction = undefined;
+      this.encounter.onNpcInteraction?.({ kind: 'npcInteraction', targetId: interactionNpc.id }, postPlayerMoveCtx);
+    }
     for (const damage of this.encounter.processPostTick(postPlayerMoveCtx, encounterMechanics)) {
       this.applyEnvironmentalDamage(damage, nextTick);
     }
@@ -2363,6 +2378,9 @@ export class SimulationEngine {
       case 'manualCast':
         this.queueAttackTarget(action.targetId, action.spellName);
         break;
+      case 'npcInteraction':
+        this.queueInput({ type: 'npc_interaction', targetId: action.targetId });
+        break;
       case 'equipmentSlotClick':
         this.queueEquipmentSlotClick(action.slot);
         break;
@@ -2539,6 +2557,7 @@ export class SimulationEngine {
           case 'quickPrayers':
           case 'run_toggle':
           case 'attack_target':
+          case 'npc_interaction':
           case 'pickup_ground_item':
             break;
           default: {
@@ -2629,7 +2648,9 @@ export class SimulationEngine {
   }
 
   public setAttackTarget(targetId: ActorId | null): void {
-    registerPlayerAttackIntent(this.player(), this.worldState, { targetId, manualCastSpell: null });
+    const player = this.player();
+    player.pendingNpcInteraction = undefined;
+    registerPlayerAttackIntent(player, this.worldState, { targetId, manualCastSpell: null });
   }
 
   private queueAttackTarget(targetId: ActorId | null, manualCastSpell: string | null = null): void {
@@ -2643,7 +2664,18 @@ export class SimulationEngine {
    * still recorded for replay and still honors input lag.
    */
   public acceptsEncounterInput(input: EncounterInput): boolean {
-    return this.encounter.acceptsInput?.(input) ?? false;
+    return this.encounter.acceptsInput?.(input, this.buildEngineContext()) ?? false;
+  }
+
+  private getNpcInteractionTarget(player: PlayerActor): NpcActor | null {
+    const targetId = player.pendingNpcInteraction;
+    if (targetId === undefined) return null;
+    const target = this.worldState.getNpc(targetId);
+    if (player.alive && target?.alive && this.acceptsEncounterInput({ kind: 'npcInteraction', targetId })) {
+      return target;
+    }
+    player.pendingNpcInteraction = undefined;
+    return null;
   }
 
   public queueEquipmentSlotClick(slot: EquipmentClickSlot): void {
@@ -2797,9 +2829,18 @@ export class SimulationEngine {
           registerPlayerAttackIntent(player, this.worldState, op);
           // A new walk/attack click replaces whatever the player was walking to take.
           player.pendingItemPickup = null;
+          player.pendingNpcInteraction = undefined;
           attackOpSeen = true;
           break;
+        case 'npc_interaction':
+          if (this.acceptsEncounterInput({ kind: 'npcInteraction', targetId: op.targetId })) {
+            clearPlayerAttackIntent(player);
+            player.pendingItemPickup = null;
+            player.pendingNpcInteraction = op.targetId;
+          }
+          break;
         case 'pickup_ground_item':
+          player.pendingNpcInteraction = undefined;
           player.pendingItemPickup = { groundItemId: op.groundItemId };
           break;
         default: {
@@ -4087,14 +4128,16 @@ export class SimulationEngine {
   }
 
   private applyEnvironmentalDamage(damage: EnvironmentalDamage, tick: TickNumber): void {
+    const hit = damage.accuracy === undefined || this.rollCombat() < damage.accuracy;
     this.applyDamage(
-      damage.baseDamage,
+      hit ? damage.baseDamage : 0,
       damage.attackType,
       damage.source,
       tick,
       damage.prayerReduction,
       damage.playerPosition,
     );
+    if (!hit) return;
     const lockoutTicks = damage.disablesProtectionPrayersForTicks;
     if (damage.applyPoison !== undefined && this.player().alive) this.applyPoisonToPlayer(damage.applyPoison);
     if (lockoutTicks === undefined || !this.player().alive) return;

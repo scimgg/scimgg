@@ -336,7 +336,7 @@ still plays it, as for every Inferno hit.
 Every remaining id in the 255-id inventory belongs to something outside the simulation: the Arceuus
 thrall's cast/impact (211/212) and resurrect (5063/5054), fire walls and the stepping-stone approach
 (10215, 2461), the Inferno captures' remaining player-spell ids (104–106, 170/171), Vardorvis
-(7139, 7078, 7145, 7109), Duke Sucellus (3052, 7181, 5002, 7197), the Leviathan (7028–7051) and
+(7139, 7078, 7145, 7109), the Leviathan (7028–7051) and
 Colosseum waves (8348 javelin, 8382 manticore, 5774 shockwave, 8339 serpent mager). When one of
 those is added, its ids are here.
 

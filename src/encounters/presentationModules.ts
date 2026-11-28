@@ -13,6 +13,7 @@
  * registered in `ENCOUNTER_RENDER_CONFIGS`, not here.
  *
  */
+import { dukeAudioRules } from '../audio/dukeAudio';
 import type { SoundRules } from '../audio/EventAudioPlayer';
 import { solHereditAudioRules } from '../audio/solHereditAudioRules';
 import { yamaAudioRules } from '../audio/yamaAudioRules';
@@ -21,13 +22,16 @@ import { SOL_NPC_ID } from '../npcs/colosseum/constants';
 import { ZUK_NPC_ID, ZUK_SEQS } from '../npcs/inferno/constants';
 import type { BossPortraitConfig } from '../render/preview/bossPortraitFraming';
 import { OSRS_DEFAULT_PITCH } from '../render/projections/Projection3D';
+import { createDukeSceneBuilder, DUKE_ASLEEP_MENU_TYPE, LEGACY_DUKE_MENU_TYPE } from '../render/scene/dukeSceneBuilder';
 import { createLobbySceneBuilder } from '../render/scene/lobbySceneBuilder';
 import type { SceneBuilderFactory } from '../render/scene/sceneBuilderFactory';
 import { createSolHereditSceneBuilder } from '../render/scene/solHereditSceneBuilder';
 import { createYamaSceneBuilder } from '../render/scene/yamaSceneBuilder';
 import { createZukSceneBuilder } from '../render/scene/zukSceneBuilder';
+import type { NpcType } from '../rs/config/npctype/NpcType';
 import { YAMA_NPC_ID } from '../rs/model/NpcModelLoader';
 import type { Coordinate, MechanicsConfig } from '../types/simulation';
+import { DUKE_KIND } from './catalog';
 import { FIRST_INFERNO_WAVE, INFERNO_PRACTICE_START_TILE, WAVE_67_JAD_TILE, ZUK_WAVE } from './inferno/constants';
 import { INFERNO_START_WAVE_KEY } from './inferno/controls';
 import { ENCOUNTER_CORE_MODULES, encounterKindsOf } from './modules';
@@ -81,6 +85,8 @@ export interface EncounterPresentationModule {
   readonly kind: string;
   /** A scene of its own, for presentation the common `SceneCompositor` lacks. Omit for that scene. */
   readonly sceneBuilder?: SceneBuilderFactory;
+  /** Encounter-supplied NPC interaction data, such as the Feed action on sleeping Duke. */
+  readonly localNpcTypes?: ReadonlyMap<number, NpcType>;
   readonly defaultCamera?: EncounterCameraConfig;
   /**
    * Opening views for particular run setups, tried in order before {@link defaultCamera}: an
@@ -220,6 +226,21 @@ export const ENCOUNTER_PRESENTATION_MODULES: readonly EncounterPresentationModul
         // Raise the bust out of the bottom fade, with headroom for the idle's upward movement.
         framing: { yaw: -30, pitch: -12, focusHeight: 0.79, span: 0.58 },
       },
+    },
+  },
+  {
+    kind: DUKE_KIND,
+    sceneBuilder: createDukeSceneBuilder,
+    localNpcTypes: new Map([
+      [DUKE_ASLEEP_MENU_TYPE.id, DUKE_ASLEEP_MENU_TYPE],
+      [LEGACY_DUKE_MENU_TYPE.id, LEGACY_DUKE_MENU_TYPE],
+    ]),
+    audioRules: dukeAudioRules,
+    defaultCamera: { yaw: 0, pitch: -57, zoom: 235 },
+    presentation: {
+      tagline: 'Duke Sucellus · Awakened',
+      blurb: 'Start at full health or jump straight to vents, bile, orbs, or enrage.',
+      wikiUrl: 'https://oldschool.runescape.wiki/w/Duke_Sucellus/Strategies#Awakened_mode',
     },
   },
 ];

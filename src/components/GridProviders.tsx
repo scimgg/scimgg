@@ -14,6 +14,7 @@ import type { GameEvent } from '../core/events/types';
 import type { GamePanelTabStore } from '../core/gamePanelTabStore';
 import type { SimulationEngine } from '../core/SimulationEngine';
 import { TickProgressStore } from '../core/tickProgressStore';
+import { encounterPresentationModuleForKind } from '../encounters/presentationModules';
 import type { InfoboxPinTarget, UIPosition } from '../hooks/usePersistedSettings';
 import { useSeedBossHighlights } from '../hooks/useSeedBossHighlights';
 import type { UseSimulationWiringReturn } from '../hooks/useSimulationWiring';
@@ -352,7 +353,7 @@ export function GridProviders({
     mapLoader,
     minimapNpcDotUrl,
     npcModelLoader,
-    npcTypeLoader,
+    npcTypeLoader: cacheNpcTypeLoader,
     objTypeLoader,
     overlayLoader,
     playerModelLoader,
@@ -385,6 +386,15 @@ export function GridProviders({
   const effectiveDisplayEvents = demoDisplayEvents ?? displayEvents;
   const effectiveDisplayState = demoDisplayState ?? displayState;
 
+  const localNpcTypes = encounterPresentationModuleForKind(activeEncounterKind)?.localNpcTypes;
+  const npcTypeLoader = useMemo(() => {
+    if (!cacheNpcTypeLoader || !localNpcTypes) return cacheNpcTypeLoader;
+    return {
+      load: (id: number) => localNpcTypes.get(id) ?? cacheNpcTypeLoader.load(id),
+      getCount: () => cacheNpcTypeLoader.getCount(),
+      clearCache: () => cacheNpcTypeLoader.clearCache(),
+    };
+  }, [cacheNpcTypeLoader, localNpcTypes]);
   // Seed the default boss true-tile highlight through the NPC Highlights plugin
   // so bosses are pre-tagged (shift+right-click shows "Untag True Tile"). Runs
   // for encounters only; the lobby is excluded inside the hook.

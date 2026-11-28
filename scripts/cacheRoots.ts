@@ -23,6 +23,7 @@ import { SPELL_VISUALS } from '../src/data/spellVisuals';
 import { PLAYER_ANIMATION_SEQ_IDS } from '../src/data/weaponAnimations';
 import { getMeleeSweep, HANDWRITTEN_WEAPON_COMBAT_VISUALS } from '../src/data/weaponCombatVisuals';
 import { WEAPON_ANIMATION_SETS, WEAPON_COMBAT_VISUALS } from '../src/data/weaponCombatVisuals.generated';
+import { DUKE_GAZE_OVERLAY } from '../src/encounters/duke/constants';
 import { LOBBY_BOSS_NPCS, LOBBY_PORTALS } from '../src/encounters/lobby/metadata';
 import { ENCOUNTER_CORE_MODULES } from '../src/encounters/modules';
 import {
@@ -57,6 +58,8 @@ export interface CacheRoots {
   readonly spotAnims: Map<number, string>;
   readonly seqs: Map<number, string>;
   readonly npcs: Map<number, string>;
+  /** Models loaded directly by the renderer, outside an item, NPC, loc, or spotanim. */
+  readonly models: Map<number, string>;
   /** Items the player can wear: their worn models, and those of their combat base item. */
   readonly wornItems: Map<number, string>;
   /** Items that can sit in a slot or on the ground: their inventory (ground) model. */
@@ -78,6 +81,7 @@ export function collectCacheRoots(usage?: CacheUsage): CacheRoots {
     spotAnims: new Map(),
     seqs: new Map(),
     npcs: new Map(),
+    models: new Map(),
     wornItems: new Map(),
     droppedItems: new Map(),
     identKits: new Map(),
@@ -128,6 +132,8 @@ export function collectCacheRoots(usage?: CacheUsage): CacheRoots {
     }
   }
   for (const id of PLAYER_ANIMATION_SEQ_IDS) add(roots.seqs, id, 'PLAYER_ANIMATION_SEQ_IDS');
+  add(roots.models, DUKE_GAZE_OVERLAY.modelId, 'Duke Freezing Gaze overlay');
+  for (const id of DUKE_GAZE_OVERLAY.sequenceIds) add(roots.seqs, id, 'Duke Freezing Gaze overlay');
 
   // Equipment and items.
   const catalog = getEquipmentCatalog();

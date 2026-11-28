@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { z } from 'zod';
 import type { EncounterModifierSelection, EncounterModifierTier } from '../core/encounters/encounterFactory';
-import { consolidateRetiredEncounterKinds } from '../encounters/catalog';
+import { consolidateRetiredEncounterKinds, DUKE_KIND, LEGACY_DUKE_KIND } from '../encounters/catalog';
 import {
   DEFAULT_TOUCH_PREFS,
   setTouchPrefs,
@@ -32,6 +32,7 @@ import {
   normalizeCompactOrbsLayout,
   normalizeCompactOrbsOrder,
 } from '../types/compactOrbs';
+import { migrateDukeMechanics } from '../types/duke';
 import { DEFAULT_ENTITY_HIDER_OPTIONS, type EntityHiderOptions, parseEntityHiderOptions } from '../types/entityHider';
 import {
   DEFAULT_PILLAR_ADDITIONS_OPTIONS,
@@ -941,7 +942,7 @@ function normalizeStartingHpPerEncounter(value: unknown): Record<string, number>
   for (const [kind, hp] of Object.entries(value)) {
     if (typeof hp === 'number' && Number.isFinite(hp) && hp >= 1) result[kind] = Math.floor(hp);
   }
-  return result;
+  return consolidateRetiredEncounterKinds(result, (owned, retired) => owned ?? retired).map;
 }
 
 const TICK_COLOR_PATTERN = /^#[0-9a-fA-F]{6}$/;
@@ -1078,7 +1079,8 @@ function parseMechanicsConfigPerEncounter(value: unknown): Record<string, Partia
         config[key] = setting;
       }
     }
-    result[encounter] = config;
+    result[encounter] =
+      encounter === DUKE_KIND || encounter === LEGACY_DUKE_KIND ? migrateDukeMechanics(config) : config;
   }
   // A retired kind's choices (Zuk's toggles) move onto the kind that owns it, as its saved loadout
   // does (`consolidateRetiredLoadouts`): on a shared key the retired kind's choice wins.
@@ -1103,7 +1105,7 @@ function parseModifiersPerEncounter(value: unknown): Record<string, EncounterMod
     }
     result[encounter] = tiers;
   }
-  return result;
+  return consolidateRetiredEncounterKinds(result, (owned, retired) => owned ?? retired).map;
 }
 
 function parseAttackStylePerCategory(value: unknown): Record<string, number> {

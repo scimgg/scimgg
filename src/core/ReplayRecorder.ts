@@ -8,7 +8,7 @@ import { type GameFrameRect, toReplayCursorPoint } from '../util/viewportBounds'
 import type { FirstPartyPlayerAttackProjectionSummary } from './combat/player/firstPartyPlayerAttack';
 import type { GameEvent } from './events/types';
 import { decodeLegacyReplayFrames } from './legacyReplayEvents';
-import { decodeLegacyPrayerState } from './legacyReplayState';
+import { decodeLegacyDukeRunConfig, decodeLegacyDukeState, decodeLegacyPrayerState } from './legacyReplayState';
 import { ReplayCaptureBudget } from './ReplayCaptureBudget';
 import { replayCursorTailUpdate } from './replayCursorSampling';
 import {
@@ -1045,19 +1045,17 @@ export class ReplayRecorder {
   }
 
   /**
-   * Installs a recording. Events in the encounter wire shapes of older builds, and states with the
-   * single offensive prayer slot, are converted to today's as they are read
-   * (`decodeLegacyReplayFrames`, `decodeLegacyPrayerState`), so an export after a load writes the
-   * current shapes; the caller's data is never modified. Throws, installing nothing, when a recognized
-   * old event is malformed.
+   * Installs a recording, decoding legacy events and state as it is read. Exports use current
+   * shapes; the caller's data is never modified. Throws before installing a malformed legacy event.
    */
   load(data: ReplayRecorderData): void {
     const copy = structuredClone({
       ...data,
       frames: decodeLegacyReplayFrames(data.frames).map((frame) => ({
         ...frame,
-        state: { ...decodeLegacyPrayerState(frame.state), damageHistory: [] },
+        state: { ...decodeLegacyDukeState(decodeLegacyPrayerState(frame.state)), damageHistory: [] },
       })),
+      runConfig: decodeLegacyDukeRunConfig(data.runConfig),
     });
     this.frames = [];
     for (const frame of copy.frames) {

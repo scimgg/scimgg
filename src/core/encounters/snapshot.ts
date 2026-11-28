@@ -1,3 +1,4 @@
+import type { DukeState, DukeVisuals } from '../../encounters/duke/snapshot';
 import type { InfernoPublicState, InfernoVisuals } from '../../encounters/inferno/snapshot';
 import type { SolHereditPublicState, SolHereditVisuals } from '../../encounters/solHeredit/snapshot';
 import type { YamaEncounterKind } from '../../encounters/yamaP3/contracts';
@@ -36,6 +37,11 @@ export type EncounterSnapshot =
       readonly kind: 'inferno';
       readonly state: InfernoPublicState;
       readonly visuals: InfernoVisuals;
+    }
+  | {
+      readonly kind: 'duke';
+      readonly state: DukeState;
+      readonly visuals: DukeVisuals;
     };
 
 /** The lobby is a walkable scene with no fight state. */

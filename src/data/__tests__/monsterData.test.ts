@@ -10,6 +10,7 @@ const WITHOUT_WIKI_ENTRY: Readonly<Record<number, string>> = {
   7707: 'Ancestral Glyph',
   7709: 'Rocky support',
   7710: 'Rocky support',
+  11708: 'Orb of Darkness encounter hazard',
   12823: 'Bee Swarm',
   12824: 'unnamed Colosseum NPC',
   12826: 'unnamed Colosseum NPC',
@@ -23,6 +24,8 @@ describe('monsterData', () => {
     [7702, 'Jal-Xil'],
     [7704, 'JalTok-Jad'],
     [7705, 'Yt-HurKot'],
+    [12166, 'Duke Sucellus'],
+    [12191, 'Duke Sucellus'],
     [14176, 'Yama'],
   ])('returns the monster name when NPC id %i is known', (npcId, name) => {
     const result = getMonsterName(npcId);

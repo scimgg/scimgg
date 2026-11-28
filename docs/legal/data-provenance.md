@@ -42,6 +42,8 @@ Retrieved from the OSRS Wiki's public Bucket API by
 
 **Retrieved:** 2026-09-16
 
+The Duke Sucellus entries in `monsters.json` were retrieved on 2026-11-25.
+
 The table lists the fields each file keeps after the transformations below, not every field the
 bucket offers. A field the sync script reads and then discards is not redistributed.
 

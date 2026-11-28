@@ -62,8 +62,17 @@ export function getMonsterHp(npcId: number): number | undefined {
   return monsterById.get(npcId)?.levels.hitpoints;
 }
 
-export function getMonsterFormulaStats(npcId: number, version?: string): NpcFormulaStats | undefined {
-  const m = version === undefined ? monsterById.get(npcId) : monsterByIdAndVersion.get(`${npcId}:${version}`);
+export function getMonsterFormulaStats(
+  npcId: number,
+  variant?: string | { readonly hitpoints: number },
+): NpcFormulaStats | undefined {
+  // Some infoboxes reuse both the NPC id and the version anchor across forms.
+  const m =
+    typeof variant === 'object'
+      ? monsters.find((entry) => entry.levels.hitpoints === variant.hitpoints && entry.ids.includes(npcId))
+      : variant === undefined
+        ? monsterById.get(npcId)
+        : monsterByIdAndVersion.get(`${npcId}:${variant}`);
   if (!m) return undefined;
 
   return {

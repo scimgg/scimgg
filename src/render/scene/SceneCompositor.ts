@@ -88,6 +88,7 @@ import { rgba, rgbaFromHex, vec2 } from '../core/types';
 import { PLAYER_GRAPHIC_PRELOAD_IDS, PlayerGraphicController } from '../effects/controllers/PlayerGraphicController';
 import { ProjectileController, type SurfaceHeightResolver } from '../effects/controllers/ProjectileController';
 import { EncounterCuePlayer } from '../effects/EncounterCuePlayer';
+import type { EncounterEffectFilter } from '../effects/NpcProjectileFlights';
 import { describePlayerEffects } from '../effects/playerEffectDescriptors';
 import type { ActorVisualPositionResolver } from '../effects/projectileAim';
 import { ReplayProjectileWork } from '../effects/replayProjectileWork';
@@ -1209,6 +1210,11 @@ export class SceneCompositor {
     return undefined;
   }
 
+  /** Snapshot ownership for effects that can be cancelled by encounter actions. */
+  protected encounterEffectFilter(_state: SimulationState): EncounterEffectFilter | undefined {
+    return undefined;
+  }
+
   /**
    * Where an `attached` graphic rides `actorId` this frame: the player's rendered tile center on the
    * ground, or an NPC's rendered model (position and facing) while it stands; null while it is not drawn.
@@ -1556,6 +1562,7 @@ export class SceneCompositor {
     _playerFacingAngle: number,
     _mechanicsConfig: SimulationState['mechanicsConfig'],
     _is2D: boolean,
+    _simulationState: SimulationState,
   ): void {}
 
   private loadEncounterSpotAnims(spotAnimModelLoader: SpotAnimModelLoader): void {
@@ -2038,13 +2045,18 @@ export class SceneCompositor {
     }
   }
 
+  /** An encounter with explicit sound cues can filter the frames the tracker plays. */
+  protected frameAudioStates(): ActorFrameState[] {
+    return this.collectActorFrameStates();
+  }
+
   /**
    * Plays the frame sounds this frame's final poses reached. A paused, discontinuous or rebuilt frame
    * only syncs the tracker, so a seek, scrub or restore never replays stale frame sounds.
    */
   private updateFrameAudio(paused: boolean): void {
     if (!this.frameSoundTracker || this._disposed) return;
-    const actors = this.collectActorFrameStates();
+    const actors = this.frameAudioStates();
     if (paused || this.lastDiscontinuityReason !== null || this.reconstructedVisuals) {
       this.frameSoundTracker.silentSync(actors);
     } else this.frameSoundTracker.update(actors, this.getFrameSoundListenerPosition());
@@ -2469,6 +2481,7 @@ export class SceneCompositor {
           cycle: this.primaryCycle,
           resolveActor: this.createActorVisualPositionResolver(visualPosition),
           resolveAttachment: (actorId) => this.resolveAttachedActor(actorId, simulationState, visualPosition),
+          retainEffect: this.encounterEffectFilter(simulationState),
           terrainHeights: this.terrainHeights,
           resolveSurfaceHeight: this.resolveSurfaceHeight,
         },
@@ -2484,6 +2497,7 @@ export class SceneCompositor {
       stepFacingAngle,
       mechanicsConfig,
       is2D,
+      simulationState,
     );
 
     // Skip 3D face-sorting projection in 2D mode because mesh data is not rendered.

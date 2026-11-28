@@ -72,6 +72,7 @@ export interface PlayerActor extends ActorBase {
    * walk/attack click.
    */
   pendingItemPickup: PendingItemPickup | null;
+  pendingNpcInteraction?: ActorId;
   activeEffects: EffectTimer[];
   /** Whether the quick-prayer set is engaged (OSRS varbit 4103, `QUICKPRAYER_ACTIVE`). */
   quickPrayersActive: boolean;

@@ -36,6 +36,7 @@ export type PendingInputOp =
   | { readonly type: 'special_attack_toggle' }
   | { readonly type: 'run_toggle' }
   | { readonly type: 'attack_target'; readonly targetId: ActorId | null; readonly manualCastSpell: string | null }
+  | { readonly type: 'npc_interaction'; readonly targetId: ActorId }
   | { readonly type: 'pickup_ground_item'; readonly groundItemId: string };
 
 export function isPrayerOp(op: PendingInputOp): op is QueuedPrayerAction {
