@@ -33,11 +33,13 @@ const TEAL = packHsl(123, 175, 100);
 const VENT_RIM = packHsl(23, 230, 166);
 const ORB_LIGHT = packHsl(203, 244, 133);
 const ORB_RENDER_ACTOR_ID = 'duke-orb';
+// The standalone preview wrote this sleeping type before switching to the combat-anchor NPC.
+const PREVIEW_SLEEPING_DUKE_TYPE = 12166;
 
 // The Awakened sleeping form uses the regular fight's Feed interaction.
 export const DUKE_ASLEEP_MENU_TYPE = Object.assign(
   new NpcType(DUKE_ASLEEP_NPC_ID, {
-    name: 'Practice',
+    name: 'Duke Sucellus',
     game: 'oldschool',
     environment: 'local',
     revision: 0,
@@ -218,14 +220,18 @@ export class DukeSceneCompositor extends SceneCompositor {
   private renderedNpcs(npcs: NpcSnapshot[], state?: SimulationState): NpcSnapshot[] {
     const actorId = this.actorRenderIdOf(WARDEN_ID);
     const duke = npcs.find((npc) => npc.id === WARDEN_ID);
-    const isLegacy = duke?.npcTypeId === LEGACY_DUKE_TYPE_ID;
-    const dukeTypeId = isLegacy ? DUKE_NPC_ID : duke?.npcTypeId;
+    let dukeTypeId = duke?.npcTypeId;
+    if (dukeTypeId === LEGACY_DUKE_TYPE_ID) dukeTypeId = DUKE_NPC_ID;
+    if (dukeTypeId === PREVIEW_SLEEPING_DUKE_TYPE) dukeTypeId = DUKE_ASLEEP_NPC_ID;
     if (dukeTypeId !== this.dukeRenderTypeId) {
       // Replace the pose on wake and on replay seeks across the wake tick.
       this.npcInstanceManager.removePresentation(actorId);
       this.dukeRenderTypeId = dukeTypeId;
     }
-    const visibleNpcs = isLegacy ? npcs.map((npc) => (npc === duke ? { ...npc, npcTypeId: DUKE_NPC_ID } : npc)) : npcs;
+    const visibleNpcs =
+      dukeTypeId !== undefined && dukeTypeId !== duke?.npcTypeId
+        ? npcs.map((npc) => (npc === duke ? { ...npc, npcTypeId: dukeTypeId } : npc))
+        : npcs;
     const visuals = state?.encounter.kind === DUKE_KIND ? state.encounter.visuals : undefined;
     if (!visuals?.orbTile) return visibleNpcs;
     const { orbTile, orbPreviousTile } = visuals;

@@ -1,6 +1,6 @@
 import type { PlayerEquipment } from '../rs/model/PlayerModelLoader';
 import { combatSuppliesEqual, type EncounterLoadout } from '../types/encounterLoadout';
-import { getFiniteStackQuantity, type Inventory } from '../types/inventory';
+import type { Inventory } from '../types/inventory';
 
 const EQUIPMENT_SLOTS: (keyof PlayerEquipment)[] = [
   'head',
@@ -30,11 +30,11 @@ export function equipmentEqual(a: PlayerEquipment, b: PlayerEquipment): boolean 
   return true;
 }
 
+/** Compares item ids only: loadout stacks never deplete, so a count is not part of a loadout. */
 export function inventoryEqual(a: Inventory, b: Inventory): boolean {
   if (a.length !== b.length) return false;
   for (let i = 0; i < a.length; i++) {
     if ((a[i]?.id ?? null) !== (b[i]?.id ?? null)) return false;
-    if (getFiniteStackQuantity(a[i]) !== getFiniteStackQuantity(b[i])) return false;
   }
   return true;
 }

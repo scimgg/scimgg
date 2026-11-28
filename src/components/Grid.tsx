@@ -164,7 +164,7 @@ import { TopChrome, type TopChromeProps } from './launcher/TopChrome';
 import { Minimap, type MinimapHandle } from './Minimap';
 import { MobileLayoutEditBar } from './MobileLayoutEditBar';
 import { MobileToolWindow } from './MobileToolWindow';
-import { hasNpcClickAction, resolveInteractiveNpcPick } from './npcInteraction';
+import { hasNpcClickAction, type NpcClickAction, resolveInteractiveNpcPick } from './npcInteraction';
 import { PixelComposedLayer, tileFill } from './PixelComposedLayer';
 import { PRAYER_FLICK_PANEL_HEIGHT, PrayerFlickOverlay } from './PrayerFlickOverlay';
 import { ReplayControls, type ReplayControlsProps } from './ReplayControls';
@@ -348,7 +348,12 @@ export interface GridProps {
   };
   engine?: SimulationEngine;
   dpsProjection?: ReturnType<SimulationEngine['getAdjustedTheoreticalDps']>;
-  onTileClick: (coord: Coordinate, ctrlKey?: boolean, hoveredNpcActorId?: string | null) => void;
+  onTileClick: (
+    coord: Coordinate,
+    ctrlKey?: boolean,
+    hoveredNpcActorId?: string | null,
+    npcAction?: NpcClickAction,
+  ) => void;
   showCoordinates: boolean;
   /** The Tile Grid plugin's style; `null` when it is off. */
   tileGrid?: TileGridStyle | null;
@@ -683,8 +688,8 @@ export interface GridProps {
 
 const ViewportContextMenuBridge: React.FC<{
   onTileClick: (coord: Coordinate) => void;
-  onNpcAction?: (coord: Coordinate) => void;
-  onNpcActionByTarget?: (actorId: string, position: Coordinate) => void;
+  onNpcAction?: (coord: Coordinate, action: NpcClickAction) => void;
+  onNpcActionByTarget?: (actorId: string, position: Coordinate, action: NpcClickAction) => void;
   tileMarkers: TileMarker[];
   showTileMarkers: boolean;
   onMarkTile?: (tile: Coordinate) => void;
@@ -2262,15 +2267,15 @@ export const Grid: React.FC<Partial<GridProps>> = (props) => {
   );
 
   const handleNpcAction = useCallback(
-    (coord: Coordinate) => {
-      onTileClick(coord, getModifiers().ctrl, primaryNpcActorId ?? null);
+    (coord: Coordinate, action: NpcClickAction) => {
+      onTileClick(coord, getModifiers().ctrl, primaryNpcActorId ?? null, action);
     },
     [onTileClick, primaryNpcActorId],
   );
 
   const handleNpcActionByTarget = useCallback(
-    (actorId: string, position: Coordinate) => {
-      onTileClick(position, getModifiers().ctrl, actorId);
+    (actorId: string, position: Coordinate, action: NpcClickAction) => {
+      onTileClick(position, getModifiers().ctrl, actorId, action);
     },
     [onTileClick],
   );
@@ -2298,8 +2303,8 @@ export const Grid: React.FC<Partial<GridProps>> = (props) => {
           entityContext,
           ray,
           screenPx,
-          onNpcAction: (coord) => onTileClick(coord, ctrlKey, primaryNpcActorId ?? null),
-          onNpcActionByTarget: (actorId, position) => onTileClick(position, ctrlKey, actorId),
+          onNpcAction: (coord, action) => onTileClick(coord, ctrlKey, primaryNpcActorId ?? null, action),
+          onNpcActionByTarget: (actorId, position, action) => onTileClick(position, ctrlKey, actorId, action),
           groundItemContext:
             onTakeGroundItem && groundItems.length > 0
               ? { items: groundItems, objTypeLoader, onTake: onTakeGroundItem }

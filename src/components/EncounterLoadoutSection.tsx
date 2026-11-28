@@ -29,7 +29,7 @@ import {
   withRunePouchSlot,
 } from '../types/encounterLoadout';
 import type { Inventory } from '../types/inventory';
-import { createEmptyInventory, getFiniteStackQuantity } from '../types/inventory';
+import { createEmptyInventory } from '../types/inventory';
 import type { EncounterPreset, PlayerConfig, PresetRequirements } from '../types/player';
 import { PLAYER_STAT_DISPLAY_NAMES, PLAYER_STAT_KEYS, type PlayerStats } from '../types/playerState';
 import { SPELLBOOK_DISPLAY_NAMES, type SpellbookType } from '../types/spellbook';
@@ -51,7 +51,6 @@ import {
   equipmentSlotCells,
 } from './EquipmentSettings';
 import { SELECTABLE_SPELLBOOKS } from './GamePanel/spellbookFilterUtils';
-import { InventoryStackCount } from './InventoryStackCount';
 import { useInventorySlotDrag } from './inventorySlotDrag';
 import {
   type BlockedLoadoutOption,
@@ -1076,11 +1075,11 @@ export const EncounterLoadoutSection: React.FC<EncounterLoadoutSectionProps> = (
     applyLoadout({ ...currentLoadout, equipment });
   };
 
-  /** Set or clear an inventory slot. Newly selected finite stacks start with one item. */
+  /** Set or clear an inventory slot. Loadout stacks never deplete, so a slot holds only an id. */
   const applyInventoryItem = (index: number, itemId: number | undefined) => {
     const next = [...shownInventory];
     const replaced = next[index]?.id;
-    if (itemId !== replaced) next[index] = itemId === undefined ? null : { id: itemId };
+    next[index] = itemId === undefined ? null : { id: itemId };
     clearFeedback();
     // An imported setup can carry `rp` contents with no pouch item in the inventory at all,
     // so syncing on every edit would silently delete those runes on the next unrelated swap.
@@ -1448,16 +1447,14 @@ export const EncounterLoadoutSection: React.FC<EncounterLoadoutSectionProps> = (
                     ]
                       .filter(Boolean)
                       .join(' ');
-                    const quantity = getFiniteStackQuantity(item);
                     const sprite = item && (
-                      <>
-                        <PixelSprite src={getItemSpriteUrl(item.id)} alt="" style={INVENTORY_SPRITE_BOX} />
-                        {quantity !== undefined && <InventoryStackCount quantity={quantity} />}
-                      </>
+                      <PixelSprite src={getItemSpriteUrl(item.id)} alt="" style={INVENTORY_SPRITE_BOX} />
                     );
 
+                    // The label names the position AND what is in it, because the cell itself
+                    // only ever shows a sprite.
                     const itemName = inventoryItemName(item?.id);
-                    const label = `Inventory slot ${i + 1}: ${itemName}${quantity === undefined ? '' : ` ×${quantity}`}${
+                    const label = `Inventory slot ${i + 1}: ${itemName}${
                       isUnverified ? ', unverified and may not work correctly' : ''
                     }${notes ? `. ${notes.join(' ')}` : ''}`;
                     return (

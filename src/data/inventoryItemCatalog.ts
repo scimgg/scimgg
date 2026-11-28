@@ -1,8 +1,7 @@
-import { ARDER_MUSCA_POISON_ITEM_ID } from '../types/inventory';
 import { getCanonicalEquipmentItemId, getEquipmentCatalog } from './equipmentCatalog';
 import { isVerifiedEquipmentPiece } from './equipmentSupport';
 import { ITEM_ACTIONS } from './itemEffects';
-import { HALIBUT_ITEM_ID } from './itemIds';
+import { ARDER_MUSCA_POISON_ITEM_ID, HALIBUT_ITEM_ID } from './itemIds';
 import { RUNE_POUCH_ITEMS, SUPPORTED_RUNES } from './runePouch';
 
 export type InventoryItemCategory = 'food' | 'potions' | 'runes' | 'gear' | 'other';

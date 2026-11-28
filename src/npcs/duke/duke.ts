@@ -5,7 +5,7 @@ import type { Coordinate } from '../../types/simulation';
 
 // Awakened Duke types and 7×7 footprint verified in cache 2772.
 export const DUKE_NPC_ID = 12191;
-export const DUKE_ASLEEP_NPC_ID = 12166;
+export const DUKE_ASLEEP_NPC_ID = 12167;
 export const WARDEN_SIZE = 7;
 // https://oldschool.runescape.wiki/w/Duke_Sucellus#Awakened
 export const WARDEN_MAX_HP = 1697;
@@ -23,7 +23,14 @@ export interface WardenPlan {
   bileQueued: boolean;
 }
 
-const definition = createNpcDefinition<WardenPlan, undefined>({ id: WARDEN_ID, move: false });
+const definition = createNpcDefinition<WardenPlan, undefined>({
+  id: WARDEN_ID,
+  move: false,
+  attackTimer: ({ actor }) =>
+    actor.alive && actor.npcTypeId === DUKE_NPC_ID
+      ? { nextAttackTick: actor.combat.nextActionTick, attackSpeed: actor.combat.attackSpeed }
+      : null,
+});
 export const wardenDefinitions = new NpcDefinitionCollection([definition.register(undefined)]);
 export const getWardenPlan = definition.getState;
 
@@ -50,6 +57,7 @@ export function createWarden(position: Coordinate, hp: number, attackSpeed: numb
       kind: 'npc',
       role: 'boss',
       npcTypeId: DUKE_ASLEEP_NPC_ID,
+      attackBlockedUntilTick: Number.POSITIVE_INFINITY,
       archetypeId: WARDEN_ID,
       position: [...position],
       previousPosition: [...position],

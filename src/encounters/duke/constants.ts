@@ -67,7 +67,6 @@ export const DUKE_SEQS = {
   gaze: 10180,
   death: 10181,
 } as const;
-export const DUKE_WAKE_ANIMATION_TICKS = 3; // 90 client cycles in sequence 10179.
 // Pinned cache 2772, DUKE_SIGHT interface 829 component 2. RuneLite's gameval AnimationID
 // at 9af7b54deaac35b3153af06195d66c1d68fbea5a names the chthonian overlay's appear/disappear clips.
 export const DUKE_GAZE_OVERLAY = { modelId: 48318, sequenceIds: [10216, 10215] } as const;

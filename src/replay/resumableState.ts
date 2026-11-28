@@ -8,9 +8,8 @@ import type { SimulationState } from '../types/simulation';
  * simulation; the position histories are rolling render trails that the recorder empties before
  * it stores a frame (`snapshotStateForReplay`), so a recorded frame's copy is always empty while
  * a live engine's is not. Comparing either produces a guaranteed mismatch and would abort every
- * takeover. The renderer uses `crawlMovement` and `orbPreviousTile` for interpolation. Their
- * authoritative positions are compared separately. `usesVisualEvents` chooses how to play Duke’s
- * presentation and has no effect on the fight state.
+ * takeover. `crawlMovement` is likewise presentation history (the renderer's crawl interpolation),
+ * not authoritative movement.
  */
 const IGNORED_STATE_KEYS: ReadonlySet<string> = new Set([
   'eventLog',
@@ -18,8 +17,6 @@ const IGNORED_STATE_KEYS: ReadonlySet<string> = new Set([
   'primaryNpcHistory',
   'history',
   'crawlMovement',
-  'orbPreviousTile',
-  'usesVisualEvents',
 ]);
 
 function normalize(value: unknown): unknown {

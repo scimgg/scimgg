@@ -1,7 +1,7 @@
 import type { CombatSupplies } from '../types/encounterLoadout';
-import { ARDER_MUSCA_POISON_ITEM_ID, createEmptyInventory, parseInventoryFromSetup } from '../types/inventory';
+import { createEmptyInventory, parseInventoryFromSetup } from '../types/inventory';
 import type { EncounterPreset } from '../types/player';
-import { HALIBUT_ITEM_ID } from './itemIds';
+import { ARDER_MUSCA_POISON_ITEM_ID, HALIBUT_ITEM_ID } from './itemIds';
 import { computeSetRequirements } from './itemRequirements';
 import { COMBINATION_RUNE, RUNE } from './spellRunes';
 
@@ -1425,9 +1425,20 @@ export const EQUIPMENT_PRESETS: Record<string, Record<string, EncounterPreset>> 
   },
 };
 
-// The Duke loadout uses the user's opening switches and supply counts.
-// https://oldschool.runescape.wiki/w/Duke_Sucellus/Strategies#Awakened_mode
-const dukeEquipment = { ...EQUIPMENT_PRESETS.sol_heredit.max.equipment, head: 30750, weapon: 29577 };
+// Duke Sucellus/Strategies, Equipment: Oathplate melee with Burning claws and Scythe.
+// https://oldschool.runescape.wiki/w/Duke_Sucellus/Strategies#Equipment
+// Open with the claws and carry Emberlight for a four-tick enrage switch.
+const dukeEquipment = {
+  head: 30750, // Oathplate helm
+  cape: 21295, // Infernal cape
+  amulet: 29804, // Amulet of rancour (s)
+  weapon: 29577, // Burning claws
+  body: 30779, // Radiant oathplate chest
+  legs: 30781, // Radiant oathplate legs
+  hands: 22981, // Ferocious gloves
+  boots: 31097, // Avernic treads (max)
+  ring: 28307, // Ultor ring, recommended for Emberlight when it adds a max hit
+};
 const dukeInventory = parseInventoryFromSetup([
   { id: 29589 }, // Emberlight
   { id: 12695 }, // Super combat potion(4)
@@ -1445,7 +1456,7 @@ const dukeInventory = parseInventoryFromSetup([
   { id: 6685 }, // Saradomin brew(4)
   { id: 3024 }, // Super restore(4)
   ...Array.from({ length: 3 }, () => [{ id: HALIBUT_ITEM_ID }, { id: 13441 }, { id: 13441 }, { id: 13441 }]).flat(),
-  { id: ARDER_MUSCA_POISON_ITEM_ID, q: 3 }, // Arder-musca poison
+  { id: ARDER_MUSCA_POISON_ITEM_ID }, // Arder-musca poison
 ]);
 
 const unarmedDukeInventory = createEmptyInventory();
@@ -1453,20 +1464,6 @@ unarmedDukeInventory[27] = dukeInventory[27];
 
 EQUIPMENT_PRESETS.duke = {
   burning_claws: { name: 'Max (Burning claws)', equipment: dukeEquipment, inventory: dukeInventory },
-  emberlight: {
-    name: 'Max (Emberlight)',
-    equipment: { ...dukeEquipment, weapon: 29589, shield: 22322 },
-    inventory: dukeInventory.map((item) => {
-      if (item?.id === 29589) return { id: 29577 }; // Burning claws replace Emberlight.
-      if (item?.id === 22322) return null; // The defender is worn.
-      return item;
-    }),
-  },
-  scythe: {
-    name: 'Max (Scythe)',
-    equipment: { ...dukeEquipment, weapon: 22325 },
-    inventory: dukeInventory.map((item) => (item?.id === 22325 ? { id: 29577 } : item)),
-  },
   naked: { ...NO_EQUIPMENT_FALLBACK, inventory: unarmedDukeInventory },
 };
 

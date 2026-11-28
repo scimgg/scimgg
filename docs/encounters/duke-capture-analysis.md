@@ -3,9 +3,9 @@
 ## Scope, citations, and evidence discipline
 
 The [timing verification ledger](./duke-facts-spec.md#timing-verification-ledger) tracks the status
-of each rule. The [capture inventory](./duke-facts-spec.md#captures) maps the aliases A0–A10, A12,
-and R to private recording files. The [unverified behavior register](./duke-unverified.md) records
-known exceptions and the observations that could resolve them. Tests use the extracted
+of each rule. The [capture inventory](./duke-facts-spec.md#captures) maps aliases to private
+recordings. The [unverified behavior register](./duke-unverified.md) records known exceptions
+and the observations that could resolve them. Tests use the extracted
 [capture fixtures](../../src/encounters/duke/__tests__/fixtures/).
 
 **OBSERVED** marks a recorded event or tile. **DERIVED** marks a conclusion computed from the
@@ -15,7 +15,7 @@ or hypothesis that the recordings leave open.
 Each section uses the named capture's own ticks. `A2:t380` refers to a game tick and
 `A2:L11783–11815` refers to file lines. Tiles are local to map square `(47, 100)`. Player movement
 checks use `me.tile` before or after movement as stated. Client-cycle offsets are relative to the
-specified attack or graphic start. R is regular-mode evidence for shared timings. Awakened damage
+specified attack or graphic start. R, R2 and R3 are regular-mode evidence. Awakened damage
 and phase rules use the Awakened captures.
 
 ## 1. Capture cross-checks
@@ -94,6 +94,68 @@ at +6. The four deaths start sequence 10181 with NPC 12192 on ticks 64, 179,
 303 and 419. Loot and the kill-count message appear four ticks after each.
 These observations are for regular mode.
 
+### Regular east-grate trial
+
+**OBSERVED (R2).** `20261128-021737-Duke-Sucellus.jsonl` records one regular kill with
+continuous snapshots from ticks 0–193. The two tolerance splats are 125 and 75 on ticks
+23 and 26, with wake on 27 and the first basic on 32 (L4886, L5040, L5070–5072 and L5248).
+
+| Windup | True tile before and after | Duke's attack | Movement before windup | Lines |
+| ---: | --- | --- | --- | --- |
+| 32 | `[34, 50]` | Melee | Stepped south from `[34, 51]` at t31 | L5208–5257 |
+| 37 | `[34, 50]` | Magic | Stepped south from `[34, 51]` at t36 | L5328–5357 |
+| 42 | `[34, 50]` | Melee | True tile held since t36. Rendered position settled at t38 | L5407–5451 |
+| 47, 52 | `[34, 50]` | Magic, magic | Same stationary hold | L5496–5577 |
+| 68 | `[34, 50]` | Melee | Stepped off the east cover tile at t66 | L5760–5797 |
+| 73 | `[34, 50]` | Magic | Held the grate since t66 | L5821–5847 |
+
+The three off-row melee windups have no icicle chip. At t34 the player starts on the
+grate and reaches the shatter row on the impact tick without damage. On t42, t47 and
+t52 the rendered position and the true tile are the same and unchanged by movement.
+The lane check matches 19 of the 22 basics (15 melee and seven magic).
+
+All seven bolt records show release at +50 client cycles and scheduled arrival at
++120 cycles. The first six deal 12, 15, 16, 14, 11 and 12 on arrival,
+with Protect from Magic active on all six hits. The last windup at t181 schedules
+arrival on t185. Duke dies on t182 and the projectile appears on t183, with no
+damage or block splat at t185 (L8062–8124). All four successful Gaze checks use
+the front pillars and report success at +4 ticks.
+
+**DERIVED.** The same step off the front row precedes both outcomes on t32 and
+t37. The t42 and t52 windups also give different results. Both occur during the
+same stationary hold, one tick after a bolt hit. The attack-selection rule
+remains open.
+
+**OBSERVED.** All seven flare projectiles arrive three ticks after windup. On
+t117 the player starts at `[29, 48]`. The north grate `[28, 50]` is just
+igniting from the t114 flare, and the second flare targets `[28, 46]`
+(L6596–6689). The two grates are equally distant and only the southern one is
+eligible under the recorded-smoke model. In the two volleys with natural fades,
+the first and second grates fade at windup +18/+16 (t114 and t117) and +16/+14
+(t147 and t150). The last volley ends with the boss's death (L7026, L7036,
+L7701, L7726 and L8105–8110). These are regular-mode timings.
+
+### Regular return from a flare volley
+
+**OBSERVED (R3).** `20261128-022133-Duke-Sucellus_1.jsonl` has continuous snapshots on
+ticks 0–266. The first kill is in progress at t0. The second opens with
+125 and 75 tolerance splats at t138 and t140, wake at t141, and its first
+basic at t146 (L6860–7125).
+
+On t45, four ticks after the second flare windup, Duke starts melee (10176)
+while the player is running north. The player's true tiles at the end of
+t43, t44 and t45 are `[31, 47]`, `[33, 49]` and `[33, 51]`. The rendered
+position at windup is still at `[31, 47]`. No chip splat accompanies the
+windup (L5050–5162). This is the only lane-check mismatch in 29 basic attacks.
+All five Gaze checks report success at +4 while behind a front pillar.
+
+**DERIVED.** This independently shows an off-row melee windup after returning
+north from a pre-enrage volley. The earlier Awakened replay trial recovered a
+missed shatter by allowing that route. R2:t121 is a comparison four ticks
+after a second flare. Duke chooses magic as the player steps from `[35, 50]`
+to `[34, 51]` (R2:L6662–6768). Both returns end in melee range on windup.
+R3 adds an off-row melee along the longer northward return.
+
 ### Awakened opener and orb cross-check
 
 **OBSERVED (A1).** `20261127-002024-Duke-Sucellus_1.jsonl` records 257 consecutive ticks
@@ -108,8 +170,8 @@ at tick 250 with Duke at 470 HP, above the enrage threshold.
   sequence 10179, followed by the first melee windup at tick 16.
   The player swings at ticks 12 and 16, and is back in cover by tick 17.
   The sim uses the tolerance-update-to-wake and wake-to-windup offsets.
-  It combines the inventory decrement and tolerance update into the Feed
-  tick and uses sleeping NPC 12166. See lines 4417–4530 and 4590–4758.
+  It applies the tolerance update on Feed, uses sleeping NPC 12167 and keeps
+  the loadout stack. See lines 4417–4530 and 4590–4758.
 - **Slam.** All 29 shatter checks fit the sim's pre-movement rule at
   windup +2. In 24 cases the player re-enters the front row on that
   tick and takes no slam damage. Chip damage reaches 7 with Protect
@@ -462,8 +524,8 @@ The same step produces a third consecutive bolt at tick 134 in
 At tick 1019 the player had held the starting tile for three ticks. A trial
 that extends melee only when the player held still on the previous tick after
 two consecutive bolts fits the last windup. There is one supporting example.
-An independent trial holding `[34, 50]` through three basic attacks would
-test whether staying still distinguishes those casts.
+The [regular east-grate trial](#regular-east-grate-trial) observed both attacks during a
+stationary hold. The earlier Awakened contrast remains open.
 
 ### 19:29 Awakened recording
 
@@ -524,9 +586,9 @@ targets before landing and during the fade.
 
 ## 3. Evidence audit
 
-The audit used all 13 available recordings. The regular recording supports shared
-opener timing and vent geometry. The Awakened phase and damage samples use only the
-12 Awakened recordings. Counts below state the conditions used to isolate each observation.
+The counts in this section use the original 13 recordings. The
+[later regular trials](#regular-east-grate-trial) test attack selection and flare placement.
+The Awakened phase and damage samples use the 12 Awakened recordings.
 
 ### Trigger and selection samples
 
@@ -634,11 +696,10 @@ opener timing and vent geometry. The Awakened phase and damage samples use only 
   and records the matching tolerance splats 125, 125 and 120 on ticks
   8–10. A6 repeats those offsets at 729–731 and 730–732. These are two
   complete Awakened feeding sequences (A1:L4432–4502, A6:L21608–21678).
-  Combining the inventory and meter changes in the sim is a presentation choice.
+  The sim applies the meter change on Feed with an unlimited stack.
 - **Sleeping type.** A1:t0, A7:t0 and A8:t0 show NPC 12167 at Duke's
   combat anchor. A6 feeds 12167 during the second opener, after spawning
   12166 at the room entrance on t499 (A6:L12419 and L21621–21678).
   Pinned cache 2772 gives 12167 the `Feed` action and has no action on
-  12166. Both use model 49194, idle 10174 and size 7. The sim displays
-  12166 with a local `Feed` action. The on-anchor Feed identity in the
-  captured openers is established.
+  12166. Both use model 49194, idle 10174 and size 7. The encounter uses
+  the on-anchor type 12167 for the opener.

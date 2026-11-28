@@ -12,7 +12,7 @@ import {
 } from '../../../encounters/duke/__tests__/fixtures/dukeCombatCapture';
 import { ORB_LANE, SLAM_TILES, START_TILE, square, WARDEN_TILE } from '../../../encounters/duke/arena';
 import { DUKE_ORB_NPC_ID, DUKE_SEQS, DUKE_SPOT_ANIMS } from '../../../encounters/duke/constants';
-import { BILE_HP, ENRAGE_HP, ORB_HP, VENTS_HP } from '../../../encounters/duke/controls';
+import { BILE_HP, ENRAGE_HP, VENTS_HP } from '../../../encounters/duke/controls';
 import { DukeEncounter } from '../../../encounters/duke/DukeEncounter';
 import { DUKE_RENDER_CONFIG } from '../../../encounters/duke/renderConfig';
 import { DUKE_ASLEEP_NPC_ID, DUKE_NPC_ID, LEGACY_DUKE_TYPE_ID, WARDEN_ID, WARDEN_SIZE } from '../../../npcs/duke/duke';
@@ -23,8 +23,9 @@ import { ArchiveSpotAnimTypeLoader } from '../../../rs/config/spotanimtype/SpotA
 import { IndexModelLoader } from '../../../rs/model/ModelLoader';
 import { NpcModelLoader } from '../../../rs/model/NpcModelLoader';
 import { SpotAnimModelLoader } from '../../../rs/model/SpotAnimModelLoader';
+import { startAwakeDukeOpening } from '../../../test/helpers/dukeOpening';
 import { openRealCache, skipWithoutRealCache } from '../../../test/helpers/real-cache';
-import { DUKE_ALWAYS_BILE_KEY } from '../../../types/duke';
+import { DUKE_ALWAYS_BILE_KEY, DUKE_START_PHASE_KEY } from '../../../types/duke';
 import type { Coordinate } from '../../../types/simulation';
 import { DEFAULT_TILE_INDICATOR_CONFIG } from '../../../types/tileIndicators';
 import { AnimationSystem } from '../../backends/picogl/AnimationSystem';
@@ -62,9 +63,7 @@ it.each<Coordinate>([
   [35, 51],
 ])('draws the captured frontal row through shared cues when the player is at (%i, %i)', (x, y) => {
   const engine = new SimulationEngine({ encounter: new DukeEncounter() });
-  engine.setAttackTarget(WARDEN_ID);
-  engine.advanceTick([31, 51]);
-  engine.setAttackTarget(null);
+  startAwakeDukeOpening(engine, [31, 51]);
   while (engine.currentTick < 6) engine.advanceTick([x, y]);
   const scene = new DukeSceneCompositor();
   try {
@@ -109,9 +108,7 @@ it.each<Coordinate>([
 it.each([true, false])('respects true-tile visibility %s while hiding melee tile fills', (enabled) => {
   const engine = new SimulationEngine({ encounter: new DukeEncounter() });
   const playerTile: Coordinate = [31, 51];
-  engine.setAttackTarget(WARDEN_ID);
-  engine.advanceTick(playerTile);
-  engine.setAttackTarget(null);
+  startAwakeDukeOpening(engine, playerTile);
   while (engine.currentTick < 6) engine.advanceTick(playerTile);
 
   const state = engine.getState();
@@ -196,9 +193,7 @@ it('restarts one cloud when a flare lands on the same grate and fades each grate
   });
   engine.setBossHp(VENTS_HP);
   const playerTile: Coordinate = [31, 51];
-  engine.setAttackTarget(WARDEN_ID);
-  engine.advanceTick(playerTile);
-  engine.setAttackTarget(null);
+  startAwakeDukeOpening(engine, playerTile);
 
   const scene = new DukeSceneCompositor();
   try {
@@ -317,9 +312,7 @@ it.skipIf(skipWithoutRealCache('pinned'))(
 
       const cover: Coordinate = [27, 51];
       const bileTick = 63;
-      engine.setAttackTarget(WARDEN_ID);
-      engine.advanceTick([31, 51]);
-      engine.setAttackTarget(null);
+      startAwakeDukeOpening(engine, [31, 51]);
       while (engine.currentTick < bileTick) engine.advanceTick(cover);
 
       const firstPool = cover.map((axis) => axis + 0.5);
@@ -353,9 +346,7 @@ it('aims the blue bolt and its impact at the rendered player during movement', (
     combatRandom: () => 0,
   });
   engine.setBossHp(ENRAGE_HP);
-  engine.setAttackTarget(WARDEN_ID);
-  engine.advanceTick([31, 51]);
-  engine.setAttackTarget(null);
+  startAwakeDukeOpening(engine, [31, 51]);
   while (engine.currentTick < 6) engine.advanceTick(launch.trueTile);
 
   const scene = new DukeSceneCompositor();
@@ -440,9 +431,7 @@ it('aims the blue bolt and its impact at the rendered player during movement', (
 
 function startBolt() {
   const engine = new SimulationEngine({ encounter: new DukeEncounter(37), combatRandom: () => 0 });
-  engine.setAttackTarget(WARDEN_ID);
-  engine.advanceTick([31, 51]);
-  engine.setAttackTarget(null);
+  startAwakeDukeOpening(engine, [31, 51]);
   while (engine.currentTick < 6) engine.advanceTick(START_TILE);
   return engine;
 }
@@ -606,10 +595,12 @@ it('renders the captured bile projectile during its flight and removes it at arr
 });
 
 it.each([
-  LEGACY_DUKE_TYPE_ID,
-])('renders awake snapshot type %i with the same Duke model between sleeping snapshots', (awakeSnapshotType) => {
+  DUKE_ASLEEP_NPC_ID,
+  12166,
+])('renders sleeping snapshot type %i around a legacy awake snapshot', (asleepType) => {
   const engine = new SimulationEngine({ encounter: new DukeEncounter() });
-  const sleepingSnapshots = engine.getState().npcs;
+  const [snapshot] = engine.getState().npcs;
+  const sleepingSnapshots = [{ ...snapshot, npcTypeId: asleepType }];
   const scene = new DukeSceneCompositor();
   try {
     scene.setEncounterRenderConfig(DUKE_RENDER_CONFIG);
@@ -620,7 +611,7 @@ it.each([
 
     scene['syncNpcInstances'](sleepingSnapshots, false);
     expect(instances.get(PRIMARY_NPC_ACTOR_ID)?.npcTypeId).toBe(DUKE_ASLEEP_NPC_ID);
-    scene['syncNpcInstances']([{ ...sleepingSnapshots[0], npcTypeId: awakeSnapshotType }], false);
+    scene['syncNpcInstances']([{ ...sleepingSnapshots[0], npcTypeId: LEGACY_DUKE_TYPE_ID }], false);
     expect(instances.get(PRIMARY_NPC_ACTOR_ID)?.npcTypeId).toBe(DUKE_NPC_ID);
     scene['syncNpcInstances'](sleepingSnapshots, false);
     expect(instances.get(PRIMARY_NPC_ACTOR_ID)?.npcTypeId).toBe(DUKE_ASLEEP_NPC_ID);
@@ -673,9 +664,7 @@ it.skipIf(skipWithoutRealCache('pinned'))(
       expect(play.mock.calls.every(([, sound]) => sound.channel === 'area')).toBe(true);
 
       play.mockClear();
-      engine.setAttackTarget(WARDEN_ID);
-      engine.advanceTick([31, 51]);
-      engine.setAttackTarget(null);
+      startAwakeDukeOpening(engine, [31, 51]);
       draw();
       for (let i = 0; i < 6; i++) {
         engine.advanceTick([31, 51]);
@@ -708,9 +697,7 @@ it.skipIf(skipWithoutRealCache('pinned'))(
         mechanics: { infiniteHealth: true },
       });
       const tile: Coordinate = [27, 51];
-      engine.setAttackTarget(WARDEN_ID);
-      engine.advanceTick([31, 51]);
-      engine.setAttackTarget(null);
+      startAwakeDukeOpening(engine, [31, 51]);
 
       const viewport = { width: 800, height: 600, dpr: 1 };
       const projection = new Projection3D(viewport);
@@ -776,9 +763,7 @@ it.skipIf(skipWithoutRealCache('pinned'))(
       );
       const engine = new SimulationEngine({ encounter: new DukeEncounter() });
       const bait: Coordinate = [31, 51];
-      engine.setAttackTarget(WARDEN_ID);
-      engine.advanceTick(bait);
-      engine.applyAction({ type: 'attackTarget', targetId: null });
+      startAwakeDukeOpening(engine, bait);
       while (engine.currentTick < 6) engine.advanceTick(bait);
 
       const viewport = { width: 800, height: 600, dpr: 1 };
@@ -846,9 +831,8 @@ it.skipIf(skipWithoutRealCache('pinned'))(
 it('glides the cache orb in both directions and plays the burst at both ends of the sweep', () => {
   const engine = new SimulationEngine({
     encounter: new DukeEncounter(57),
-    mechanics: { infiniteHealth: true },
+    mechanics: { infiniteHealth: true, [DUKE_START_PHASE_KEY]: 'orbs' },
   });
-  engine.setBossHp(ORB_HP);
   const scene = new DukeSceneCompositor();
   const mesh: NpcMesh3DCommand = {
     kind: 'mesh3d',
@@ -886,18 +870,17 @@ it('glides the cache orb in both directions and plays the burst at both ends of 
         projection,
         viewport,
       );
-    engine.setAttackTarget(WARDEN_ID);
-    engine.advanceTick([31, 51]);
-    engine.setAttackTarget(null);
-    for (const [tick, fraction, x, burstTicks] of [
-      [9, 0.5, null, []],
-      [10, 0.5, ORB_LANE.east, [10]],
-      [11, 0.5, ORB_LANE.east - 0.5, [10]],
-      [20, 1, ORB_LANE.west, []],
-      [21, 0, null, [21]],
-      [22, 0.5, ORB_LANE.west, [21, 22]],
-      [23, 0.5, ORB_LANE.west + 0.5, [22]],
+    const firstOrb = 3;
+    for (const [offset, fraction, x, burstTicks] of [
+      [-1, 0.5, null, []],
+      [0, 0.5, ORB_LANE.east, [0]],
+      [1, 0.5, ORB_LANE.east - 0.5, [0]],
+      [10, 1, ORB_LANE.west, []],
+      [11, 0, null, [11]],
+      [12, 0.5, ORB_LANE.west, [11, 12]],
+      [13, 0.5, ORB_LANE.west + 0.5, [12]],
     ] as const) {
+      const tick = firstOrb + offset;
       for (let next = engine.currentTick; next < tick; next++) engine.advanceTick(START_TILE);
       expect(engine.currentTick).toBe(tick);
       upsert.mockClear();
@@ -919,9 +902,9 @@ it('glides the cache orb in both directions and plays the burst at both ends of 
         return [[request.lifecycle.startTick, request.transform.resolve(tick, tick, null)?.position.slice(0, 2)]];
       });
       expect(bursts).toEqual(
-        burstTicks.map((startTick) => [
-          startTick,
-          [(startTick === 10 ? ORB_LANE.east : ORB_LANE.west) + 0.5, ORB_LANE.y + 0.5],
+        burstTicks.map((burstOffset) => [
+          firstOrb + burstOffset,
+          [(burstOffset === 0 ? ORB_LANE.east : ORB_LANE.west) + 0.5, ORB_LANE.y + 0.5],
         ]),
       );
       if (x !== null && !Number.isInteger(x)) {

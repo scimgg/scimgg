@@ -942,8 +942,8 @@ describe('Grid', () => {
               action: 'Attack',
               target: 'Test NPC',
               onClick: () => {
-                if (route === 'primary') options.onNpcAction?.([30, 30]);
-                else options.onNpcActionByTarget?.('target-npc', [30, 30]);
+                if (route === 'primary') options.onNpcAction?.([30, 30], 'Attack');
+                else options.onNpcActionByTarget?.('target-npc', [30, 30], 'Attack');
               },
             },
           ],
@@ -993,6 +993,7 @@ describe('Grid', () => {
         [30, 30],
         selectedWithCtrl,
         route === 'primary' ? 'boss' : 'target-npc',
+        'Attack',
       );
     });
   });

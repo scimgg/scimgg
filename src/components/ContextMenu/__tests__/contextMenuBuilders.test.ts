@@ -284,7 +284,7 @@ describe('resolveViewportLeftClickSwap', () => {
     const feed = content?.entries.find(({ action }) => action === 'Feed');
     expect(feed?.clickType).toBe('red');
     feed?.onClick?.();
-    expect(onNpcActionByTarget).toHaveBeenCalledWith('npc-1', TILE);
+    expect(onNpcActionByTarget).toHaveBeenCalledWith('npc-1', TILE, 'Feed');
     expect(actions(content)).not.toContain('Attack');
   });
 
@@ -326,7 +326,7 @@ describe('resolveViewportLeftClickSwap', () => {
     expect(swapped?.kind).toBe('action');
     expect(swapped?.entry.action).toBe('Attack');
     swapped?.entry.onClick?.();
-    expect(onNpcActionByTarget).toHaveBeenCalledWith('npc-1', [30, 32]);
+    expect(onNpcActionByTarget).toHaveBeenCalledWith('npc-1', [30, 32], 'Attack');
   });
 });
 
@@ -372,7 +372,7 @@ describe('resolveViewportLeftClickSwap — an entity behind the nearest one', ()
       onNpcActionByTarget,
       customMenuSwaps: parseCustomMenuSwaps('attack,void flare*'),
     })?.entry.onClick?.();
-    expect(onNpcActionByTarget).toHaveBeenCalledWith('flare', [31, 33]);
+    expect(onNpcActionByTarget).toHaveBeenCalledWith('flare', [31, 33], 'Attack');
   });
 
   it('still resolves when the rule names what already leads, so the click cannot fall back', () => {
@@ -765,7 +765,7 @@ describe('buildViewportContextMenu NPC stacking', () => {
     xilAttack?.onClick?.();
 
     expect(onNpcActionByTarget).toHaveBeenCalledTimes(1);
-    expect(onNpcActionByTarget).toHaveBeenCalledWith('jal-xil-1', STACK_TILE);
+    expect(onNpcActionByTarget).toHaveBeenCalledWith('jal-xil-1', STACK_TILE, 'Attack');
   });
 
   it('skips only the NPC whose cache type fails to load', () => {
@@ -793,7 +793,7 @@ describe('buildViewportContextMenu NPC stacking', () => {
     const attack = content?.entries.find((entry) => entry.action === 'Attack');
     attack?.onClick?.();
     expect(onNpcActionByTarget).toHaveBeenCalledTimes(1);
-    expect(onNpcActionByTarget).toHaveBeenCalledWith('banker-1', STACK_TILE);
+    expect(onNpcActionByTarget).toHaveBeenCalledWith('banker-1', STACK_TILE, 'Attack');
   });
 
   it('leaves an NPC with no cache actions unclickable (the Zuk shield case)', () => {

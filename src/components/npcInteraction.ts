@@ -4,7 +4,9 @@ import type { NpcTypeLoader } from '../rs/config/npctype/NpcTypeLoader';
 import { log } from '../util/Logger';
 
 /** NPC actions supported by the viewport's actor-click path. */
-export function isNpcClickAction(action: string | null | undefined): boolean {
+export type NpcClickAction = 'Attack' | 'Feed';
+
+export function isNpcClickAction(action: string | null | undefined): action is NpcClickAction {
   return action === 'Attack' || action === 'Feed';
 }
 

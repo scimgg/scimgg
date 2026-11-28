@@ -588,6 +588,7 @@ export class SimulationEngine {
       spawnNpc: (actor: NpcActor): void => this.spawnEncounterNpc(actor),
       despawnNpc: (npcId: ActorId): void => this.despawnEncounterNpc(npcId),
       queueNpcHit: (attack) => this.queueNpcHit(attack),
+      rollCombat: this.rollCombat,
       inputs,
       npcMovements,
       setProtectionPrayer,
@@ -4128,7 +4129,6 @@ export class SimulationEngine {
 
   private applyEnvironmentalDamage(damage: EnvironmentalDamage, tick: TickNumber): void {
     const hit = damage.accuracy === undefined || this.rollCombat() < damage.accuracy;
-    damage.onHitRoll?.(hit);
     this.applyDamage(
       hit ? damage.baseDamage : 0,
       damage.attackType,

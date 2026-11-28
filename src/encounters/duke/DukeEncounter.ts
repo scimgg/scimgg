@@ -21,7 +21,6 @@ import type {
   EncounterNpcInteraction,
   EncounterPlayerAttackContext,
   EncounterPlayerAttackInfo,
-  EncounterPlayerAttackStartedInfo,
   EncounterRunStartContext,
   EncounterTickResult,
   EnvironmentalDamage,
@@ -33,6 +32,7 @@ import {
 } from '../../core/events/encounterVisual';
 import type { TickEvents } from '../../core/events/TickEvents';
 import { mulberry32 } from '../../core/rng';
+import { ARDER_MUSCA_POISON_ITEM_ID } from '../../data/itemIds';
 import {
   createWarden,
   createWardenPlan,
@@ -45,7 +45,6 @@ import {
   wardenDefinitions,
 } from '../../npcs/duke/duke';
 import { DUKE_ALWAYS_BILE_KEY, DUKE_START_PHASE_KEY } from '../../types/duke';
-import { ARDER_MUSCA_POISON_ITEM_ID, getFiniteStackQuantity } from '../../types/inventory';
 import type { Coordinate, MechanicsConfig } from '../../types/simulation';
 import { DUKE_KIND } from '../catalog';
 import {
@@ -82,7 +81,6 @@ import {
   DUKE_VENT_FADE_TICKS,
   DUKE_VENT_SMOKE_CYCLE_TICKS,
   DUKE_WAKE_AFTER_FEED_TICKS,
-  DUKE_WAKE_ANIMATION_TICKS,
 } from './constants';
 import { BILE_HP, DUKE_CONTROLS, dukeStartHp, ENRAGE_HP, ORB_HP, VENTS_HP } from './controls';
 import type { DukeOrbBurst, DukePose, WardenHazard, WardenHazardKind } from './snapshot';
@@ -126,12 +124,8 @@ const SLAM_DAMAGE = {
   attackType: 'melee',
   prayerReduction: { type: 'reduce', value: 0.75 },
 } satisfies Omit<EnvironmentalDamage, 'baseDamage'>;
-const BOLT_DAMAGE = {
-  source: 'Magic bolt',
-  attackType: 'magic',
-  // Whole-percent penetration that gives the documented protected cap of 36 after flooring.
-  prayerReduction: { type: 'reduce', value: 0.51 },
-} satisfies Omit<EnvironmentalDamage, 'baseDamage'>;
+// Whole-percent penetration that gives the documented protected cap of 36 after flooring.
+const BOLT_PRAYER_REDUCTION = { type: 'reduce', value: 0.51 } as const;
 
 const HAZARD_DAMAGE = {
   spikes: {
@@ -209,7 +203,6 @@ export class DukeEncounter implements Encounter {
   readonly runStartMechanicsKeys = [DUKE_START_PHASE_KEY];
   private readonly arena = buildArena();
   private startHp = WARDEN_MAX_HP;
-  private phaseStartMode: 'legacy' | 'enrage-jump' | 'awake' = 'awake';
   private outcome: EncounterOutcome = ACTIVE_ENCOUNTER_OUTCOME;
   private perfectKillEligible = true;
   private lastIncomingHitTick: number | null = null;
@@ -248,25 +241,19 @@ export class DukeEncounter implements Encounter {
   }
 
   getSeeds() {
-    return {
-      encounterSeed: this.encounterSeed,
-      ...(this.phaseStartMode === 'awake' ? { awakePhaseStarts: true } : {}),
-      ...(this.phaseStartMode === 'enrage-jump' ? { awakeEnrageJump: true } : {}),
-    };
+    return { dukeSeed: this.encounterSeed };
   }
 
   reset(seeds?: Record<string, unknown>): void {
-    const seed = seeds?.encounterSeed;
-    // Replays recorded before the two decisions were seeded use a fixed fallback.
-    this.encounterSeed =
-      typeof seed === 'number' && Number.isInteger(seed) ? seed >>> 0 : seeds ? 0 : newEncounterSeed();
-    // Restore the phase setup used by the recording, including the earlier Enrage-only jump.
-    this.phaseStartMode =
-      seeds === undefined || seeds.awakePhaseStarts === true
-        ? 'awake'
-        : seeds.awakeEnrageJump === true
-          ? 'enrage-jump'
-          : 'legacy';
+    if (seeds === undefined) {
+      this.encounterSeed = newEncounterSeed();
+    } else {
+      const seed = seeds.dukeSeed;
+      if (typeof seed !== 'number' || !Number.isInteger(seed) || seed < 0 || seed > 0xffffffff) {
+        throw new TypeError('Awakened Duke requires a recorded uint32 seed');
+      }
+      this.encounterSeed = seed;
+    }
     this.orbRandom = mulberry32(this.encounterSeed);
     this.bileRandom = mulberry32(~this.encounterSeed);
     this.outcome = ACTIVE_ENCOUNTER_OUTCOME;
@@ -298,9 +285,7 @@ export class DukeEncounter implements Encounter {
   enterBossHpPhase(hp: number, ctx: Pick<EncounterContext, 'tick' | 'world'>): void {
     const duke = ctx.world.getNpc(WARDEN_ID);
     if (!duke?.alive) return;
-    const awake =
-      this.phaseStartMode === 'awake' ? hp <= VENTS_HP : this.phaseStartMode === 'enrage-jump' && hp <= ENRAGE_HP;
-    this.restartWardenPhase(duke, hp, ctx.tick, awake);
+    this.restartWardenPhase(duke, hp, ctx.tick, hp <= VENTS_HP);
   }
 
   private restartWardenPhase(duke: NpcActor, hp: number, tick: number, awake: boolean): void {
@@ -317,6 +302,7 @@ export class DukeEncounter implements Encounter {
     duke.combat.attackSpeed = cadence;
     if (awake) {
       duke.npcTypeId = DUKE_NPC_ID;
+      duke.attackBlockedUntilTick = undefined;
       duke.combat.nextActionTick = nextAttackTick;
       if (hp <= ENRAGE_HP) {
         // 20261127-025030-Duke-Sucellus_10.jsonl ticks 346–358 show three basics before the volley.
@@ -342,14 +328,14 @@ export class DukeEncounter implements Encounter {
 
   private createStartWarden(): NpcActor {
     const duke = createWarden(WARDEN_TILE, this.startHp, wardenCadence(this.startHp));
-    if (this.phaseStartMode === 'awake' && this.startHp <= VENTS_HP) {
+    if (this.startHp <= VENTS_HP) {
       this.restartWardenPhase(duke, this.startHp, SIMULATION_START_TICK, true);
     }
     return duke;
   }
 
   getNpcDamageSourceLabel(): string {
-    return 'Duke Sucellus';
+    return 'Magic bolt';
   }
 
   getEngineRules(): EncounterEngineRules {
@@ -421,31 +407,38 @@ export class DukeEncounter implements Encounter {
       }
       if (kind === 'spikes' || kind === 'gasSpit' || ctx.tick < impactTick || ctx.tick >= expiresTick) continue;
       if (kind === 'magic') {
+        const player = ctx.world.getPlayer();
+        if (!player?.alive) continue;
+        if (!ctx.rollCombat || !ctx.queueNpcHit) throw new Error('Duke bolt needs the NPC hit queue');
         const attacker = dukeFormulaActor(warden);
-        damages.push({
-          ...BOLT_DAMAGE,
-          baseDamage: [0, calculateNpcMaxHit(attacker, 'magic')],
-          accuracy: attackAccuracy(attacker, ctx, 'magic'),
-          onHitRoll: (hit) => {
-            this.hazards[index] = { ...hazard, tiles: [ctx.playerPos], missed: !hit };
-            // A connected bolt invalidates a perfect kill even if the damage roll is zero.
-            if (hit) {
-              this.perfectKillEligible = false;
-              emitDukeAudio(ctx.tickEvents, 'magic');
-              const player = ctx.world.getPlayer();
-              if (player) {
-                // 20261127-002024-Duke-Sucellus_1.jsonl:8637 attaches graphic 2435 to the player.
-                emitEncounterVisual(ctx.tickEvents, {
-                  animations: [],
-                  projectiles: [],
-                  graphics: [
-                    { spotAnimId: DUKE_SPOT_ANIMS.magicImpact, target: boltTarget(player), delayCycles: 0, height: 0 },
-                  ],
-                });
-              }
-            }
-          },
+        const accurate = ctx.rollCombat() < attackAccuracy(attacker, ctx, 'magic');
+        ctx.queueNpcHit({
+          attackerId: warden.id,
+          targetId: player.id,
+          style: 'magic',
+          attackKind: 'magic_fire',
+          rolledDamage: [0, calculateNpcMaxHit(attacker, 'magic')],
+          accuracySucceeded: accurate,
+          impactDelayTicks: 0,
+          prayerCheckAt: 'impact',
+          prayerReduction: BOLT_PRAYER_REDUCTION,
+          // The flight has already reached the player before either actor takes its turn.
+          sourceDeathPolicy: 'persist',
         });
+        this.hazards[index] = { ...hazard, tiles: [ctx.playerPos], missed: !accurate };
+        if (accurate) {
+          // A connecting zero still disqualifies a perfect kill.
+          this.perfectKillEligible = false;
+          emitDukeAudio(ctx.tickEvents, 'magic');
+          // 20261127-002024-Duke-Sucellus_1.jsonl:8637 attaches graphic 2435 to the player.
+          emitEncounterVisual(ctx.tickEvents, {
+            animations: [],
+            projectiles: [],
+            graphics: [
+              { spotAnimId: DUKE_SPOT_ANIMS.magicImpact, target: boltTarget(player), delayCycles: 0, height: 0 },
+            ],
+          });
+        }
         continue;
       }
       if (kind === 'slam') emitDukeAudio(ctx.tickEvents, kind);
@@ -499,15 +492,10 @@ export class DukeEncounter implements Encounter {
     const plan = getWardenPlan(duke);
     if (!plan || plan.openingAttackTick !== null) return;
 
-    const slot = player.inventory.findIndex((item) => item?.id === ARDER_MUSCA_POISON_ITEM_ID);
-    const quantity = getFiniteStackQuantity(player.inventory[slot]);
-    if (quantity === undefined) {
+    if (!player.inventory.some((item) => item?.id === ARDER_MUSCA_POISON_ITEM_ID)) {
       message(ctx, 'You need Arder-musca poison to feed Duke.');
       return;
     }
-    const inventory = [...player.inventory];
-    inventory[slot] = quantity > 1 ? { id: ARDER_MUSCA_POISON_ITEM_ID, quantity: quantity - 1 } : null;
-    player.inventory = inventory;
     plan.poisonToleranceFilled = Math.min(DUKE_POISON_TOLERANCE, plan.poisonToleranceFilled + DUKE_POISON_PER_DOSE);
     emitDukeAudio(ctx.tickEvents, 'feed');
     if (plan.poisonToleranceFilled === DUKE_POISON_TOLERANCE) {
@@ -516,18 +504,6 @@ export class DukeEncounter implements Encounter {
     } else {
       message(ctx, `Poison tolerance ${plan.poisonToleranceFilled}/${DUKE_POISON_TOLERANCE}.`);
     }
-  }
-
-  // Attack-only replays and combat drivers use the original quick start.
-  onPlayerAttackStarted(info: EncounterPlayerAttackStartedInfo, ctx: EncounterPlayerAttackContext): void {
-    if (info.targetId !== WARDEN_ID) return;
-    const duke = ctx.world.getNpc(WARDEN_ID);
-    if (!duke?.alive || duke.npcTypeId !== DUKE_ASLEEP_NPC_ID) return;
-    const plan = getWardenPlan(duke);
-    if (!plan || plan.openingAttackTick !== null) return;
-    plan.openingAttackTick = info.tick + DUKE_FIRST_ATTACK_DELAY_TICKS;
-    this.playPose(ctx.tickEvents, info.tick, 'wake');
-    emitDukeAudio(ctx.tickEvents, 'wake', DUKE_CENTER_TILE);
   }
 
   onPlayerAttackResolved(info: EncounterPlayerAttackInfo, { tickEvents }: EncounterPlayerAttackContext): void {
@@ -542,15 +518,12 @@ export class DukeEncounter implements Encounter {
     const plan = getWardenPlan(actor);
     if (!plan || plan.openingAttackTick === null) return { environmentalDamages: [] };
     const wakeTick = plan.openingAttackTick - DUKE_FIRST_ATTACK_DELAY_TICKS;
-    if (actor.npcTypeId === DUKE_ASLEEP_NPC_ID) {
-      if (plan.poisonToleranceFilled === DUKE_POISON_TOLERANCE && ctx.tick >= wakeTick) {
-        actor.npcTypeId = DUKE_NPC_ID;
-        this.playPose(ctx.tickEvents, wakeTick, 'wake');
-        emitDukeAudio(ctx.tickEvents, 'wake', DUKE_CENTER_TILE);
-      } else if (ctx.tick >= wakeTick + DUKE_WAKE_ANIMATION_TICKS) {
-        actor.npcTypeId = DUKE_NPC_ID;
-        this.pose = undefined;
-      }
+    if (actor.npcTypeId === DUKE_ASLEEP_NPC_ID && ctx.tick >= wakeTick) {
+      actor.npcTypeId = DUKE_NPC_ID;
+      actor.attackBlockedUntilTick = undefined;
+      actor.combat.nextActionTick = plan.openingAttackTick;
+      this.playPose(ctx.tickEvents, wakeTick, 'wake');
+      emitDukeAudio(ctx.tickEvents, 'wake', DUKE_CENTER_TILE);
     }
     if (ctx.tick < plan.openingAttackTick || ctx.tick < actor.combat.nextActionTick) {
       return { environmentalDamages: [] };

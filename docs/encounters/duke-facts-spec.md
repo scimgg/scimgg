@@ -25,11 +25,14 @@ The recordings are private. Tests use the extracted ticks, tiles, and IDs in the
 | A9 | `20261127-024405-Duke-Sucellus_9.jsonl` | Through 219 | Awakened enrage vent volley and damage pulses |
 | A10 | `20261127-025030-Duke-Sucellus_10.jsonl` | Through 417 | Awakened phase transitions, sound cues, and attack timings |
 | A12 | `20261127-192944-Duke-Sucellus_12.jsonl` | 1–165 (battle ticks) | Awakened replay check, vent tie, and first bile drip |
+| R2 | `20261128-021737-Duke-Sucellus.jsonl` | 0–193 | Regular kill testing attack selection on the east grate |
+| R3 | `20261128-022133-Duke-Sucellus_1.jsonl` | 0–266 | Two regular kills and an off-row melee windup after a volley |
 
 Coordinates are local to map square `(47, 100)`. World coordinates add `(3008, 6400)` to the local
 coordinates. X increases east and Y increases north. `A2:t380` cites a tick. `A2:L11783–11815`
-cites file lines. Regular-mode R corroborates shared timing. Damage, thresholds, and phase
-rules for Awakened Duke use Awakened observations and published Awakened stats.
+cites file lines. R, R2 and R3 are regular-mode evidence for shared timing and attack selection.
+Damage, thresholds, and phase rules for Awakened Duke use Awakened observations and published
+Awakened stats.
 
 ## Timing verification ledger
 
@@ -48,11 +51,11 @@ boundary. Placement, animation, and damage may occur on different ticks.
 | Timing | Value | Code | Capture evidence (n) | Status |
 |---|---|---|---|---|
 | Awakened poison tolerance | 125 per dose, capped at 370 after three | C `DUKE_POISON_PER_DOSE`, `DUKE_POISON_TOLERANCE` | A1:t8–10, A6:t730–732 | VERIFIED |
-| Inventory decrement → tolerance update | Meter updates one tick after inventory | E `onNpcInteraction` combines the two updates | A1:t7–10, A6:t729–732 | VERIFIED in both complete Awakened feed sequences |
+| Inventory decrement → tolerance update | Meter updates one tick after inventory | E `onNpcInteraction` updates tolerance on Feed | A1:t7–10, A6:t729–732 | VERIFIED in both complete Awakened feed sequences |
 | Final tolerance → wake → first attack | Wake +1 from the final tolerance update, first attack +5 from wake | C `DUKE_WAKE_AFTER_FEED_TICKS`, `DUKE_FIRST_ATTACK_DELAY_TICKS` | A1:t10→11→16, A6:t732→733→738, R three complete openers | VERIFIED for the stated boundaries |
 | Basic attack cadence | 5 ticks before enrage, 4 during enrage | E `wardenCadence` | A2:t258–270, A8:t304–319, and A10:t317→322 and enrage window | VERIFIED |
 | Exact enrage threshold | 440 HP | P `ENRAGE_HP` | Phase timings agree with the [published threshold](https://oldschool.runescape.wiki/w/Duke_Sucellus/Strategies#Awakened_mode) | WIKI-ONLY for exact HP |
-| Melee or magic | Melee at X 27–35, Y 51 before movement at windup | A `isInMeleeLane`, E `processNpcTick` | 487/501 earlier basics and 19/19 in A12. [Selection audit](./duke-capture-analysis.md#basic-attack-selection-by-tick) | MODEL with 14 earlier off-row melee exceptions |
+| Melee or magic | Melee at X 27–35, Y 51 before movement at windup | A `isInMeleeLane`, E `processNpcTick` | 487/501 earlier basics, 19/19 in A12, 19/22 in R2, and 28/29 in R3. [Selection audit](./duke-capture-analysis.md#basic-attack-selection-by-tick) | MODEL with off-row melee exceptions |
 | Icicles and shatter | Chip check at windup, shatter +2 from the start-of-tick tile on X 28–34, Y 51 | A `SLAM_TILES`, C `DUKE_SLAM_IMPACT_DELAY_TICKS` | All 11 exposed shatter checks with recorded melee windups. [Damage replay audit](./duke-capture-analysis.md#2-damage-replay-audit) | VERIFIED |
 | Magic bolt travel | Release +50 client cycles, arrival +120 cycles (4 ticks) | C `DUKE_MAGIC_PROJECTILE`, `DUKE_MAGIC_FLIGHT_TICKS` | A1:L8641–8716, A2:L10454–10497, A12:L7335–7528 | VERIFIED |
 | Freezing Gaze cadence and check timing | After five basics. Cover +4, damage +5 if exposed, next action +6 | E `processNpcTick`, C `DUKE_GAZE_*` | 88 successful checks from the front cover tiles and failed checks in A5 and A10. [Cover samples](./duke-capture-analysis.md#damage-and-cover-samples) | VERIFIED for timing and sampled tiles |
@@ -66,12 +69,13 @@ boundary. Placement, animation, and damage may occur on different ticks.
 
 ## 1. Actors and arena
 
-An opening attempt starts with Duke asleep. **Feed** uses one Arder-musca poison per tick. Three
-doses fill the 370-point tolerance meter. The wake animation starts one tick after the final
-tolerance update, with Duke ready to attack five ticks later. A six-tick weapon can swing at wake
+An opening attempt starts with Duke asleep. **Feed** adds one dose per tick while
+Arder-musca poison is in the inventory. Three feeds fill the 370-point tolerance meter. The sim
+uses an unlimited stack for the poison, consistent with other loadout stacks. The wake animation
+starts one tick after the final tolerance update. Duke's attack timer starts at wake, with the
+first basic queued for five ticks later. A six-tick weapon can swing at wake
 +1 and again on the shatter tick after stepping out. A1 and A6 show the inventory
-decrement one tick before each meter update. The sim combines those two updates
-on the Feed tick as a presentation choice. [Opener audit](./duke-capture-analysis.md#opener-type-and-feed-timing) ·
+decrement one tick before each meter update. The sim updates the tolerance on the Feed tick. [Opener audit](./duke-capture-analysis.md#opener-type-and-feed-timing) ·
 [Awakened strategy](https://oldschool.runescape.wiki/w/Duke_Sucellus/Strategies#Awakened_mode)
 
 The arena renders terrain and scenery from map square `(47, 100)`, archive
@@ -79,11 +83,11 @@ The arena renders terrain and scenery from map square `(47, 100)`, archive
 scenery levels for the side fences. Duke occupies a seven-tile-wide footprint.
 His southwest anchor `[28, 52]` is a practice placement between the pillars
 around the [Wiki map pin](https://oldschool.runescape.wiki/w/Duke_Sucellus#Location).
-The recorded sleeping NPC at Duke's combat anchor is 12167, which has the cache
-`Feed` action. NPC 12191 is the awake type. The simulator actor (W) uses 12166 as the
-sleeping model and supplies `Feed` locally. Cache 2772 gives both sleeping
-types model 49194, idle 10174, and the same footprint. A6 also spawns 12166 at
-the entrance after the first attempt. [Opener audit](./duke-capture-analysis.md#opener-type-and-feed-timing)
+Duke uses sleeping NPC 12167 at the combat anchor, with the cache `Feed`
+action. The actor is pickable for Feed while sleeping and opens to attacks and casts
+when it switches to 12191 on the wake tick. A6 also records 12166 at the room
+entrance. Cache 2772 gives both sleeping types model 49194, idle 10174, and the same
+footprint. [Opener audit](./duke-capture-analysis.md#opener-type-and-feed-timing)
 Cache floor clipping across local Y 52–53 closes the arena behind the front
 lane. Ground clicks under either form of Duke path to the edge of the lane.
 The front lane is for step-backs and orb crossings. The tile directly behind
@@ -139,8 +143,9 @@ impact graphic track the player's rendered position. In
 targets the player at visible tile `[30, 50]` while the true tile is
 `[29, 50]`. The impact graphic is attached to the player.
 The sim rolls bolt accuracy with Duke's 465 Magic and +150 magic attack
-bonus. It checks Protect from Magic on arrival and plays the impact
-graphic and sound when the bolt connects. Any magic hit,
+bonus. At arrival the shared NPC hit queue applies Protect from Magic,
+caps the hit at current player HP, and applies Elysian spirit shield
+mitigation. The impact graphic and sound use the same accuracy result. Any magic hit,
 including a protected hit for zero, disqualifies a perfect kill under the
 published rule. Icicle chip damage is allowed. The recordings do not settle
 how an otherwise perfect kill handles a confirmed miss. See the
@@ -269,8 +274,8 @@ delay for replay takeover. [Modeled HP gates](./duke-unverified.md#attack-select
 The starting loadout includes brewed poison. The default loadout opens with Burning claws and Oathplate
 helm equipped. It carries a Scythe of Vitur, Emberlight, an Avernic defender, two non-divine super
 combat potions, five super restores, five Saradomin brews, three halibut, nine anglerfish, and one
-stack of three [Arder-musca poisons](https://oldschool.runescape.wiki/w/Arder-musca_poison).
-The alternate weapon presets and the low-stat fallback carry the same three-dose stack.
+unlimited stack of [Arder-musca poison](https://oldschool.runescape.wiki/w/Arder-musca_poison).
+The no-equipment fallback carries the same unlimited poison stack.
 
 **Start at** selects the next attempt's starting phase. **Practice → Jump to
 phase** changes Duke's phase in the current attempt. Both start the later

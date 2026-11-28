@@ -237,6 +237,8 @@ export interface EncounterContext {
    * otherwise the next. The attacker must be registered and alive.
    */
   queueNpcHit?: (attack: NpcAttackRequest) => void;
+  /** Read the combat stream when the encounter calculates an NPC hit outside its normal turn. */
+  rollCombat?: () => number;
   /** Tick-local player inputs the encounter may react to (parry clicks, etc.). */
   inputs?: EncounterInputState;
   /** NPC movements applied so far this tick: empty in resolveHazards, complete by `completeNpcBand`. */
@@ -373,8 +375,6 @@ export interface EnvironmentalDamage {
   source: FailCondition;
   /** Chance for a hit on an eligible tile. Omit for damage that bypasses defence. */
   accuracy?: number;
-  /** Receives the accuracy outcome before the damage roll, which can itself roll zero. */
-  onHitRoll?: (hit: boolean) => void;
   prayerReduction?: PrayerReduction;
   playerPosition?: Coordinate;
   /** Ordinary poison/venom severity, applied through the engine's existing immunity/timer policy. */

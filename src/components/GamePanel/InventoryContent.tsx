@@ -9,11 +9,10 @@ import { useModifiers } from '../../input/keyState';
 import type { ObjTypeLoader } from '../../rs/config/objtype/ObjTypeLoader';
 import { getItemSpriteUrl } from '../../services/ItemSpriteService';
 import type { Inventory, InventoryItem } from '../../types/inventory';
-import { getFiniteStackQuantity, INVENTORY_SIZE, isStackableItem } from '../../types/inventory';
+import { INVENTORY_SIZE, isStackableItem } from '../../types/inventory';
 import { unstretchedClientPoint } from '../../util/viewportBounds';
 import { buildInventoryContextMenu, useContextMenu } from '../ContextMenu';
 import type { InventoryTagMenuContext } from '../ContextMenu/contextMenuBuilders';
-import { InventoryStackCount } from '../InventoryStackCount';
 import { PixelSprite } from '../PixelSprite';
 import { type LayerSprite, PixelSpriteLayer } from '../PixelSpriteLayer';
 import { usePanelContentScale } from '../panelContentScale';
@@ -406,11 +405,11 @@ export const InventoryContent: React.FC<InventoryContentProps> = ({
   const tagMarginX = (-ITEM_W * (uiScale - 1)) / 2;
   const tagMarginY = (-ITEM_H * (uiScale - 1)) / 2;
 
-  const renderStackMark = (slot: InventoryItem) => {
-    const quantity = getFiniteStackQuantity(slot);
-    if (quantity !== undefined) return <InventoryStackCount quantity={quantity} />;
-    return isStackableItem(slot.id, slot.quantity, objTypeLoader) ? <UnlimitedMark top={0} left={0} /> : null;
-  };
+  // Stacks never deplete, so a stack shows ∞ in the corner where the game prints its
+  // count (rows 0-8 of the item box). It is keyed on the item, not a quantity, because
+  // loadout and unequipped stacks carry none.
+  const renderStackMark = (slot: InventoryItem) =>
+    isStackableItem(slot.id, slot.quantity, objTypeLoader) ? <UnlimitedMark top={0} left={0} /> : null;
 
   // A slot's own sprite, for the two cases the shared layer cannot paint: a tagged item
   // (its outline is four CSS drop-shadows) and the drag ghost (it moves every frame).

@@ -1,14 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { ELYSIAN_SPIRIT_SHIELD_ID } from '../../../core/combat/elysian';
 import { applySpecialAttackEffects } from '../../../core/combat/player/specialAttacks/postHitEffects';
 import { getArenaAllowUnboundedFallback, getArenaConfig, setArenaConfig } from '../../../core/constants';
 import { ReplayRecorder, type ReplayRecorderData } from '../../../core/ReplayRecorder';
 import { SimulationEngine } from '../../../core/SimulationEngine';
+import { ARDER_MUSCA_POISON_ITEM_ID } from '../../../data/itemIds';
 import { DUKE_ASLEEP_NPC_ID, DUKE_NPC_ID, WARDEN_ID, WARDEN_MAX_HP } from '../../../npcs/duke/duke';
-import { diffResumableState } from '../../../replay/resumableState';
 import { ObjType } from '../../../rs/config/objtype/ObjType';
+import { startAwakeDukeOpening } from '../../../test/helpers/dukeOpening';
 import { DUKE_ALWAYS_BILE_KEY, DUKE_AUDIO_EVENT, DUKE_START_PHASE_KEY } from '../../../types/duke';
+import { createEmptyCombatSupplies } from '../../../types/encounterLoadout';
 import { PARAM_ATTACK_SPEED } from '../../../types/equipmentStats';
-import { ARDER_MUSCA_POISON_ITEM_ID, createEmptyInventory } from '../../../types/inventory';
+import { createEmptyInventory } from '../../../types/inventory';
 import { RESTORABLE_STATS } from '../../../types/playerState';
 import { type Coordinate, PrayerType } from '../../../types/simulation';
 import { DUKE_KIND } from '../../catalog';
@@ -54,7 +57,10 @@ beforeEach(() => {
   arena = getArenaConfig();
   allowUnbounded = getArenaAllowUnboundedFallback();
 });
-afterEach(() => setArenaConfig(arena, allowUnbounded));
+afterEach(() => {
+  setArenaConfig(arena, allowUnbounded);
+  vi.restoreAllMocks();
+});
 
 function createDukeRun(startPhase = 'opening', infiniteHealth = true, encounterSeed = 71) {
   return new SimulationEngine({
@@ -101,13 +107,8 @@ function advanceThroughFlareLaunches(engine: SimulationEngine, endTick: number):
   return launches;
 }
 
-function openFight(engine: SimulationEngine): void {
-  engine.setAttackTarget(WARDEN_ID);
-  advanceTo(engine, 1, [31, 51]);
-  expect(engine.getLastTickEvents()).toContainEqual(
-    expect.objectContaining({ type: 'attack_started', sourceId: 'player', targetId: WARDEN_ID, tick: 1 }),
-  );
-  engine.setAttackTarget(null);
+function mockCombatRolls(engine: SimulationEngine) {
+  return vi.spyOn(engine as unknown as { combatRandom: () => number }, 'combatRandom');
 }
 
 // HP thresholds and relative timing from https://oldschool.runescape.wiki/w/Duke_Sucellus/Strategies#Awakened_mode
@@ -124,24 +125,36 @@ describe('Awakened Duke', () => {
   });
 
   // Cache 2772, map square (47, 100). The floor at y=52 and 53 blocks access under Duke.
-  it('stops ground movement in front of Duke in both forms and allows an attack from there', () => {
+  it('keeps sleeping Duke on the map and rejects attack and manual-cast inputs', () => {
     const engine = createDukeRun();
     const front: Coordinate = [31, 51];
     const underDuke: Coordinate = [31, 52];
     advanceTo(engine, 2, underDuke);
     expect(engine.getState().playerPosition).toEqual(front);
-    expect(engine.getState().npcs[0].npcTypeId).toBe(DUKE_ASLEEP_NPC_ID);
+    expect(engine.getState().npcs[0].npcTypeId).toBe(12167);
+    expect(engine.acceptsEncounterInput({ kind: 'npcInteraction', targetId: WARDEN_ID })).toBe(true);
+    const inventory = createEmptyInventory();
+    inventory[0] = { id: 556 }; // Air rune
+    inventory[1] = { id: 558 }; // Mind rune
+    engine.setInventory(inventory);
+    engine.setCombatSupplies({ ...createEmptyCombatSupplies(), spellbook: 'standard' });
 
-    engine.setAttackTarget(WARDEN_ID);
-    advanceTo(engine, 3, front);
-    expect(engine.getLastTickEvents()).toContainEqual(
-      expect.objectContaining({ type: 'attack_started', sourceId: 'player', targetId: WARDEN_ID, tick: 3 }),
-    );
-
-    engine.setAttackTarget(null);
-    advanceTo(engine, 8, underDuke);
-    expect(engine.getState().npcs[0].npcTypeId).toBe(DUKE_NPC_ID);
+    for (const action of [
+      { type: 'attackTarget', targetId: WARDEN_ID },
+      { type: 'manualCast', spellName: 'Wind Strike', targetId: WARDEN_ID },
+    ] as const) {
+      engine.applyAction(action);
+      engine.advanceTick(underDuke);
+      expect(engine.getAttackTarget()).toBeNull();
+      expect(engine.getLastTickEvents()).not.toContainEqual(expect.objectContaining({ type: 'attack_started' }));
+      expect(engine.getLastTickEvents()).not.toContainEqual(expect.objectContaining({ type: 'spell_cast' }));
+    }
+    advanceTo(engine, 12, underDuke);
     expect(engine.getState().playerPosition).toEqual(front);
+    expect(engine.getState().npcs[0]).toMatchObject({ npcTypeId: 12167, hp: 1697 });
+    expect(engine.getState().damageHistory).toHaveLength(0);
+    expect(snapshot(engine).state.poisonToleranceFilled).toBe(0);
+    expect(snapshot(engine).visuals.pose).toBeUndefined();
   });
 
   it('uses the Awakened formula stats before and after the NPC wakes', () => {
@@ -164,7 +177,7 @@ describe('Awakened Duke', () => {
     };
     expect(duke.formulaStats).toMatchObject(expected);
 
-    openFight(engine);
+    startAwakeDukeOpening(engine);
     advanceTo(engine, 6);
     expect(duke.npcTypeId).toBe(DUKE_NPC_ID);
     expect(duke.formulaStats).toMatchObject(expected);
@@ -175,7 +188,7 @@ describe('Awakened Duke', () => {
     { source: 'Magic bolt', tile: START_TILE, impactTick: 10, levels: { magic: 300 }, bonuses: { magicStr: 0 } },
   ])('uses the actor’s offensive stats for the $source damage cap', ({ source, tile, impactTick, levels, bonuses }) => {
     const engine = createDukeRun();
-    openFight(engine);
+    startAwakeDukeOpening(engine);
     advanceTo(engine, impactTick - 1, tile);
     const duke = engine['worldState'].getNpc(WARDEN_ID)!;
     const stats = duke.formulaStats!;
@@ -185,7 +198,7 @@ describe('Awakened Duke', () => {
       offensive: { ...stats.offensive, ...bonuses },
     };
 
-    const roll = vi.spyOn(engine, 'rollCombat').mockReturnValue(0.999);
+    const roll = mockCombatRolls(engine).mockReturnValue(0.999);
     if (source === 'Magic bolt') roll.mockReturnValueOnce(0);
     try {
       engine.advanceTick(tile);
@@ -199,7 +212,7 @@ describe('Awakened Duke', () => {
 
   it('keeps the Awakened levels when stat-draining effects hit Duke', () => {
     const engine = createDukeRun();
-    openFight(engine);
+    startAwakeDukeOpening(engine);
     advanceTo(engine, 6);
     const world = engine['worldState'];
     const duke = world.getNpc(WARDEN_ID)!;
@@ -226,12 +239,11 @@ describe('Awakened Duke', () => {
   }) => {
     const engine = createDukeRun();
     engine.setEquipment({ weapon: 22325 }); // Scythe of vitur
-    const random = vi
-      .spyOn(engine, 'rollCombat')
+    const random = mockCombatRolls(engine)
       .mockReturnValueOnce(firstHitBlocked ? 0.999 : 0)
       .mockReturnValue(0);
     try {
-      openFight(engine);
+      startAwakeDukeOpening(engine);
       advanceTo(engine, 2, [31, 51]);
       const hits = engine.getState().damageHistory.filter(({ targetId }) => targetId === WARDEN_ID);
       expect(hits).toHaveLength(3);
@@ -269,20 +281,19 @@ describe('Awakened Duke', () => {
     const feed = { type: 'npcInteraction', targetId: WARDEN_ID } as const;
     const input = { kind: 'npcInteraction', targetId: WARDEN_ID } as const;
     const inventory = createEmptyInventory();
-    inventory[0] = { id: ARDER_MUSCA_POISON_ITEM_ID, quantity: 3 };
+    inventory[0] = { id: ARDER_MUSCA_POISON_ITEM_ID };
     engine.setInventory(inventory);
 
     advanceTo(engine, 2, frontTile);
     expect(engine.acceptsEncounterInput(input)).toBe(true);
     for (const [index, tolerance] of [125, 250, 370].entries()) {
       engine.applyAction(feed);
-      engine.applyAction(feed); // Repeated same-tick clicks consume one dose.
+      engine.applyAction(feed); // Repeated same-tick clicks make one feed.
       advanceTo(engine, 3 + index, frontTile);
-      expect(engine.getState().inventory[0]).toEqual(
-        index === 2 ? null : { id: ARDER_MUSCA_POISON_ITEM_ID, quantity: 2 - index },
-      );
+      expect(engine.getState().inventory[0]).toEqual({ id: ARDER_MUSCA_POISON_ITEM_ID });
       expect(snapshot(engine).state.poisonToleranceFilled).toBe(tolerance);
-      expect(engine.getState().npcs[0]).toMatchObject({ hp: 1697, npcTypeId: DUKE_ASLEEP_NPC_ID });
+      expect(engine.getState().npcs[0]).toMatchObject({ hp: 1697, npcTypeId: 12167 });
+      expect(engine.getState().npcs[0].attackTimer).toBeUndefined();
       expect(snapshot(engine).visuals.pose).toBeUndefined();
     }
 
@@ -290,7 +301,11 @@ describe('Awakened Duke', () => {
     // then 10176 five ticks after that (105–106–111, 211–212–217, 337–338–343).
     engine.applyAction(feed);
     advanceTo(engine, 6, frontTile);
-    expect(engine.getState().npcs[0].npcTypeId).toBe(DUKE_NPC_ID);
+    expect(engine.getState().npcs[0]).toMatchObject({
+      npcTypeId: 12191,
+      attackTimer: { nextAttackTick: 11, attackSpeed: 5 },
+    });
+    expect(engine.getState().inventory[0]).toEqual({ id: ARDER_MUSCA_POISON_ITEM_ID });
     expect(engine.acceptsEncounterInput(input)).toBe(false);
     expect(snapshot(engine).visuals.pose).toEqual({ clip: 'wake', startTick: 6 });
     expect(audioCues(engine)).toContainEqual(expect.objectContaining({ cue: 'wake', tick: 6 }));
@@ -307,6 +322,7 @@ describe('Awakened Duke', () => {
     expect(snapshot(engine).visuals.hazards).toHaveLength(0);
     advanceTo(engine, 11, coverTile);
     expect(snapshot(engine).visuals.pose).toEqual({ clip: 'slam', startTick: 11 });
+    expect(engine.getState().npcs[0].attackTimer).toEqual({ nextAttackTick: 16, attackSpeed: 5 });
     expect(engine.getState().damageHistory).toContainEqual(expect.objectContaining({ source: 'Icicles', tick: 11 }));
 
     advanceTo(engine, 12, coverTile);
@@ -319,7 +335,7 @@ describe('Awakened Duke', () => {
     expect(received(engine, 'Slam')).toBe(false);
   });
 
-  it('walks to Duke to feed and stops when no poison remains', () => {
+  it('walks to Duke to feed and reports a missing poison stack', () => {
     const engine = createDukeRun();
     const inventory = createEmptyInventory();
     inventory[5] = { id: ARDER_MUSCA_POISON_ITEM_ID };
@@ -334,10 +350,11 @@ describe('Awakened Duke', () => {
     expect(engine.getState().inventory[5]).toEqual({ id: ARDER_MUSCA_POISON_ITEM_ID });
     advanceTo(engine, 6, farTile);
     expect(engine.getState().playerPosition).toEqual([31, 51]);
-    expect(engine.getState().inventory[5]).toBeNull();
+    expect(engine.getState().inventory[5]).toEqual({ id: ARDER_MUSCA_POISON_ITEM_ID });
     expect(snapshot(engine).state.poisonToleranceFilled).toBe(125);
     expect(engine.getAttackTarget()).toBeNull();
 
+    engine.setInventory(createEmptyInventory());
     engine.applyAction(feed);
     advanceTo(engine, 7, [31, 51]);
     expect(engine.getLastTickEvents()).toContainEqual(
@@ -371,7 +388,7 @@ describe('Awakened Duke', () => {
     expect(snapshot(engine).state.enraged).toBe(phase === 'enrage');
   });
 
-  it('loads and reconstructs a recording written before the encounter rename', () => {
+  it('plays back a recording written before the rename and refuses its draft seed', () => {
     const engine = createDukeRun('enrage');
     engine.setMechanicsConfig({ [DUKE_START_PHASE_KEY]: 'enrage', [DUKE_ALWAYS_BILE_KEY]: true });
     const recorder = new ReplayRecorder();
@@ -391,7 +408,7 @@ describe('Awakened Duke', () => {
       ...current,
       runConfig: {
         ...runConfig,
-        encounter: { ...runConfig.encounter, kind: 'duke_practice' },
+        encounter: { kind: 'duke_practice', seeds: { encounterSeed: 71, awakePhaseStarts: true } },
         bootstrap: { ...runConfig.bootstrap, mechanicsConfig: legacyMechanics },
       },
       frames: current.frames.map((frame) => ({
@@ -411,13 +428,12 @@ describe('Awakened Duke', () => {
     );
 
     recorder.load(legacy as ReplayRecorderData);
-    expect(recorder.exportData()).toEqual(current);
+    expect(recorder.exportData().frames).toEqual(current.frames);
     expect(legacy.frames[0].state.encounter.kind).toBe('duke_practice');
     const config = recorder.getRunConfig();
     if (!config) throw new Error('Missing Duke replay configuration');
-    const resumed = reconstructReplayPrefix(config, recorder.getReconstructionFrames(), 3, null);
-    if (!resumed) throw new Error('Could not reconstruct Duke');
-    expect(diffResumableState(engine.getState(), resumed.getState())).toEqual([]);
+    expect(config.encounter.kind).toBe('duke');
+    expect(reconstructReplayPrefix(config, recorder.getReconstructionFrames(), 3, null)).toBeNull();
   });
 
   it('applies a checkpoint change before tick one and opens a clean retry', () => {
@@ -434,7 +450,7 @@ describe('Awakened Duke', () => {
 
   it('jumps to each HP breakpoint in the current attempt', () => {
     const engine = createDukeRun();
-    openFight(engine);
+    startAwakeDukeOpening(engine);
     advanceTo(engine, 6);
     for (const preset of DUKE_CONTROLS.bossHpPresets ?? []) {
       engine.applyAction({ type: 'applyBossHpPreset', hp: preset.hp });
@@ -484,7 +500,7 @@ describe('Awakened Duke', () => {
     const preset = DUKE_CONTROLS.bossHpPresets?.find(({ label }) => label === 'Enrage');
     expect(preset?.hp).toBe(440);
     const inventory = createEmptyInventory();
-    inventory[0] = { id: ARDER_MUSCA_POISON_ITEM_ID, quantity: 3 };
+    inventory[0] = { id: ARDER_MUSCA_POISON_ITEM_ID };
     engine.setInventory(inventory);
     engine.applyAction({ type: 'applyBossHpPreset', hp: preset!.hp });
     expect(engine.getState().npcs[0]).toMatchObject({ hp: 440, npcTypeId: DUKE_NPC_ID });
@@ -522,27 +538,22 @@ describe('Awakened Duke', () => {
     expect(snapshot(engine).visuals.pose).toEqual({ clip: 'slam', startTick: 6 });
   });
 
-  it.each([
-    { phase: 'enrage', hp: ENRAGE_HP, seeds: { encounterSeed: 71, awakeEnrageJump: true }, awake: true },
-    { phase: 'vents', hp: 1289, seeds: { encounterSeed: 71, awakeEnrageJump: true }, awake: false },
-    { phase: 'enrage', hp: ENRAGE_HP, seeds: { encounterSeed: 71 }, awake: false },
-  ])('restores the recorded $phase setup and jump for $seeds', ({ phase, hp, seeds, awake }) => {
-    const engine = createDukeRun();
-    const runConfig = engine.getRunConfig();
-    engine.reset(undefined, { ...runConfig, encounter: { ...runConfig.encounter, seeds } });
-    engine.setMechanicsConfig({ [DUKE_START_PHASE_KEY]: phase, infiniteHealth: true });
-    expect(engine.getState().npcs[0]).toMatchObject({ hp, npcTypeId: DUKE_ASLEEP_NPC_ID });
-    engine.applyAction({ type: 'applyBossHpPreset', hp });
-    expect(engine.getState().npcs[0].npcTypeId).toBe(awake ? DUKE_NPC_ID : DUKE_ASLEEP_NPC_ID);
-    if (!awake) openFight(engine);
-    const firstAttackTick = awake ? 4 : 6;
-    advanceTo(engine, firstAttackTick);
-    expect(snapshot(engine).visuals.pose).toEqual({ clip: 'magic', startTick: firstAttackTick });
+  it.each([undefined, -1, 2.5, 0x100000000])('refuses replay takeover with invalid Duke seed %s', (dukeSeed) => {
+    const engine = createDukeRun('enrage');
+    const recorder = new ReplayRecorder();
+    const config = engine.getRunConfig();
+    recorder.startRun(config);
+    recorder.recordFrame(0, START_TILE, engine.getState(), []);
+    const invalid = { ...config, encounter: { kind: 'duke', seeds: dukeSeed === undefined ? {} : { dukeSeed } } };
+    const frames = recorder.getReconstructionFrames();
+
+    expect(reconstructReplayPrefix(config, frames, 0, null)).not.toBeNull();
+    expect(reconstructReplayPrefix(invalid, frames, 0, null)).toBeNull();
   });
 
   it('clears the current volley and starts a single-flare cycle when jumping back to Opening', () => {
     const engine = startOpeningAtHp('orbs');
-    openFight(engine);
+    startAwakeDukeOpening(engine);
     advanceTo(engine, 61);
     expect(snapshot(engine).visuals.hazards.filter(({ kind }) => kind === 'vent')).toHaveLength(4);
     expect(snapshot(engine).visuals.orbTile).not.toBeNull();
@@ -558,7 +569,7 @@ describe('Awakened Duke', () => {
   ])('lands chip two ticks before each slam at $hp HP', ({ hp, chipTicks, slamTicks }) => {
     const engine = createDukeRun();
     engine.setBossHp(hp);
-    openFight(engine);
+    startAwakeDukeOpening(engine);
     advanceTo(engine, slamTicks[2], [31, 51]);
 
     const history = engine.getState().damageHistory;
@@ -572,7 +583,7 @@ describe('Awakened Duke', () => {
     reentry,
   }) => {
     const engine = createDukeRun('opening', false);
-    openFight(engine);
+    startAwakeDukeOpening(engine);
     advanceTo(engine, 5, beforeWindup);
     advanceTo(engine, 6, cover);
     expect(engine.getState().playerPosition).toEqual(cover);
@@ -613,10 +624,10 @@ describe('Awakened Duke', () => {
   ])('deals $damage slam damage for a base roll of $base with $prayer at impact', ({ prayer, roll, base, damage }) => {
     const engine = createDukeRun('opening', false);
     const front: Coordinate = [31, 51];
-    openFight(engine);
+    startAwakeDukeOpening(engine);
     advanceTo(engine, 7, front);
     if (prayer) engine.queueProtectionPrayer(prayer);
-    const random = vi.spyOn(engine, 'rollCombat').mockReturnValue(roll);
+    const random = mockCombatRolls(engine).mockReturnValue(roll);
     try {
       advanceTo(engine, 8, front);
     } finally {
@@ -634,7 +645,7 @@ describe('Awakened Duke', () => {
     { bait: [27, 51] as Coordinate, front: [28, 51] as Coordinate },
   ])('hits the front row at impact when baited from $bait', ({ bait, front }) => {
     const engine = createDukeRun('opening', false);
-    openFight(engine);
+    startAwakeDukeOpening(engine);
     advanceTo(engine, 6, bait);
     advanceTo(engine, 7, front);
     expect(engine.getState().playerPosition).toEqual(front);
@@ -649,7 +660,7 @@ describe('Awakened Duke', () => {
     clip,
   }) => {
     const engine = startOpeningAtHp(phase, false);
-    openFight(engine);
+    startAwakeDukeOpening(engine);
     advanceTo(engine, 5, beforeMove);
     expect(engine.getState().playerPosition).toEqual(beforeMove);
     advanceTo(engine, 6, afterMove);
@@ -675,10 +686,10 @@ describe('Awakened Duke', () => {
     expected,
   }) => {
     const engine = createDukeRun('opening', false);
-    openFight(engine);
+    startAwakeDukeOpening(engine);
     advanceTo(engine, 5, [31, 51]);
     if (prayer) engine.queueProtectionPrayer(prayer);
-    const random = vi.spyOn(engine, 'rollCombat').mockReturnValueOnce(accuracyRoll).mockReturnValueOnce(damageRoll);
+    const random = mockCombatRolls(engine).mockReturnValueOnce(accuracyRoll).mockReturnValueOnce(damageRoll);
     try {
       advanceTo(engine, 6, START_TILE);
       expect(engine.getState().damageHistory).toContainEqual(
@@ -696,7 +707,7 @@ describe('Awakened Duke', () => {
   ])('still triggers melee but only takes icicle chip behind the pillar at (%i, %i)', (x, y) => {
     const engine = createDukeRun('opening', false);
     const cover: Coordinate = [x, y];
-    openFight(engine);
+    startAwakeDukeOpening(engine);
     advanceTo(engine, 6, cover);
     const slam = snapshot(engine).visuals.hazards.find(({ kind }) => kind === 'slam');
     expect(slam?.impactTick).toBe(8);
@@ -719,7 +730,7 @@ describe('Awakened Duke', () => {
     step,
   }) => {
     const engine = startOpeningAtHp(phase, false);
-    openFight(engine);
+    startAwakeDukeOpening(engine);
     const simWindup = 6;
     const simHit = simWindup + hitTick - windupTick;
     engine.queueProtectionPrayer(PrayerType.ProtectMelee);
@@ -727,7 +738,7 @@ describe('Awakened Duke', () => {
     expect(engine.getState().playerPosition).toEqual(front);
     expect(received(engine, 'Slam')).toBe(false);
 
-    const random = vi.spyOn(engine, 'rollCombat').mockReturnValueOnce(0.5);
+    const random = mockCombatRolls(engine).mockReturnValueOnce(0.5);
     try {
       advanceTo(engine, simHit, step);
       expect(engine.getState().playerPosition).toEqual(step);
@@ -742,7 +753,7 @@ describe('Awakened Duke', () => {
   it('uses the captured magic animation and arrival timing during enrage', () => {
     const { windupTick, nextWindupTick, arrivalCycle } = DUKE_ENRAGED_MAGIC_CAPTURE;
     const engine = startOpeningAtHp('enrage');
-    openFight(engine);
+    startAwakeDukeOpening(engine);
     const simWindup = 6;
     const arrivalTick = simWindup + arrivalCycle / 30;
     const nextAttackTick = simWindup + nextWindupTick - windupTick;
@@ -756,7 +767,7 @@ describe('Awakened Duke', () => {
     advanceTo(engine, arrivalTick - 1, outsideMelee);
     expect(received(engine, 'Magic bolt')).toBe(false);
 
-    const random = vi.spyOn(engine, 'rollCombat').mockReturnValueOnce(0).mockReturnValueOnce(0.5);
+    const random = mockCombatRolls(engine).mockReturnValueOnce(0).mockReturnValueOnce(0.5);
     try {
       advanceTo(engine, arrivalTick, outsideMelee);
       expect(engine.getState().damageHistory).toContainEqual(
@@ -772,7 +783,7 @@ describe('Awakened Duke', () => {
   it('lands the enraged bolt on a player who returned to melee range as Duke starts his next attack', () => {
     const { windupTick, nextWindupTick, castFrom, followUpFrom } = DUKE_ENRAGED_MAGIC_TO_MELEE_CAPTURE;
     const engine = startOpeningAtHp('enrage');
-    openFight(engine);
+    startAwakeDukeOpening(engine);
     const simWindup = 6;
     const simFollowUp = simWindup + nextWindupTick - windupTick;
     advanceTo(engine, simWindup, castFrom);
@@ -780,18 +791,14 @@ describe('Awakened Duke', () => {
     advanceTo(engine, simFollowUp - 1, followUpFrom);
     expect(received(engine, 'Magic bolt')).toBe(false);
 
-    const random = vi.spyOn(engine, 'rollCombat').mockReturnValueOnce(0).mockReturnValueOnce(0.5);
+    const random = mockCombatRolls(engine).mockReturnValueOnce(0).mockReturnValueOnce(0.5);
     try {
       advanceTo(engine, simFollowUp, followUpFrom);
       expect(engine.getState().damageHistory).toContainEqual(
         expect.objectContaining({ source: 'Magic bolt', tick: simFollowUp, targetId: 'player' }),
       );
       expect(snapshot(engine).visuals.pose).toEqual({ clip: 'slam', startTick: simFollowUp });
-      expect(audioCues(engine).map((event) => ('cue' in event ? event.cue : null))).toEqual([
-        'orbSpawn',
-        'magic',
-        'slamWindup',
-      ]);
+      expect(audioCues(engine).map((event) => ('cue' in event ? event.cue : null))).toEqual(['magic', 'slamWindup']);
     } finally {
       random.mockRestore();
     }
@@ -803,7 +810,7 @@ describe('Awakened Duke', () => {
     { prayer: PrayerType.ProtectMagic, roll: 0, expected: 0 },
   ])('resolves the bolt on impact with $prayer active and $expected damage', ({ prayer, roll, expected }) => {
     const engine = createDukeRun('opening', false);
-    openFight(engine);
+    startAwakeDukeOpening(engine);
     const hpBefore = engine.getState().stats.hitpoints.current;
     advanceTo(engine, 6, START_TILE);
     expect(snapshot(engine).visuals.hazards).toEqual([
@@ -817,7 +824,7 @@ describe('Awakened Duke', () => {
     expect(snapshot(engine).state.perfectKillEligible).toBe(true);
     if (prayer) engine.queueProtectionPrayer(prayer);
 
-    const random = vi.spyOn(engine, 'rollCombat').mockReturnValueOnce(0).mockReturnValueOnce(roll);
+    const random = mockCombatRolls(engine).mockReturnValueOnce(0).mockReturnValueOnce(roll);
     try {
       advanceTo(engine, 10, START_TILE);
       expect(engine.getState().stats.hitpoints.current).toBe(hpBefore - expected);
@@ -842,12 +849,27 @@ describe('Awakened Duke', () => {
     }
   });
 
+  it('caps a bolt at the player’s HP before Elysian mitigation on the arrival tick', () => {
+    const engine = createDukeRun('opening', false);
+    engine.setEquipment({ shield: ELYSIAN_SPIRIT_SHIELD_ID });
+    startAwakeDukeOpening(engine);
+    advanceTo(engine, 9);
+    engine['worldState'].getPlayer()!.vitals.hp = 20;
+    // Accurate, maximum damage, Elysian proc.
+    mockCombatRolls(engine).mockReturnValueOnce(0).mockReturnValueOnce(0.999).mockReturnValueOnce(0);
+    advanceTo(engine, 10);
+    expect(engine.getDamageHistory()).toContainEqual(
+      expect.objectContaining({ source: 'Magic bolt', tick: 10, baseDamage: 71, effectiveDamage: 15 }),
+    );
+    expect(engine.getState().stats.hitpoints.current).toBe(5);
+  });
+
   // Capture tick 128: block hitsplat without the 2435 spot or the 7197 sound.
   it('blocks an inaccurate bolt at arrival without spoiling a perfect kill', () => {
     const engine = createDukeRun();
-    openFight(engine);
+    startAwakeDukeOpening(engine);
     advanceTo(engine, 9);
-    vi.spyOn(engine, 'rollCombat').mockReturnValueOnce(0.999);
+    mockCombatRolls(engine).mockReturnValueOnce(0.999);
     advanceTo(engine, 10);
     expect(engine.getState().damageHistory).toContainEqual(
       expect.objectContaining({ source: 'Magic bolt', tick: 10, effectiveDamage: 0 }),
@@ -865,7 +887,7 @@ describe('Awakened Duke', () => {
 
   it('uses magic behind a rear pillar outside melee range', () => {
     const engine = createDukeRun();
-    openFight(engine);
+    startAwakeDukeOpening(engine);
     advanceTo(engine, 6, [27, 47]);
     expect(engine.getState().playerPosition).toEqual([27, 47]);
     expect(snapshot(engine).visuals.pose).toEqual({ clip: 'magic', startTick: 6 });
@@ -898,7 +920,7 @@ describe('Awakened Duke', () => {
   ])('gives four ticks of gaze warning and protects the tile (%i, %i) behind a pillar', (x, y) => {
     const engine = createDukeRun();
     expect(getArenaConfig().walkableTiles?.has(`${x},${y + 1}`)).toBe(false);
-    openFight(engine);
+    startAwakeDukeOpening(engine);
     advanceTo(engine, 31);
     expect(snapshot(engine).visuals.hazards.find((hazard) => hazard.kind === 'gaze')?.impactTick).toBe(36);
     expect(audioCues(engine)).toContainEqual(expect.objectContaining({ cue: 'gazeWindup', tick: 31 }));
@@ -922,7 +944,7 @@ describe('Awakened Duke', () => {
     const simWindup = 26;
     const simCheck = simWindup + messageTick - windupTick;
     const simHit = simWindup + hitTick - windupTick;
-    openFight(engine);
+    startAwakeDukeOpening(engine);
     advanceTo(engine, simCheck - 1, beforeCover);
     expect(engine.getState().playerPosition).toEqual(beforeCover);
     advanceTo(engine, simCheck, cover);
@@ -935,7 +957,7 @@ describe('Awakened Duke', () => {
     );
     expect(received(engine, 'Freezing Gaze')).toBe(false);
 
-    const random = vi.spyOn(engine, 'rollCombat').mockReturnValue(0.999);
+    const random = mockCombatRolls(engine).mockReturnValue(0.999);
     try {
       advanceTo(engine, simHit, cover);
       expect(engine.getState().damageHistory).toContainEqual(
@@ -953,7 +975,7 @@ describe('Awakened Duke', () => {
   }) => {
     const engine = createDukeRun();
     if (phase === 'enrage') engine.applyAction({ type: 'applyBossHpPreset', hp: ENRAGE_HP });
-    else openFight(engine);
+    else startAwakeDukeOpening(engine);
     const launch = phase === 'enrage' ? 16 : 52;
     advanceTo(engine, launch - 1);
     expect(snapshot(engine).visuals.hazards.some(({ kind }) => kind === 'vent')).toBe(false);
@@ -1000,7 +1022,7 @@ describe('Awakened Duke', () => {
     { phase: 'enrage', expectedLaunches: [44, 47, 49, 51] },
   ])('spaces the four flare launches by three, two, and two ticks in $phase', ({ phase, expectedLaunches }) => {
     const engine = startOpeningAtHp(phase);
-    openFight(engine);
+    startAwakeDukeOpening(engine);
     expect(advanceThroughFlareLaunches(engine, expectedLaunches[3])).toEqual(expectedLaunches);
   });
 
@@ -1027,7 +1049,7 @@ describe('Awakened Duke', () => {
     flareImpacts,
   }) => {
     const engine = startOpeningAtHp(phase);
-    openFight(engine);
+    startAwakeDukeOpening(engine);
     advanceTo(engine, lastFlareTick);
     const flares = snapshot(engine).visuals.hazards.filter((hazard) => hazard.kind === 'vent');
     expect(flares.map(({ impactTick }) => impactTick)).toEqual(flareImpacts);
@@ -1070,7 +1092,7 @@ describe('Awakened Duke', () => {
     const tickOffset = capture.firstFlareTick - simFlare;
     advanceTo(engine, simFlare - 1, [...capture.beforeFirstFlare]);
     const historyStart = engine.getDamageHistory().length;
-    const roll = vi.spyOn(engine, 'rollCombat').mockReturnValue(0.1);
+    const roll = mockCombatRolls(engine).mockReturnValue(0.1);
     try {
       for (const tile of capture.moves) {
         engine.advanceTick(tile);
@@ -1099,7 +1121,7 @@ describe('Awakened Duke', () => {
     { phase: 'bile', expected: [63, 105] },
   ])('forces bile after consecutive $phase volleys with Always Bile enabled', ({ phase, expected }) => {
     const engine = startOpeningAtHp(phase);
-    openFight(engine);
+    startAwakeDukeOpening(engine);
     engine.setMechanicsConfig({ [DUKE_START_PHASE_KEY]: phase, infiniteHealth: true, [DUKE_ALWAYS_BILE_KEY]: true });
     const casts: number[] = [];
     for (let tick = 2; tick <= expected[1]; tick++) {
@@ -1131,7 +1153,7 @@ describe('Awakened Duke', () => {
 
   it('cancels queued bile when jumping to a different phase after the last flare', () => {
     const engine = startOpeningAtHp('bile');
-    openFight(engine);
+    startAwakeDukeOpening(engine);
     advanceTo(engine, 60);
     engine.applyAction({ type: 'applyBossHpPreset', hp: 1697 });
     advanceTo(engine, 63);
@@ -1141,7 +1163,7 @@ describe('Awakened Duke', () => {
 
   it('retargets subsequent flares south when the player retreats between shots', () => {
     const engine = startOpeningAtHp('vents');
-    openFight(engine);
+    startAwakeDukeOpening(engine);
     advanceTo(engine, 52);
     const firstFlare = snapshot(engine).visuals.hazards.find(({ kind }) => kind === 'vent');
     expect(firstFlare?.tiles[4]).toEqual([31, 50]);
@@ -1177,7 +1199,7 @@ describe('Awakened Duke', () => {
   // 20261126-232238-Duke.jsonl ticks 139–157: gaze, one basic, then the due grate volley.
   it('uses a due grate volley one basic after gaze below the bile breakpoint', () => {
     const engine = startOpeningAtHp('bile');
-    openFight(engine);
+    startAwakeDukeOpening(engine);
     const gazeTick = 120;
     advanceTo(engine, gazeTick, [27, 51]);
     expect(audioCues(engine)).toContainEqual(expect.objectContaining({ cue: 'gazeWindup' }));
@@ -1216,7 +1238,7 @@ describe('Awakened Duke', () => {
     const engine = startOpeningAtHp('bile');
     const cover: Coordinate = [27, 51];
     const turn: Coordinate = [29, 51];
-    openFight(engine);
+    startAwakeDukeOpening(engine);
     advanceTo(engine, 63, cover);
     advanceTo(engine, 64, turn);
     expect(engine.getState().playerPosition).toEqual(turn);
@@ -1237,13 +1259,13 @@ describe('Awakened Duke', () => {
   it('applies the captured bile poison severity while still damaging a player with poison immunity', () => {
     const cover: Coordinate = [27, 51];
     const bare = startOpeningAtHp('bile');
-    openFight(bare);
+    startAwakeDukeOpening(bare);
     advanceTo(bare, 65, cover);
     expect(received(bare, 'Bile pool')).toBe(true);
     expect(bare.getState().poisonVarp).toBe(DUKE_BILE_POISON_VARP);
 
     const protectedPlayer = startOpeningAtHp('bile');
-    openFight(protectedPlayer);
+    startAwakeDukeOpening(protectedPlayer);
     const inventory = createEmptyInventory();
     inventory[0] = { id: 5952 }; // Antidote++(4)
     protectedPlayer.setInventory(inventory);
@@ -1256,15 +1278,11 @@ describe('Awakened Duke', () => {
   it('starts the orb delay on the threshold hit, including a player attack late in that tick', () => {
     const engine = createDukeRun();
     const front: Coordinate = [31, 51];
-    openFight(engine);
+    startAwakeDukeOpening(engine);
     advanceTo(engine, 7, front);
     engine.setBossHp(ORB_HP + 1);
     engine.setAttackTarget(WARDEN_ID);
-    const random = vi
-      .spyOn(engine, 'rollCombat')
-      .mockReturnValueOnce(0.5)
-      .mockReturnValueOnce(0)
-      .mockReturnValueOnce(0.95);
+    const random = mockCombatRolls(engine).mockReturnValueOnce(0.5).mockReturnValueOnce(0).mockReturnValueOnce(0.95);
     try {
       advanceTo(engine, 8, front);
     } finally {
@@ -1287,18 +1305,17 @@ describe('Awakened Duke', () => {
   ])('hits for $expectedDamage and despawns the orb on the tick after contact', ({ roll, expectedDamage }) => {
     const { spawnTick, spawnTile, contactTick, contactTile, hitTick, nextSpawnTick, nextSpawnTile } =
       DUKE_ORB_CONTACT_CAPTURE;
-    const engine = startOpeningAtHp('orbs');
-    const simSpawn = 10;
+    const engine = createDukeRun('orbs');
+    const simSpawn = 3;
     const simHit = simSpawn + hitTick - spawnTick;
     const simNextSpawn = simSpawn + nextSpawnTick - spawnTick;
-    openFight(engine);
     advanceTo(engine, simSpawn, contactTile);
     expect(snapshot(engine).visuals.orbTile).toEqual(spawnTile);
     expect(audioCues(engine)).toContainEqual(expect.objectContaining({ cue: 'orbSpawn', position: spawnTile }));
     advanceTo(engine, simSpawn + contactTick - spawnTick, contactTile);
     expect(snapshot(engine).visuals.orbTile).toEqual(contactTile);
     expect(received(engine, 'Orb of Darkness')).toBe(false);
-    const random = vi.spyOn(engine, 'rollCombat').mockReturnValue(roll);
+    const random = mockCombatRolls(engine).mockReturnValue(roll);
     try {
       advanceTo(engine, simHit, START_TILE);
     } finally {
@@ -1324,7 +1341,7 @@ describe('Awakened Duke', () => {
   it('can start and repeat from the west and restores those rolls from a saved seed', () => {
     const engine = createDukeRun('orbs', true, 19);
     const runConfig = engine.getRunConfig();
-    expect(runConfig.encounter.seeds).toMatchObject({ encounterSeed: 19 });
+    expect(runConfig.encounter.seeds).toEqual({ dukeSeed: 19 });
     const { tile, repeatInterval } = DUKE_WEST_ORB_CAPTURE;
     const expectedTiles = [tile, tile, tile, [ORB_LANE.east, ORB_LANE.y]];
 

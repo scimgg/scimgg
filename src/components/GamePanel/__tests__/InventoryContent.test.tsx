@@ -5,7 +5,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { TOUCH_SLOP_PX } from '../../../input/touchHold';
 import { TOUCH_LONG_PRESS_DEFAULT_MS } from '../../../input/touchPrefs';
 import type { ObjTypeLoader } from '../../../rs/config/objtype/ObjTypeLoader';
-import { ARDER_MUSCA_POISON_ITEM_ID } from '../../../types/inventory';
 import { ContextMenuOverlay, ContextMenuProvider } from '../../ContextMenu';
 import { TooltipProvider } from '../../Tooltip';
 import { InventoryContent } from '../InventoryContent';
@@ -98,13 +97,6 @@ describe('InventoryContent', () => {
 
       expect(within(slot).getByRole('img', { name: 'Unlimited' })).toBeInTheDocument();
       expect(screen.queryByText('1234')).toBeNull();
-    });
-
-    it('shows the poison stack count', () => {
-      const slot = renderSlot({ id: ARDER_MUSCA_POISON_ITEM_ID, quantity: 3 });
-
-      expect(within(slot).getByRole('img', { name: 'Quantity 3' })).toHaveTextContent('3');
-      expect(within(slot).queryByRole('img', { name: 'Unlimited' })).toBeNull();
     });
 
     it('leaves a single non-stackable item unmarked', () => {

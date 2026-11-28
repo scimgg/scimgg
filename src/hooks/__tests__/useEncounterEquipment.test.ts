@@ -116,8 +116,9 @@ describe('useEncounterEquipment combat supplies', () => {
   });
 
   it('keeps the saved Duke loadout after the rename', async () => {
-    const { equipment, inventory } = EQUIPMENT_PRESETS.duke.scythe;
-    storageMocks.loadSetting.mockReturnValue({ duke_practice: { equipment, inventory } });
+    const { equipment, inventory } = EQUIPMENT_PRESETS.duke.burning_claws;
+    const savedInventory = inventory.map((slot, index) => (index === 27 && slot ? { ...slot, quantity: 3 } : slot));
+    storageMocks.loadSetting.mockReturnValue({ duke_practice: { equipment, inventory: savedInventory } });
 
     const { result } = renderHook(() => useEncounterEquipment());
 

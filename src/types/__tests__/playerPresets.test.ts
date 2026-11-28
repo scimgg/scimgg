@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { findEquipmentCatalogItem, getCanonicalEquipmentItemId } from '../../data/equipmentCatalog';
 import { findInventoryItem } from '../../data/inventoryItemCatalog';
+import { ARDER_MUSCA_POISON_ITEM_ID } from '../../data/itemIds';
 import { EQUIPMENT_PRESETS } from '../../data/playerPresets';
 import { getDefaultLoadout, normalizeEncounterLoadout } from '../../hooks/encounterLoadoutStorage';
-import { ARDER_MUSCA_POISON_ITEM_ID } from '../inventory';
 
 describe('shipped preset equipment coverage', () => {
   it.each(['yama_p3_sensory', 'yama_p3_divine'] as const)('packs the powered sceptre switch for %s', (encounter) => {
@@ -47,7 +47,7 @@ describe('shipped preset equipment coverage', () => {
     expect(names.filter((name) => name === 'Halibut')).toHaveLength(3);
     expect(names.filter((name) => name === 'Anglerfish')).toHaveLength(9);
     expect(names.filter((name) => name === 'Arder-musca poison')).toHaveLength(1);
-    const poison = { id: ARDER_MUSCA_POISON_ITEM_ID, quantity: 3 };
+    const poison = { id: ARDER_MUSCA_POISON_ITEM_ID };
     expect(inventory[27]).toEqual(poison);
     expect(normalizeEncounterLoadout({ equipment, inventory }).inventory[27]).toEqual(poison);
   });
@@ -55,15 +55,12 @@ describe('shipped preset equipment coverage', () => {
   it('can open Duke from every shipped loadout', () => {
     const presets = EQUIPMENT_PRESETS.duke;
     for (const preset of Object.values(presets)) {
-      expect(preset.inventory[27], preset.name).toEqual({ id: ARDER_MUSCA_POISON_ITEM_ID, quantity: 3 });
+      expect(preset.inventory[27], preset.name).toEqual({ id: ARDER_MUSCA_POISON_ITEM_ID });
     }
-    expect(presets.emberlight.equipment).toMatchObject({ weapon: 29589, shield: 22322 });
-    expect(presets.emberlight.inventory).toContainEqual({ id: 29577 });
-    expect(presets.scythe.equipment.weapon).toBe(22325);
-    expect(presets.scythe.inventory).toContainEqual({ id: 29577 });
+    expect(Object.keys(presets)).toEqual(['burning_claws', 'naked']);
   });
 
-  it('resolves every initially equipped slot in all 34 real encounter presets', () => {
+  it('resolves every initially equipped slot in all 32 real encounter presets', () => {
     const unresolved: string[] = [];
     let realPresetCount = 0;
 
@@ -79,7 +76,7 @@ describe('shipped preset equipment coverage', () => {
       }
     }
 
-    expect(realPresetCount).toBe(34);
+    expect(realPresetCount).toBe(32);
     expect(unresolved).toEqual([]);
   });
 
@@ -88,7 +85,7 @@ describe('shipped preset equipment coverage', () => {
     for (const [encounterKey, presets] of Object.entries(EQUIPMENT_PRESETS)) {
       for (const [presetKey, preset] of Object.entries(presets)) {
         preset.inventory.forEach((slot, index) => {
-          if (slot?.quantity !== undefined && slot.id !== ARDER_MUSCA_POISON_ITEM_ID) {
+          if (slot?.quantity !== undefined) {
             counted.push(`${encounterKey}.${presetKey}[${index}]:${slot.id}`);
           }
         });
