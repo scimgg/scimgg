@@ -14,7 +14,7 @@ const LIVE_PRESENTATION = {
   },
   prayerPresentation: {
     protection: PrayerType.ProtectMagic,
-    offensive: null,
+    boost: [],
     independent: [],
     visualOverrides: { [PrayerType.ProtectMelee]: true },
     anyLit: true,

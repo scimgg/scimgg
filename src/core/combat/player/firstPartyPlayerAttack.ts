@@ -30,7 +30,7 @@ export type FirstPartyPlayerAttackInput = {
       | 'equipment'
       | 'equipmentStats'
       | 'activePrayer'
-      | 'offensivePrayer'
+      | 'boostPrayers'
       | 'selectedAttackStyleIndex'
       | 'combatTimers'
     >

@@ -48,7 +48,7 @@ export type SimulationGridContextValue = Pick<
   | 'onMarkOfDarknessCast'
   | 'onDeathChargeCast'
   | 'onMechanicsConfigChange'
-  | 'onOffensivePrayerChange'
+  | 'onBoostPrayerChange'
   | 'onIndependentPrayerChange'
   | 'onCloseQuickPrayerSetup'
   | 'onPrayerChange'

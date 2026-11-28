@@ -1,11 +1,12 @@
-import { PRAYER_CATEGORIES, type PrayerType } from '../types/simulation';
+import { PRAYER_CATEGORIES, type PrayerType, prayersConflict } from '../types/simulation';
 
 /** Prayer clicks remain discrete toggles evaluated against live state when processed. */
 export type QueuedPrayerAction =
-  // Non-null slot actions are prayer-button toggles. Null remains an explicit clear.
+  // Non-null prayers are prayer-button toggles. Null remains an explicit clear of the whole slot
+  // or set: every protection prayer, or every boost prayer.
   | { readonly type: 'protection'; readonly prayer: PrayerType | null }
-  | { readonly type: 'offensive'; readonly prayer: PrayerType | null }
-  // An independent prayer stacks with both slots, so its click is a toggle of one membership
+  | { readonly type: 'boost'; readonly prayer: PrayerType | null }
+  // An independent prayer stacks with everything, so its click is a toggle of one membership
   // rather than an assignment to a slot. There is no null form: clearing them all is what
   // turning quick prayers off does.
   | { readonly type: 'independent'; readonly prayer: PrayerType }
@@ -13,27 +14,31 @@ export type QueuedPrayerAction =
 
 export interface PrayerInputState {
   readonly protection: PrayerType | null;
-  readonly offensive: PrayerType | null;
+  /** Conflict-free; insertion-ordered like {@link independent}. */
+  readonly boost: readonly PrayerType[];
   /** Unordered in meaning, but kept deduplicated and in insertion order so replays stay byte-stable. */
   readonly independent: readonly PrayerType[];
   readonly quickPrayersActive: boolean;
 }
 
-export type PrayerTransition = {
-  /**
-   * For `independent`, exactly one of `from`/`to` is null: membership is added or removed, never
-   * swapped, because independent prayers do not evict one another.
-   */
-  readonly slot: 'protection' | 'offensive' | 'independent';
+export interface PrayerChange {
   readonly from: PrayerType | null;
   readonly to: PrayerType | null;
+}
+
+export type PrayerTransition = PrayerChange & {
+  /**
+   * For the two sets, `to` is the prayer that lit and `from` the first lit prayer it turned off, or
+   * null. See {@link prayerSetChanges}.
+   */
+  readonly slot: 'protection' | 'boost' | 'independent';
 };
 
 export interface PrayerInputOutcome extends PrayerInputState {
   /** True when at least one action in the batch could change the protection slot. */
   readonly protectionTouched: boolean;
-  /** True when at least one action in the batch could change the offensive slot. */
-  readonly offensiveTouched: boolean;
+  /** True when at least one action in the batch could change the boost set. */
+  readonly boostTouched: boolean;
   /** True when at least one action in the batch could change independent membership. */
   readonly independentTouched: boolean;
   /**
@@ -49,21 +54,65 @@ export interface PrayerInputOutcome extends PrayerInputState {
   readonly transitions: readonly PrayerTransition[];
 }
 
+/**
+ * The changes that take a prayer set from `before` to `after`, one per prayer that lit plus one per
+ * prayer that went dark on its own.
+ *
+ * A prayer that lit is paired with the first prayer it turned off by conflict, the way a slot
+ * swap always was: one click, one change, one sound. Any further prayers the same arrival turned
+ * off are not reported separately; {@link prayerSetLogChanges} adds them for the event log. Prayers
+ * leaving without being displaced come first, so the deactivation sound never plays after the
+ * activation that followed it.
+ */
+export function prayerSetChanges(before: readonly PrayerType[], after: readonly PrayerType[]): PrayerChange[] {
+  const arrivals = after.filter((prayer) => !before.includes(prayer));
+  const leavers = before.filter((prayer) => !after.includes(prayer));
+  const displaced = (prayer: PrayerType): boolean => arrivals.some((arrival) => prayersConflict(arrival, prayer));
+  const changes: PrayerChange[] = leavers
+    .filter((prayer) => !displaced(prayer))
+    .map((prayer) => ({ from: prayer, to: null }));
+  const unpaired = leavers.filter(displaced);
+  for (const arrival of arrivals) {
+    const index = unpaired.findIndex((prayer) => prayersConflict(arrival, prayer));
+    const from = index === -1 ? null : unpaired.splice(index, 1)[0];
+    changes.push({ from, to: arrival });
+  }
+  return changes;
+}
+
+/**
+ * {@link prayerSetChanges} with a removal after them for each further prayer an arrival turned off,
+ * so the event log names every prayer that went dark. Not for sounds: those play per change, and
+ * the extra removals would add a deactivation sound to a click that only plays its activation.
+ */
+export function prayerSetLogChanges(before: readonly PrayerType[], after: readonly PrayerType[]): PrayerChange[] {
+  const changes = prayerSetChanges(before, after);
+  const reported = new Set(changes.map((change) => change.from));
+  const unreported = before.filter((prayer) => !after.includes(prayer) && !reported.has(prayer));
+  return [...changes, ...unreported.map((prayer) => ({ from: prayer, to: null }))];
+}
+
+/** Light `prayer` in `set`, turning off whatever it conflicts with. */
+function lightInSet(set: readonly PrayerType[], prayer: PrayerType): PrayerType[] {
+  return [...set.filter((lit) => !prayersConflict(prayer, lit)), prayer];
+}
+
 function splitSelections(selections: readonly PrayerType[]): {
   protection: PrayerType | null;
-  offensive: PrayerType | null;
+  boost: PrayerType[];
   independent: PrayerType[];
 } {
   let protection: PrayerType | null = null;
-  let offensive: PrayerType | null = null;
+  let boost: PrayerType[] = [];
   const independent: PrayerType[] = [];
   for (const prayer of selections) {
     const category = PRAYER_CATEGORIES[prayer];
     if (category === 'protection') protection = prayer;
-    else if (category === 'offensive') offensive = prayer;
+    // A later selection wins a conflict, as a later protection selection wins the slot.
+    else if (category === 'boost' && !boost.includes(prayer)) boost = lightInSet(boost, prayer);
     else if (category === 'independent' && !independent.includes(prayer)) independent.push(prayer);
   }
-  return { protection, offensive, independent };
+  return { protection, boost, independent };
 }
 
 /** One queued input paired with whether the player had prayer points when it ran. */
@@ -87,11 +136,11 @@ export function resolvePrayerActionSteps(
   steps: readonly PrayerActionStep[],
 ): PrayerInputOutcome {
   let protection = start.protection;
-  let offensive = start.offensive;
+  let boost: readonly PrayerType[] = start.boost;
   let independent: readonly PrayerType[] = start.independent;
   let quickPrayersActive = start.quickPrayersActive;
   let protectionTouched = false;
-  let offensiveTouched = false;
+  let boostTouched = false;
   let independentTouched = false;
   const activated = new Set<PrayerType>();
   const rejected: PrayerType[] = [];
@@ -107,21 +156,13 @@ export function resolvePrayerActionSteps(
     protection = next;
   };
 
-  const setOffensive = (next: PrayerType | null): void => {
-    if (offensive === next) return;
-    transitions.push({ slot: 'offensive', from: offensive, to: next });
-    offensive = next;
+  const setBoost = (next: readonly PrayerType[]): void => {
+    for (const change of prayerSetChanges(boost, next)) transitions.push({ slot: 'boost', ...change });
+    boost = [...next];
   };
 
   const setIndependent = (next: readonly PrayerType[]): void => {
-    // Removals before additions: each becomes a `prayer_changed` event, and swapping the loops
-    // would play the activation sound before the deactivation it replaces.
-    for (const prayer of independent) {
-      if (!next.includes(prayer)) transitions.push({ slot: 'independent', from: prayer, to: null });
-    }
-    for (const prayer of next) {
-      if (!independent.includes(prayer)) transitions.push({ slot: 'independent', from: null, to: prayer });
-    }
+    for (const change of prayerSetChanges(independent, next)) transitions.push({ slot: 'independent', ...change });
     independent = [...next];
   };
 
@@ -140,16 +181,19 @@ export function resolvePrayerActionSteps(
       continue;
     }
 
-    if (action.type === 'offensive') {
-      offensiveTouched = true;
+    if (action.type === 'boost') {
+      boostTouched = true;
       quickPrayersActive = false;
-      if (action.prayer === null || action.prayer === offensive) {
-        setOffensive(null);
+      const prayer = action.prayer;
+      if (prayer === null) {
+        setBoost([]);
+      } else if (boost.includes(prayer)) {
+        setBoost(boost.filter((lit) => lit !== prayer));
       } else if (!hasPrayerPoints) {
-        rejected.push(action.prayer);
+        rejected.push(prayer);
       } else {
-        activate(offensive, action.prayer);
-        setOffensive(action.prayer);
+        activated.add(prayer);
+        setBoost(lightInSet(boost, prayer));
       }
       continue;
     }
@@ -170,51 +214,50 @@ export function resolvePrayerActionSteps(
 
     if (quickPrayersActive) {
       protectionTouched = true;
-      offensiveTouched = true;
+      boostTouched = true;
       independentTouched = true;
       quickPrayersActive = false;
       setProtection(null);
-      setOffensive(null);
+      setBoost([]);
       setIndependent([]);
       continue;
     }
 
     const next = splitSelections(action.selections);
-    if (next.protection === null && next.offensive === null && next.independent.length === 0) {
+    if (next.protection === null && next.boost.length === 0 && next.independent.length === 0) {
       // Nothing is assigned to the quick-prayer set, so there is nothing to turn
       // on and the flag stays where it was.
       continue;
     }
     if (!hasPrayerPoints) {
-      rejected.push(next.protection ?? next.offensive ?? (next.independent[0] as PrayerType));
+      rejected.push(next.protection ?? next.boost[0] ?? (next.independent[0] as PrayerType));
       continue;
     }
     protectionTouched = true;
-    offensiveTouched = true;
+    boostTouched = true;
     independentTouched = true;
     quickPrayersActive = true;
     activate(protection, next.protection);
-    activate(offensive, next.offensive);
-    // An independent prayer the set merely RETAINS was already burning, so it must not collect a
-    // fresh activation stamp and buy itself another drain-free tick.
-    for (const prayer of next.independent) {
-      if (!independent.includes(prayer)) activated.add(prayer);
+    // A prayer the set merely RETAINS was already burning, so it must not collect a fresh
+    // activation stamp and buy itself another drain-free tick.
+    for (const prayer of [...next.boost, ...next.independent]) {
+      if (!boost.includes(prayer) && !independent.includes(prayer)) activated.add(prayer);
     }
     setProtection(next.protection);
-    setOffensive(next.offensive);
+    setBoost(next.boost);
     setIndependent(next.independent);
   }
 
   return {
     protection,
-    offensive,
+    boost,
     independent,
     quickPrayersActive,
     protectionTouched,
-    offensiveTouched,
+    boostTouched,
     independentTouched,
     activated: [...activated].filter(
-      (prayer) => prayer === protection || prayer === offensive || independent.includes(prayer),
+      (prayer) => prayer === protection || boost.includes(prayer) || independent.includes(prayer),
     ),
     rejected,
     transitions,

@@ -124,6 +124,40 @@ describe('player melee formulas', () => {
     expect(calculateMaxHit(attacker, 'melee_slash', equipmentStats, OFFENSIVE_PRAYERS)).toBe(37);
   });
 
+  // floor(level × prayer) where the product is a whole number: in floating point 100 × 1.15 is
+  // 114.99999999999999, one level short of the wiki's 115. Same for 180 and 200.
+  it.each([100, 180, 200])('floors a 15 percent prayer at level %i to the exact whole level', (level) => {
+    const levels = { attack: level, strength: level, defence: level, ranged: level, magic: level };
+    const attacker: PlayerFormulaActor = { kind: 'player', levels, stance: 'Other', voidSet: 'none' };
+    const fifteen: PrayerMultipliers = {
+      attack: 1.15,
+      strength: 1.15,
+      defence: 1.15,
+      ranged: 1.15,
+      rangedStrength: 1.15,
+      magic: 1.15,
+      magicDamage: 1,
+    };
+    const prayed = (level * 115) / 100;
+    const none = equipment({});
+
+    expect(calculatePlayerNpcRollDetails(attacker, NPC_DEFENDER, 'melee_slash', none, fifteen).attackRoll).toBe(
+      (prayed + 8) * 64,
+    );
+    expect(calculatePlayerNpcRollDetails(attacker, NPC_DEFENDER, 'ranged', none, fifteen).attackRoll).toBe(
+      (prayed + 8) * 64,
+    );
+    expect(calculatePlayerNpcRollDetails(attacker, NPC_DEFENDER, 'magic', none, fifteen).attackRoll).toBe(
+      (prayed + 8) * 64,
+    );
+    expect(calculateMaxHit(attacker, 'melee_slash', none, fifteen)).toBe(Math.floor(((prayed + 8) * 64 + 320) / 640));
+    expect(calculateMaxHit(attacker, 'ranged', none, fifteen)).toBe(Math.floor(((prayed + 8) * 64 + 320) / 640));
+    const npcAttacker: NpcFormulaActor = { ...NPC_DEFENDER, levels: { ...NPC_DEFENDER.levels, attack: 300 } };
+    expect(calculateAccuracy(npcAttacker, attacker, 'melee_slash', none, fifteen)).toBe(
+      hitChance(309 * 64, (prayed + 8) * 64),
+    );
+  });
+
   it('keeps an explicit non-Void actor on the ordinary melee stages', () => {
     const attacker: PlayerFormulaActor = {
       kind: 'player',
@@ -251,6 +285,30 @@ describe('player magic formulas', () => {
 
     expect(calculateMaxHit(regular, 'magic', equipmentStats, OFFENSIVE_PRAYERS)).toBe(35);
     expect(calculateMaxHit(elite, 'magic', equipmentStats, OFFENSIVE_PRAYERS)).toBe(37);
+  });
+
+  // floor(base × (1 + gear + prayer)) (https://oldschool.runescape.wiki/w/Damage_per_second/Magic):
+  // each of these sums to a whole hit that the floating product lands just under.
+  it.each([
+    { base: 25, gearPercent: 15, prayerDamage: 1.01, maxHit: 29 },
+    { base: 25, gearPercent: 16, prayerDamage: 1, maxHit: 29 },
+    { base: 50, gearPercent: 13, prayerDamage: 1.01, maxHit: 57 },
+    { base: 45, gearPercent: 38, prayerDamage: 1.02, maxHit: 63 },
+  ])('floors base $base with $gearPercent% gear and prayer damage $prayerDamage to exactly $maxHit', ({
+    base,
+    gearPercent,
+    prayerDamage,
+    maxHit,
+  }) => {
+    const caster: PlayerFormulaActor = {
+      kind: 'player',
+      levels: PLAYER_LEVELS,
+      stance: 'Casting',
+      magicBaseMaxHit: base,
+    };
+    const prayers = { ...NO_PRAYERS, magicDamage: prayerDamage };
+
+    expect(calculateMaxHit(caster, 'magic', equipment({ magicDamage: gearPercent }), prayers)).toBe(maxHit);
   });
 });
 

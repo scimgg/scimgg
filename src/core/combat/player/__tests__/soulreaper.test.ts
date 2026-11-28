@@ -72,7 +72,7 @@ describe('Soulreaper axe max hit', () => {
         equipment: { weapon: 28338 },
         equipmentStats: { ...createEmptyStats(), attackSlash: 100, meleeStrength },
         activePrayer: null,
-        offensivePrayer: PrayerType.Piety,
+        boostPrayers: [PrayerType.Piety],
         selectedAttackStyleIndex,
         combatTimers: createDefaultTimers(),
         ...(soulreaper === undefined ? {} : { soulreaper }),

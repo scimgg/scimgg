@@ -75,6 +75,9 @@ describe('coreAudioRules', () => {
     { prayer: PrayerType.Preserve, soundId: 2679 },
     { prayer: PrayerType.RapidRestore, soundId: 2679 },
     { prayer: PrayerType.RapidHeal, soundId: 2678 },
+    { prayer: PrayerType.ThickSkin, soundId: 2690 },
+    { prayer: PrayerType.SharpEye, soundId: 2685 },
+    { prayer: PrayerType.Chivalry, soundId: 3826 },
   ])('plays sound $soundId when $prayer activates', ({ prayer, soundId }) => {
     const player = createPlayer();
     const event: GameEvent = {
@@ -89,6 +92,17 @@ describe('coreAudioRules', () => {
     player.onEvents([event], [31, 37]);
 
     expect(mockAudioEngine.play).toHaveBeenCalledWith(soundId, { channel: 'sfx', volume: 1 }, 'event:prayer_changed');
+  });
+
+  it.each(Object.values(PrayerType))('gives %s an activation sound', (prayer) => {
+    const player = createPlayer();
+    player.onEvents(
+      [{ type: 'prayer_changed', eventId: 22, tick: 0, actorId: 'player', from: null, to: prayer }],
+      [31, 37],
+    );
+
+    expect(mockAudioEngine.play).toHaveBeenCalledTimes(1);
+    expect(mockAudioEngine.play).not.toHaveBeenCalledWith(2663, expect.anything(), expect.anything());
   });
 
   it('plays the shared deactivation sound when an upgraded prayer deactivates', () => {

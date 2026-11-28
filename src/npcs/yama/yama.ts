@@ -279,7 +279,7 @@ function rollAccuracy(
     playerFormulaActor(player),
     attackStyle,
     player.equipmentStats,
-    lookupPrayerMultipliersFromState(player.activePrayer, player.offensivePrayer),
+    lookupPrayerMultipliersFromState(player.activePrayer, player.boostPrayers),
   );
   return input.config.accuracyRandom() < accuracy;
 }

@@ -49,7 +49,7 @@ function makePlayer(shield?: number): PlayerActor {
     isRunning: false,
     history: new Map(),
     activePrayer: null,
-    offensivePrayer: null,
+    boostPrayers: [],
     independentPrayers: [],
     prayerState: createDefaultPrayerState(),
     stats: createDefaultStats(),

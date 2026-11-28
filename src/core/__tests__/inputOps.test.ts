@@ -22,7 +22,7 @@ function inventoryOf(...ids: number[]): Inventory {
 
 function projection(overrides: Partial<PendingPrayerProjectionInput> = {}): PendingPrayerProjectionInput {
   return {
-    start: { protection: null, offensive: null, independent: [], quickPrayersActive: false },
+    start: { protection: null, boost: [], independent: [], quickPrayersActive: false },
     hasPrayerPoints: false,
     ops: [],
     inventory: inventoryOf(SUPER_RESTORE_4),
@@ -42,7 +42,7 @@ const prayMelee: PendingInputOp = { type: 'protection', prayer: PrayerType.Prote
 describe('isPrayerOp', () => {
   it('accepts the three prayer ops and nothing else', () => {
     expect(isPrayerOp(prayMelee)).toBe(true);
-    expect(isPrayerOp({ type: 'offensive', prayer: PrayerType.Piety })).toBe(true);
+    expect(isPrayerOp({ type: 'boost', prayer: PrayerType.Piety })).toBe(true);
     expect(isPrayerOp({ type: 'quickPrayers', selections: [] })).toBe(true);
     expect(isPrayerOp(drinkFirstSlot)).toBe(false);
     expect(isPrayerOp({ type: 'run_toggle' })).toBe(false);

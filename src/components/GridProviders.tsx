@@ -72,7 +72,7 @@ interface GridProvidersSimulationProps {
   /** The active setup's context and actions (`GridProps.setupContext`). */
   setupContext: SetupContextControls;
   handleQuickPrayerToggle: () => void;
-  handleOffensivePrayerChange: (prayer: PrayerType | null) => void;
+  handleBoostPrayerChange: (prayer: PrayerType | null) => void;
   handleIndependentPrayerChange: (prayer: PrayerType) => void;
   handlePrayerChange: (prayer: PrayerType | null) => void;
   onCloseQuickPrayerSetup?: () => void;
@@ -247,7 +247,7 @@ export function GridProviders({
     handleMechanicsConfigChange,
     setupContext,
     handleQuickPrayerToggle,
-    handleOffensivePrayerChange,
+    handleBoostPrayerChange,
     handleIndependentPrayerChange,
     handlePrayerChange,
     onCloseQuickPrayerSetup,
@@ -489,7 +489,7 @@ export function GridProviders({
       onMarkOfDarknessCast: handleMarkOfDarknessCast,
       onDeathChargeCast: handleDeathChargeCast,
       onMechanicsConfigChange: handleMechanicsConfigChange,
-      onOffensivePrayerChange: handleOffensivePrayerChange,
+      onBoostPrayerChange: handleBoostPrayerChange,
       onIndependentPrayerChange: handleIndependentPrayerChange,
       onReplayCursorClick: replay.recordCursorClick,
       onPrayerChange: handlePrayerChange,
@@ -601,7 +601,7 @@ export function GridProviders({
       handleMechanicsConfigChange,
       setupContext,
       handleQuickPrayerToggle,
-      handleOffensivePrayerChange,
+      handleBoostPrayerChange,
       handleIndependentPrayerChange,
       handlePrayerChange,
       replay.recordCursorClick,

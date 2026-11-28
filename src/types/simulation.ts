@@ -289,7 +289,8 @@ export interface SimulationState {
   markOfDarknessActive: boolean;
   markOfDarknessTicksRemaining: number;
   activePrayer: PrayerType | null;
-  offensivePrayer: PrayerType | null;
+  /** Lit `boost` prayers ({@link PRAYER_CATEGORIES}); conflict-free, deduplicated and insertion-ordered. */
+  boostPrayers: readonly PrayerType[];
   independentPrayers: readonly PrayerType[];
   failedCondition: FailCondition | null;
   playerHistory: Map<TickNumber, Coordinate>;
@@ -315,7 +316,8 @@ export interface SimulationState {
   pendingSpecialAttackActive?: boolean;
   pendingSpecialAttackToggles: number;
   pendingProtectionPrayer: [boolean, PrayerType | null];
-  pendingOffensivePrayer: [boolean, PrayerType | null];
+  /** The whole predicted boost SET, since one click can turn several conflicting prayers off. */
+  pendingBoostPrayers: [boolean, readonly PrayerType[]];
   /** The whole predicted independent SET, because membership has no slot to replace. */
   pendingIndependentPrayers: [boolean, readonly PrayerType[]];
   /**
@@ -446,39 +448,111 @@ export enum PrayerType {
   Preserve = 'Preserve',
   RapidRestore = 'RapidRestore',
   RapidHeal = 'RapidHeal',
+  ThickSkin = 'ThickSkin',
+  BurstOfStrength = 'BurstOfStrength',
+  ClarityOfThought = 'ClarityOfThought',
+  SharpEye = 'SharpEye',
+  MysticWill = 'MysticWill',
+  RockSkin = 'RockSkin',
+  SuperhumanStrength = 'SuperhumanStrength',
+  ImprovedReflexes = 'ImprovedReflexes',
+  HawkEye = 'HawkEye',
+  MysticLore = 'MysticLore',
+  SteelSkin = 'SteelSkin',
+  UltimateStrength = 'UltimateStrength',
+  IncredibleReflexes = 'IncredibleReflexes',
+  Chivalry = 'Chivalry',
 }
 
 /**
- * Which prayers a newly lit prayer turns off.
- *
- * `protection` and `offensive` are mutually exclusive SLOTS: lighting one replaces whatever held
- * the slot. `independent` is NOT a third exclusion group — it is the absence of one. Independent
- * prayers stack with both slots and, once more than Preserve exists, with each other, so they live
- * in a set rather than a slot. Branch on the two exclusive categories explicitly wherever
- * exclusivity is applied; never treat `independent` as a group to evict.
+ * The rows of the wiki's conflict table. Lighting a prayer turns off every lit prayer it shares a
+ * group with, and nothing else (https://oldschool.runescape.wiki/w/Prayer?oldid=15411470,
+ * "Conflicting prayers").
  */
-export type PrayerCategory = 'protection' | 'offensive' | 'independent';
+export type PrayerConflictGroup = 'overhead' | 'defence' | 'attack' | 'strength';
 
-export const PRAYER_CATEGORIES: Record<string, PrayerCategory> = {
-  [PrayerType.ProtectMagic]: 'protection',
-  [PrayerType.ProtectRange]: 'protection',
-  [PrayerType.ProtectMelee]: 'protection',
+/** The ranged and magic lines span both offence rows. */
+const OFFENCE_ROWS: readonly PrayerConflictGroup[] = ['attack', 'strength'];
+/** Chivalry and the level 70+ prayers span the defence row and both offence rows. */
+const DEFENCE_AND_OFFENCE_ROWS: readonly PrayerConflictGroup[] = ['defence', 'attack', 'strength'];
+
+/**
+ * Every prayer's conflict groups (https://oldschool.runescape.wiki/w/Prayer?oldid=15411470,
+ * "Conflicting prayers"). The only owner of prayer exclusivity: the engine, the input resolver,
+ * the quick-prayer setup and the book all ask {@link prayersConflict}.
+ */
+export const PRAYER_CONFLICT_GROUPS: Readonly<Record<PrayerType, readonly PrayerConflictGroup[]>> = {
+  [PrayerType.ProtectMagic]: ['overhead'],
+  [PrayerType.ProtectRange]: ['overhead'],
+  [PrayerType.ProtectMelee]: ['overhead'],
   // Redemption shares the overhead group with the Protect prayers (RuneLite `HeadIcon.REDEMPTION`),
-  // so it belongs in this slot. It grants no damage reduction: `didPrayCorrectly` matches only the
+  // so it belongs in that slot. It grants no damage reduction: `didPrayCorrectly` matches only the
   // three Protect values, which is exactly what keeps this correct without a special case there.
-  [PrayerType.Redemption]: 'protection',
-  [PrayerType.Augury]: 'offensive',
-  [PrayerType.Rigour]: 'offensive',
-  [PrayerType.Piety]: 'offensive',
-  [PrayerType.Zeal]: 'offensive',
-  [PrayerType.EagleEye]: 'offensive',
-  [PrayerType.MysticMight]: 'offensive',
-  [PrayerType.Deadeye]: 'offensive',
-  [PrayerType.MysticVigour]: 'offensive',
-  [PrayerType.Preserve]: 'independent',
-  [PrayerType.RapidRestore]: 'independent',
-  [PrayerType.RapidHeal]: 'independent',
+  [PrayerType.Redemption]: ['overhead'],
+  [PrayerType.ThickSkin]: ['defence'],
+  [PrayerType.RockSkin]: ['defence'],
+  [PrayerType.SteelSkin]: ['defence'],
+  [PrayerType.BurstOfStrength]: ['strength'],
+  [PrayerType.SuperhumanStrength]: ['strength'],
+  [PrayerType.UltimateStrength]: ['strength'],
+  [PrayerType.ClarityOfThought]: ['attack'],
+  [PrayerType.ImprovedReflexes]: ['attack'],
+  [PrayerType.IncredibleReflexes]: ['attack'],
+  [PrayerType.SharpEye]: OFFENCE_ROWS,
+  [PrayerType.HawkEye]: OFFENCE_ROWS,
+  [PrayerType.EagleEye]: OFFENCE_ROWS,
+  [PrayerType.MysticWill]: OFFENCE_ROWS,
+  [PrayerType.MysticLore]: OFFENCE_ROWS,
+  [PrayerType.MysticMight]: OFFENCE_ROWS,
+  // These boost Defence too, yet stay out of the defence row: "Deadeye and Mystic Vigour boost
+  // defence, but do not conflict with the three basic Defence prayers" (same table, footnote a;
+  // https://oldschool.runescape.wiki/w/Deadeye?oldid=15222979).
+  [PrayerType.Deadeye]: OFFENCE_ROWS,
+  [PrayerType.MysticVigour]: OFFENCE_ROWS,
+  [PrayerType.Chivalry]: DEFENCE_AND_OFFENCE_ROWS,
+  [PrayerType.Piety]: DEFENCE_AND_OFFENCE_ROWS,
+  [PrayerType.Zeal]: DEFENCE_AND_OFFENCE_ROWS,
+  [PrayerType.Rigour]: DEFENCE_AND_OFFENCE_ROWS,
+  [PrayerType.Augury]: DEFENCE_AND_OFFENCE_ROWS,
+  // "The only prayers without conflicting prayers": Rapid Restore, Rapid Heal, Protect Item, Preserve.
+  [PrayerType.Preserve]: [],
+  [PrayerType.RapidRestore]: [],
+  [PrayerType.RapidHeal]: [],
 };
+
+/** Whether lighting `a` turns `b` off. A prayer never conflicts with itself: clicking it again toggles it. */
+export function prayersConflict(a: PrayerType, b: PrayerType): boolean {
+  if (a === b) return false;
+  const groups = PRAYER_CONFLICT_GROUPS[b];
+  return PRAYER_CONFLICT_GROUPS[a].some((group) => groups.includes(group));
+}
+
+/**
+ * Where a lit prayer is stored, derived from its conflict groups so storage cannot disagree with
+ * exclusivity.
+ *
+ * - `protection`: the overhead group, held in the single `activePrayer` slot.
+ * - `boost`: a prayer in the defence, attack or strength rows. Lit boosts live in a SET: Thick Skin,
+ *   Burst of Strength and Clarity of Thought coexist, and one click can turn several off.
+ * - `independent`: no group at all. They evict nothing and nothing evicts them. Kept apart from the
+ *   boost set so recorded states keep their shape and order.
+ */
+export type PrayerCategory = 'protection' | 'boost' | 'independent';
+
+function categoryOf(groups: readonly PrayerConflictGroup[]): PrayerCategory {
+  if (groups.includes('overhead')) return 'protection';
+  return groups.length > 0 ? 'boost' : 'independent';
+}
+
+/** Keyed by string so a persisted selection can be looked up before it is known to be a prayer. */
+export const PRAYER_CATEGORIES: Readonly<Record<string, PrayerCategory>> = Object.fromEntries(
+  Object.values(PrayerType).map((prayer) => [prayer, categoryOf(PRAYER_CONFLICT_GROUPS[prayer])]),
+);
+
+/** Whether a persisted string names a prayer this build models. */
+export function isPrayerType(value: string): value is PrayerType {
+  return Object.hasOwn(PRAYER_CATEGORIES, value);
+}
 
 export type PrayerUnlockKey = 'upgradedPrayers' | 'zealPrayer';
 export type PrayerUnlocks = Partial<Pick<MechanicsConfig, PrayerUnlockKey>>;
@@ -496,6 +570,10 @@ export function isPrayerUnlocked(prayer: PrayerType, unlocks: PrayerUnlocks): bo
   return key === undefined || (unlocks[key] ?? DEFAULT_MECHANICS_CONFIG[key]) === true;
 }
 
+/**
+ * Drain effects, per the Prayer table's "Drain effect" column
+ * (https://oldschool.runescape.wiki/w/Prayer?oldid=15411470) unless cited otherwise.
+ */
 export const PRAYER_DRAIN_EFFECTS: Record<PrayerType, number> = {
   [PrayerType.ProtectMagic]: 12,
   [PrayerType.ProtectRange]: 12,
@@ -514,6 +592,20 @@ export const PRAYER_DRAIN_EFFECTS: Record<PrayerType, number> = {
   [PrayerType.RapidRestore]: 1,
   // One point per 18 seconds at +0 prayer bonus (https://oldschool.runescape.wiki/w/Rapid_Heal?oldid=14872669).
   [PrayerType.RapidHeal]: 2,
+  [PrayerType.ThickSkin]: 1,
+  [PrayerType.BurstOfStrength]: 1,
+  [PrayerType.ClarityOfThought]: 1,
+  [PrayerType.SharpEye]: 1,
+  [PrayerType.MysticWill]: 1,
+  [PrayerType.RockSkin]: 6,
+  [PrayerType.SuperhumanStrength]: 6,
+  [PrayerType.ImprovedReflexes]: 6,
+  [PrayerType.HawkEye]: 6,
+  [PrayerType.MysticLore]: 6,
+  [PrayerType.SteelSkin]: 12,
+  [PrayerType.UltimateStrength]: 12,
+  [PrayerType.IncredibleReflexes]: 12,
+  [PrayerType.Chivalry]: 12,
 };
 
 /**
@@ -536,6 +628,9 @@ export interface PrayerBoostMultipliers {
  * `magic` is magic attack AND magic defence together, as the wiki states them for the whole
  * magic line; `defence` is only the separate non-magic share. Splitting a prayer's "+18% Magic"
  * across both keys double-counts it.
+ *
+ * The tiered and Chivalry rows are the Prayer table's "Effect" column
+ * (https://oldschool.runescape.wiki/w/Prayer?oldid=15411470).
  */
 export const PRAYER_STAT_MULTIPLIERS: Partial<Record<PrayerType, PrayerBoostMultipliers>> = {
   [PrayerType.Piety]: { attack: 1.2, strength: 1.23, defence: 1.25 },
@@ -547,6 +642,21 @@ export const PRAYER_STAT_MULTIPLIERS: Partial<Record<PrayerType, PrayerBoostMult
   [PrayerType.MysticMight]: { magic: 1.15, magicDamage: 1.02 },
   [PrayerType.Deadeye]: { ranged: 1.18, rangedStrength: 1.18, defence: 1.05 },
   [PrayerType.MysticVigour]: { magic: 1.18, magicDamage: 1.03, defence: 1.05 },
+  [PrayerType.ThickSkin]: { defence: 1.05 },
+  [PrayerType.RockSkin]: { defence: 1.1 },
+  [PrayerType.SteelSkin]: { defence: 1.15 },
+  [PrayerType.BurstOfStrength]: { strength: 1.05 },
+  [PrayerType.SuperhumanStrength]: { strength: 1.1 },
+  [PrayerType.UltimateStrength]: { strength: 1.15 },
+  [PrayerType.ClarityOfThought]: { attack: 1.05 },
+  [PrayerType.ImprovedReflexes]: { attack: 1.1 },
+  [PrayerType.IncredibleReflexes]: { attack: 1.15 },
+  [PrayerType.SharpEye]: { ranged: 1.05, rangedStrength: 1.05 },
+  [PrayerType.HawkEye]: { ranged: 1.1, rangedStrength: 1.1 },
+  // Mystic Will boosts no magic damage; Mystic Lore adds 1%.
+  [PrayerType.MysticWill]: { magic: 1.05 },
+  [PrayerType.MysticLore]: { magic: 1.1, magicDamage: 1.01 },
+  [PrayerType.Chivalry]: { attack: 1.15, strength: 1.18, defence: 1.2 },
 };
 
 export interface PrayerState {

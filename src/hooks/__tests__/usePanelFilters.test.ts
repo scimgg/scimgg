@@ -215,6 +215,42 @@ describe('usePanelFilters', () => {
 
     expect(result.current.quickPrayerSelections).toEqual([PrayerType.Piety, PrayerType.ProtectMagic]);
   });
+
+  it('keeps the three single-stat rows and an unconflicted prayer selected together', () => {
+    const { result } = renderHook(() => usePanelFilters());
+
+    act(() => {
+      result.current.toggleQuickPrayerSelection(PrayerType.ThickSkin);
+      result.current.toggleQuickPrayerSelection(PrayerType.BurstOfStrength);
+      result.current.toggleQuickPrayerSelection(PrayerType.ClarityOfThought);
+      result.current.toggleQuickPrayerSelection(PrayerType.Preserve);
+    });
+
+    expect(result.current.quickPrayerSelections).toEqual([
+      PrayerType.ThickSkin,
+      PrayerType.BurstOfStrength,
+      PrayerType.ClarityOfThought,
+      PrayerType.Preserve,
+    ]);
+  });
+
+  it('deselects exactly what a new selection conflicts with', () => {
+    const { result } = renderHook(() => usePanelFilters());
+
+    act(() => {
+      result.current.toggleQuickPrayerSelection(PrayerType.SteelSkin);
+      result.current.toggleQuickPrayerSelection(PrayerType.UltimateStrength);
+      result.current.toggleQuickPrayerSelection(PrayerType.IncredibleReflexes);
+      result.current.toggleQuickPrayerSelection(PrayerType.Deadeye);
+    });
+    // Deadeye spans both offence rows but not the defence row.
+    expect(result.current.quickPrayerSelections).toEqual([PrayerType.SteelSkin, PrayerType.Deadeye]);
+
+    act(() => {
+      result.current.toggleQuickPrayerSelection(PrayerType.Chivalry);
+    });
+    expect(result.current.quickPrayerSelections).toEqual([PrayerType.Chivalry]);
+  });
 });
 
 const RECORDED_PANEL: ReplayPanelPresentation = {

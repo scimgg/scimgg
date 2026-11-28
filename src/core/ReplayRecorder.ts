@@ -8,6 +8,7 @@ import { type GameFrameRect, toReplayCursorPoint } from '../util/viewportBounds'
 import type { FirstPartyPlayerAttackProjectionSummary } from './combat/player/firstPartyPlayerAttack';
 import type { GameEvent } from './events/types';
 import { decodeLegacyReplayFrames } from './legacyReplayEvents';
+import { decodeLegacyPrayerState } from './legacyReplayState';
 import { ReplayCaptureBudget } from './ReplayCaptureBudget';
 import { replayCursorTailUpdate } from './replayCursorSampling';
 import {
@@ -1044,8 +1045,9 @@ export class ReplayRecorder {
   }
 
   /**
-   * Installs a recording. Events in the encounter wire shapes of older builds are converted to
-   * today's as they are read (`decodeLegacyReplayFrames`), so an export after a load writes the
+   * Installs a recording. Events in the encounter wire shapes of older builds, and states with the
+   * single offensive prayer slot, are converted to today's as they are read
+   * (`decodeLegacyReplayFrames`, `decodeLegacyPrayerState`), so an export after a load writes the
    * current shapes; the caller's data is never modified. Throws, installing nothing, when a recognized
    * old event is malformed.
    */
@@ -1054,7 +1056,7 @@ export class ReplayRecorder {
       ...data,
       frames: decodeLegacyReplayFrames(data.frames).map((frame) => ({
         ...frame,
-        state: { ...frame.state, damageHistory: [] },
+        state: { ...decodeLegacyPrayerState(frame.state), damageHistory: [] },
       })),
     });
     this.frames = [];

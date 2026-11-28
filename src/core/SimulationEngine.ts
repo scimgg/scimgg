@@ -190,7 +190,12 @@ import {
 } from './npcDeath';
 import { npcFootprintsOverlap } from './npcOccupancy';
 import { NpcDefinitionCollection, type NpcDefinitionContext } from './npcs';
-import { type PrayerInputOutcome, type QueuedPrayerAction, resolvePrayerActions } from './prayerInput';
+import {
+  type PrayerInputOutcome,
+  prayerSetLogChanges,
+  type QueuedPrayerAction,
+  resolvePrayerActions,
+} from './prayerInput';
 import type { ReplayTakeoverWork } from './replayTakeover';
 import { mulberry32 } from './rng';
 import {
@@ -222,6 +227,11 @@ export { ENGINE_RUN_BOOTSTRAP_VERSION } from './engineRunConfig';
 
 function normalizeCombatSeed(seed: number | undefined): number {
   return Number.isInteger(seed) && (seed as number) >= 0 ? (seed as number) : Math.floor(Math.random() * 0xffffffff);
+}
+
+/** Order-sensitive, since the player's prayer sets are insertion-ordered state. */
+function samePrayers(a: readonly PrayerType[], b: readonly PrayerType[]): boolean {
+  return a.length === b.length && a.every((prayer, index) => prayer === b[index]);
 }
 
 /**
@@ -346,6 +356,9 @@ export interface SimulationEngineOptions {
 
 export type EngineAction =
   | { type: 'protectionPrayer'; prayer: PrayerType | null }
+  // A click on any boost prayer (see `PRAYER_CATEGORIES`). Recordings made when the boost set was a
+  // single offensive slot carry this same action, so its name and its null (turn every boost
+  // prayer off) stay as recorded.
   | { type: 'offensivePrayer'; prayer: PrayerType | null }
   | { type: 'independentPrayer'; prayer: PrayerType }
   | { type: 'equipFromInventory'; inventoryIndex: number; itemId: number; slot: keyof PlayerEquipment }
@@ -938,7 +951,7 @@ export class SimulationEngine {
       isRunning: false,
       history: new Map<TickNumber, Coordinate>(),
       activePrayer: null,
-      offensivePrayer: null,
+      boostPrayers: [],
       independentPrayers: [],
       prayerState,
       stats,
@@ -1050,10 +1063,9 @@ export class SimulationEngine {
       this.reopenIntro();
     }
     // Unlock toggles are not changed mid-fight from the UI, but replay takeover applies the
-    // viewer's settings to a recorded run, which can lock the prayer the recording had lit.
-    const offensivePrayer = this.worldState.getPlayer()?.offensivePrayer ?? null;
-    if (offensivePrayer !== null && !isPrayerUnlocked(offensivePrayer, this.mechanicsConfig)) {
-      this.removeOffensivePrayer(this.worldState.tick);
+    // viewer's settings to a recorded run, which can lock a prayer the recording had lit.
+    if (this.worldState.getPlayer() !== null) {
+      this.removeBoostPrayers(this.worldState.tick, (prayer) => !isPrayerUnlocked(prayer, this.mechanicsConfig));
     }
   }
 
@@ -2304,7 +2316,7 @@ export class SimulationEngine {
         this.queueProtectionPrayer(action.prayer);
         break;
       case 'offensivePrayer':
-        this.queueOffensivePrayer(action.prayer);
+        this.queueBoostPrayer(action.prayer);
         break;
       case 'independentPrayer':
         this.queueIndependentPrayer(action.prayer);
@@ -2522,7 +2534,7 @@ export class SimulationEngine {
             break;
           }
           case 'protection':
-          case 'offensive':
+          case 'boost':
           case 'independent':
           case 'quickPrayers':
           case 'run_toggle':
@@ -2724,7 +2736,7 @@ export class SimulationEngine {
     // carry every individual op. An off→on flick inside one tick is two ops and
     // two sounds, but nothing a replay has to reproduce.
     const protectionBefore = player.activePrayer;
-    const offensiveBefore = player.offensivePrayer;
+    const boostBefore = player.boostPrayers;
     const independentBefore = player.independentPrayers;
 
     // An attack op earlier in this same tick outranks the interaction cancel an
@@ -2741,7 +2753,7 @@ export class SimulationEngine {
     for (const op of ops) {
       switch (op.type) {
         case 'protection':
-        case 'offensive':
+        case 'boost':
         case 'independent':
         case 'quickPrayers':
           prayerRejectionEmitted = this.applyPrayerOp(op, tick, prayerRejectionEmitted);
@@ -2800,19 +2812,11 @@ export class SimulationEngine {
     if (player.activePrayer !== protectionBefore) {
       this.logEvent({ tick, type: EventType.PRAYER_CHANGE, from: protectionBefore, to: player.activePrayer });
     }
-    if (player.offensivePrayer !== offensiveBefore) {
-      this.logEvent({ tick, type: EventType.PRAYER_CHANGE, from: offensiveBefore, to: player.offensivePrayer });
-    }
-
-    for (const prayer of independentBefore) {
-      if (!player.independentPrayers.includes(prayer)) {
-        this.logEvent({ tick, type: EventType.PRAYER_CHANGE, from: prayer, to: null });
-      }
-    }
-    for (const prayer of player.independentPrayers) {
-      if (!independentBefore.includes(prayer)) {
-        this.logEvent({ tick, type: EventType.PRAYER_CHANGE, from: null, to: prayer });
-      }
+    for (const change of [
+      ...prayerSetLogChanges(boostBefore, player.boostPrayers),
+      ...prayerSetLogChanges(independentBefore, player.independentPrayers),
+    ]) {
+      this.logEvent({ tick, type: EventType.PRAYER_CHANGE, ...change });
     }
   }
 
@@ -2870,21 +2874,23 @@ export class SimulationEngine {
   private enforcePrayerRestrictions(tick: number): void {
     const rules = this.getEncounterRules();
     if (rules?.prayerRestrictions?.protection === 'blocked') this.removeProtectionPrayer(tick);
-    if (rules?.prayerRestrictions?.offensive === 'blocked') this.removeOffensivePrayer(tick);
+    if (rules?.prayerRestrictions?.offensive === 'blocked') this.removeBoostPrayers(tick, () => true);
     this.enforceQuickPrayerInvariant();
   }
 
-  /** The non-click path for taking the offensive prayer down. See {@link removeProtectionPrayer}. */
-  private removeOffensivePrayer(tick: number): void {
+  /** The non-click path for taking boost prayers down. See {@link removeProtectionPrayer}. */
+  private removeBoostPrayers(tick: number, shouldRemove: (prayer: PrayerType) => boolean): void {
     const player = this.player();
-    const previousPrayer = player.offensivePrayer;
-    if (previousPrayer === null) return;
-    player.offensivePrayer = null;
+    const removed = player.boostPrayers.filter(shouldRemove);
+    if (removed.length === 0) return;
+    player.boostPrayers = player.boostPrayers.filter((prayer) => !removed.includes(prayer));
     this.enforceQuickPrayerInvariant();
     this.rebuildActivePrayers();
-    this.logEvent({ tick, type: EventType.PRAYER_CHANGE, from: previousPrayer, to: null });
     this.tickEvents.setTick(tick);
-    this.tickEvents.emit({ type: 'prayer_changed', actorId: player.id, from: previousPrayer, to: null });
+    for (const prayer of removed) {
+      this.logEvent({ tick, type: EventType.PRAYER_CHANGE, from: prayer, to: null });
+      this.tickEvents.emit({ type: 'prayer_changed', actorId: player.id, from: prayer, to: null });
+    }
   }
 
   /**
@@ -2908,7 +2914,7 @@ export class SimulationEngine {
     const outcome = resolvePrayerActions(
       {
         protection: player.activePrayer,
-        offensive: player.offensivePrayer,
+        boost: player.boostPrayers,
         independent: player.independentPrayers,
         quickPrayersActive: player.quickPrayersActive,
       },
@@ -2943,12 +2949,12 @@ export class SimulationEngine {
     }
 
     const nextProtection = protectionBlocked ? null : outcome.protection;
-    const nextOffensive = offRestrict === 'blocked' ? null : outcome.offensive;
+    const nextBoost = offRestrict === 'blocked' ? [] : outcome.boost;
 
     for (const transition of outcome.transitions) {
       if (
         (transition.slot === 'protection' && protectionBlocked) ||
-        (transition.slot === 'offensive' && offRestrict === 'blocked')
+        (transition.slot === 'boost' && offRestrict === 'blocked')
       ) {
         continue;
       }
@@ -2968,7 +2974,7 @@ export class SimulationEngine {
     // activated). Only a real inactive→active transition earns it, so a genuine
     // off→on flick keeps prayer free while rejected or no-op inputs do not.
     const activated = outcome.activated.filter(
-      (prayer) => prayer === nextProtection || prayer === nextOffensive || outcome.independent.includes(prayer),
+      (prayer) => prayer === nextProtection || nextBoost.includes(prayer) || outcome.independent.includes(prayer),
     );
     if (activated.length > 0) {
       const prayerActivationTicks = { ...player.prayerState.prayerActivationTicks };
@@ -2993,18 +2999,14 @@ export class SimulationEngine {
       changed = true;
     }
 
-    if (outcome.offensiveTouched && player.offensivePrayer !== nextOffensive) {
-      player.offensivePrayer = nextOffensive;
+    if (outcome.boostTouched && !samePrayers(player.boostPrayers, nextBoost)) {
+      player.boostPrayers = [...nextBoost];
       changed = true;
     }
 
-    if (outcome.independentTouched) {
-      const next = outcome.independent;
-      const current = player.independentPrayers;
-      if (next.length !== current.length || next.some((prayer, index) => prayer !== current[index])) {
-        player.independentPrayers = [...next];
-        changed = true;
-      }
+    if (outcome.independentTouched && !samePrayers(player.independentPrayers, outcome.independent)) {
+      player.independentPrayers = [...outcome.independent];
+      changed = true;
     }
 
     this.enforceQuickPrayerInvariant();
@@ -3551,9 +3553,12 @@ export class SimulationEngine {
     this.queueInput({ type: 'protection', prayer });
   }
 
-  /** Queue one prayer-book click on an offensive prayer. See {@link queueProtectionPrayer}. */
-  public queueOffensivePrayer(prayer: PrayerType | null): void {
-    this.queueInput({ type: 'offensive', prayer });
+  /**
+   * Queue one prayer-book click on a boost prayer, which turns off every lit prayer it conflicts
+   * with. Null turns every boost prayer off. See {@link queueProtectionPrayer}.
+   */
+  public queueBoostPrayer(prayer: PrayerType | null): void {
+    this.queueInput({ type: 'boost', prayer });
   }
 
   /**
@@ -3598,10 +3603,6 @@ export class SimulationEngine {
       allowed: itemRules?.blockPrayerRestore !== true,
       ...(itemRules?.prayerRestoreMultiplier === undefined ? {} : { multiplier: itemRules.prayerRestoreMultiplier }),
     };
-  }
-
-  public getOffensivePrayer(): PrayerType | null {
-    return this.player().offensivePrayer;
   }
 
   /** The encounter's typed payload for the current tick: fight state and visuals together. */
@@ -3674,8 +3675,8 @@ export class SimulationEngine {
     if (player.activePrayer && PRAYER_CATEGORIES[player.activePrayer] === 'protection') {
       prayers.push(player.activePrayer);
     }
-    if (player.offensivePrayer && PRAYER_CATEGORIES[player.offensivePrayer] === 'offensive') {
-      prayers.push(player.offensivePrayer);
+    for (const prayer of player.boostPrayers) {
+      if (PRAYER_CATEGORIES[prayer] === 'boost') prayers.push(prayer);
     }
     for (const prayer of player.independentPrayers) {
       if (PRAYER_CATEGORIES[prayer] === 'independent') prayers.push(prayer);
@@ -3685,7 +3686,7 @@ export class SimulationEngine {
 
   private enforceQuickPrayerInvariant(): void {
     const player = this.player();
-    if (player.activePrayer === null && player.offensivePrayer === null && player.independentPrayers.length === 0) {
+    if (player.activePrayer === null && player.boostPrayers.length === 0 && player.independentPrayers.length === 0) {
       player.quickPrayersActive = false;
     }
   }
@@ -3719,7 +3720,7 @@ export class SimulationEngine {
       prayerActivationTicks: {},
     };
     player.activePrayer = null;
-    player.offensivePrayer = null;
+    player.boostPrayers = [];
     player.independentPrayers = [];
     player.quickPrayersActive = false;
     this.protectionPrayerActivatedTick = null;
@@ -4359,8 +4360,8 @@ export class SimulationEngine {
     return this.player().activePrayer;
   }
 
-  public get offensivePrayer(): PrayerType | null {
-    return this.player().offensivePrayer;
+  public get boostPrayers(): readonly PrayerType[] {
+    return this.player().boostPrayers;
   }
 
   public get independentPrayers(): readonly PrayerType[] {
@@ -4388,9 +4389,9 @@ export class SimulationEngine {
     return [pending.protectionTouched, pending.protection];
   }
 
-  public get pendingOffensivePrayer(): [boolean, PrayerType | null] {
+  public get pendingBoostPrayers(): [boolean, readonly PrayerType[]] {
     const pending = this.resolvePendingPrayerInput();
-    return [pending.offensiveTouched, pending.offensive];
+    return [pending.boostTouched, pending.boost];
   }
 
   public get pendingIndependentPrayers(): [boolean, readonly PrayerType[]] {

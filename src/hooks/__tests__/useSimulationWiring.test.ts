@@ -94,26 +94,26 @@ afterEach(() => {
 
 describe('committedPrayerPresentation', () => {
   it('reports no lit prayer for empty slots', () => {
-    const presentation = committedPrayerPresentation({ activePrayer: null, offensivePrayer: null });
+    const presentation = committedPrayerPresentation({ activePrayer: null, boostPrayers: [] });
 
     expect(presentation).toEqual({
       protection: null,
-      offensive: null,
+      boost: [],
       independent: [],
       visualOverrides: {},
       anyLit: false,
     });
   });
 
-  it('reports committed protection and offensive slots as lit', () => {
+  it('reports a committed protection slot and boost set as lit', () => {
     const presentation = committedPrayerPresentation({
       activePrayer: PrayerType.ProtectMagic,
-      offensivePrayer: PrayerType.Piety,
+      boostPrayers: [PrayerType.Piety],
     });
 
     expect(presentation).toEqual({
       protection: PrayerType.ProtectMagic,
-      offensive: PrayerType.Piety,
+      boost: [PrayerType.Piety],
       independent: [],
       visualOverrides: {},
       anyLit: true,
@@ -711,6 +711,48 @@ describe('useSimulationWiring focus suspension', () => {
     expect(result.current.replay.exportReplayData().frames[2]?.actions.map((action) => action.type)).toEqual([
       'runToggle',
     ]);
+  });
+
+  it('records boost clicks under the recorded offensivePrayer action and shows several lit at once', () => {
+    const { result, engine } = renderWithYama();
+    act(() => {
+      result.current.handleBoostPrayerChange(PrayerType.ThickSkin);
+      result.current.handleBoostPrayerChange(PrayerType.BurstOfStrength);
+    });
+    // Before the tick answers, the client's own bits light both clicks.
+    expect(result.current.prayerPresentation.visualOverrides).toEqual({
+      [PrayerType.ThickSkin]: true,
+      [PrayerType.BurstOfStrength]: true,
+    });
+    advanceFrame(600);
+    expect(engine.boostPrayers).toEqual([PrayerType.ThickSkin, PrayerType.BurstOfStrength]);
+    expect(result.current.prayerPresentation.boost).toEqual([PrayerType.ThickSkin, PrayerType.BurstOfStrength]);
+    expect(result.current.prayerPresentation.visualOverrides).toEqual({});
+    expect(result.current.replay.exportReplayData().frames[1]?.actions).toEqual([
+      { type: 'offensivePrayer', prayer: PrayerType.ThickSkin },
+      { type: 'offensivePrayer', prayer: PrayerType.BurstOfStrength },
+    ]);
+
+    act(() => result.current.handleBoostPrayerChange(PrayerType.Chivalry));
+    // Only the clicked prayer's bit flips: what it will turn off stays lit until the tick.
+    expect(result.current.prayerPresentation.visualOverrides).toEqual({ [PrayerType.Chivalry]: true });
+    expect(result.current.prayerPresentation.boost).toEqual([PrayerType.ThickSkin, PrayerType.BurstOfStrength]);
+    advanceFrame(1200);
+    expect(result.current.prayerPresentation.boost).toEqual([PrayerType.Chivalry]);
+  });
+
+  it('predicts the whole boost set under Instant Prayer, conflicts included', () => {
+    params = { ...params, instantInventoryEnabled: true, instantPrayerEnabled: true };
+    const { result } = renderWithYama();
+    act(() => {
+      result.current.handleBoostPrayerChange(PrayerType.ThickSkin);
+      result.current.handleBoostPrayerChange(PrayerType.ClarityOfThought);
+    });
+    expect(result.current.prayerPresentation.boost).toEqual([PrayerType.ThickSkin, PrayerType.ClarityOfThought]);
+
+    act(() => result.current.handleBoostPrayerChange(PrayerType.MysticWill));
+    expect(result.current.prayerPresentation.boost).toEqual([PrayerType.ThickSkin, PrayerType.MysticWill]);
+    expect(result.current.prayerPresentation.visualOverrides).toEqual({});
   });
 
   function renderWithYama() {

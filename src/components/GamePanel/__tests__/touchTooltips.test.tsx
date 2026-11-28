@@ -84,7 +84,6 @@ describe('panel tooltips under a finger', () => {
   const prayerPanel = (onPrayerChange = vi.fn()) => (
     <PrayerContent
       activePrayer={null}
-      offensivePrayer={null}
       onPrayerChange={onPrayerChange}
       reorderMode={false}
       filteringEnabled={false}

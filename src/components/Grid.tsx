@@ -363,7 +363,7 @@ export interface GridProps {
   prayerPresentation?: PrayerPresentation;
   inputPresentation?: InputPresentation;
   onPrayerChange: (prayer: PrayerType | null) => void;
-  onOffensivePrayerChange?: (prayer: PrayerType | null) => void;
+  onBoostPrayerChange?: (prayer: PrayerType | null) => void;
   onIndependentPrayerChange?: (prayer: PrayerType) => void;
   onQuickPrayerToggle?: () => void;
   onQuickPrayerSetup?: () => void;
@@ -1111,7 +1111,7 @@ export const Grid: React.FC<Partial<GridProps>> = (props) => {
     prayerPresentation,
     inputPresentation,
     onPrayerChange,
-    onOffensivePrayerChange,
+    onBoostPrayerChange,
     onIndependentPrayerChange,
     onQuickPrayerToggle,
     onQuickPrayerSetup,
@@ -3231,11 +3231,11 @@ export const Grid: React.FC<Partial<GridProps>> = (props) => {
                       <GamePanel
                         simulationState={simulationState}
                         activePrayer={displayedPrayers.protection}
-                        offensivePrayer={displayedPrayers.offensive}
+                        boostPrayers={displayedPrayers.boost}
                         independentPrayers={displayedPrayers.independent}
                         prayerVisualOverrides={displayedPrayers.visualOverrides}
                         onPrayerChange={onPrayerChange}
-                        onOffensivePrayerChange={onOffensivePrayerChange}
+                        onBoostPrayerChange={onBoostPrayerChange}
                         onIndependentPrayerChange={onIndependentPrayerChange}
                         quickPrayerSetupOpen={quickPrayerSetupOpen}
                         quickPrayerSetupRequest={quickPrayerSetupRequest}

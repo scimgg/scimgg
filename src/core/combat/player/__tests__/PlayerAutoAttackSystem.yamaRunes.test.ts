@@ -54,7 +54,7 @@ function makePlayer(supplies: CombatSupplies): PlayerActor {
     isRunning: false,
     history: new Map<TickNumber, Coordinate>(),
     activePrayer: null,
-    offensivePrayer: null,
+    boostPrayers: [],
     independentPrayers: [],
     prayerState: createDefaultPrayerState(),
     stats: createDefaultStats(),

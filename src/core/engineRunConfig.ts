@@ -53,7 +53,9 @@ export interface EngineRunBootstrap {
 // TzKal-Zuk is his own encounter rather than the Inferno's wave 69 (`inferno`, `runSeed`, the run
 // setup applied before the world is built). Such a recording is never re-read as an Inferno run: it
 // plays back as recorded, without takeover.
-export const ENGINE_RUN_BOOTSTRAP_VERSION = 14;
+// Version 15 floors prayer-boosted levels and sums magic damage in whole steps, so 100 × 1.15 is
+// 115 rather than 114 and a recorded max hit can now come out one higher; 14 plays back only.
+export const ENGINE_RUN_BOOTSTRAP_VERSION = 15;
 
 export interface EngineRunConfig {
   completionOwnership: EncounterCompletionOwnership;

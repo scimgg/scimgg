@@ -410,6 +410,24 @@ describe('Minimap prayer orb state wiring', () => {
     expect(iconActivated).toBe(false);
   });
 
+  it('lights both on the click that turns on Rapid Heal alone', () => {
+    const engine = new SimulationEngine({ encounter: new LobbyEncounter() });
+    engine.queueIndependentPrayer(PrayerType.RapidHeal);
+    const { container } = renderWithEngine(engine);
+
+    expect(orbState(container)).toEqual({ sweep: expect.anything(), iconActivated: true });
+  });
+
+  it('keeps the sweep through a flick of Rapid Heal alone', () => {
+    const engine = new SimulationEngine({ encounter: new LobbyEncounter() });
+    engine.queueIndependentPrayer(PrayerType.RapidHeal);
+    engine.advanceTick(engine.getState().playerPosition);
+    engine.queueIndependentPrayer(PrayerType.RapidHeal);
+
+    const { container } = renderWithEngine(engine);
+    expect(orbState(container)).toEqual({ sweep: expect.anything(), iconActivated: false });
+  });
+
   it('drops the sweep once the off-click commits', () => {
     const engine = new SimulationEngine({ encounter: new LobbyEncounter() });
     engine.queueProtectionPrayer(PrayerType.ProtectMelee);

@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CollisionFlag } from '../../../rs/collision/CollisionFlag';
 import { createEmptyStats } from '../../../types/equipmentStats';
+import { PrayerType } from '../../../types/simulation';
 import type { NpcActor } from '../../actors/NpcActor';
 import type { PlayerActor } from '../../actors/PlayerActor';
 import type { NpcFormulaStats } from '../../actors/types';
@@ -408,5 +409,64 @@ describe('hasNpcAttackReach', () => {
     });
 
     expect(reachable).toBe(false);
+  });
+});
+
+/**
+ * The player's lit boost prayers on their side of an NPC attack, read as the engine's NPC attacks
+ * read them. The NPC rolls (100 + 9) × (100 + 64) = 17876 against an unarmoured 99 Defence player;
+ * it lands while one draw is under 1 − (defence + 2) / (2 × (17876 + 1))
+ * (https://oldschool.runescape.wiki/w/Damage_per_second/Melee, /Magic).
+ */
+describe('boost prayers against NPC attacks', () => {
+  const MAGIC_PLAN = {
+    formulaStyle: 'magic',
+    damageType: 'magic',
+    attackKind: 'magic_fire',
+    impactDelayTicks: 1,
+    sourceDeathPolicy: 'cancel-before-impact',
+  } as const satisfies AttackPlan;
+
+  function player(boostPrayers: PrayerType[]): PlayerActor {
+    return {
+      ...makeStancePlayer(TWISTED_BOW, 1),
+      id: 'player',
+      kind: 'player',
+      position: [11, 10],
+      size: 1,
+      equipmentStats: createEmptyStats(),
+      activePrayer: null,
+      boostPrayers,
+    } as unknown as PlayerActor;
+  }
+
+  function lands(boostPrayers: PrayerType[], plan: AttackPlan, draw: number): boolean {
+    const request = resolveAttackRequest({
+      attacker: makeNpc('attacker'),
+      target: player(boostPrayers),
+      plan,
+      random: () => draw,
+    });
+    if (request === null) throw new TypeError('Expected an attack request');
+    return request.accuracySucceeded;
+  }
+
+  it('reads the Defence boost of every lit prayer, not just the first', () => {
+    // Defence rolls: unprayed 107 × 64 = 6848 (hit chance 0.808); Steel Skin floor(99 × 1.15) = 113,
+    // 121 × 64 = 7744 (0.783); Steel Skin and Deadeye floor(99 × 1.2) = 118, 126 × 64 = 8064 (0.774).
+    const draw = 0.778;
+    expect(lands([], MELEE_PLAN, draw)).toBe(true);
+    expect(lands([PrayerType.SteelSkin], MELEE_PLAN, draw)).toBe(true);
+    expect(lands([PrayerType.SteelSkin, PrayerType.Deadeye], MELEE_PLAN, draw)).toBe(false);
+  });
+
+  it('raises magic defence through the Magic boost of Mystic Will', () => {
+    // floor(99 × 0.7) + floor(99 × 0.3) + 8 = 106, × 64 = 6784 (0.810); Magic floor(99 × 1.05) =
+    // 103: (72 + 29 + 8) × 64 = 6976 (0.805).
+    const draw = 0.807;
+    expect(lands([], MAGIC_PLAN, draw)).toBe(true);
+    expect(lands([PrayerType.MysticWill], MAGIC_PLAN, draw)).toBe(false);
+    // Mystic Will boosts no Defence, so melee is as unprayed.
+    expect(lands([PrayerType.MysticWill], MELEE_PLAN, 0.808)).toBe(true);
   });
 });

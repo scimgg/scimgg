@@ -1,4 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { AudioEngine } from '../../audio/AudioEngine';
+import { coreAudioRules } from '../../audio/coreAudioRules';
+import { EventAudioPlayer } from '../../audio/EventAudioPlayer';
 import { getMonsterFormulaStats } from '../../data/monsterData';
 import { LobbyEncounter } from '../../encounters/lobby/LobbyEncounter';
 import { VOID_FLARE_CHARGE_TICKS } from '../../encounters/yamaP3/contractConfig';
@@ -9,10 +12,17 @@ import { ObjType } from '../../rs/config/objtype/ObjType';
 import { DummyTypeLoader } from '../../rs/config/TypeLoader';
 import { enqueueEnginePendingHit } from '../../test/helpers/pendingHits';
 import { createZukWaveEncounter } from '../../test/helpers/zukWave';
+import { WIKI_TIERED_PRAYER_ROWS } from '../../types/__tests__/fixtures/wikiPrayerTable';
 import { createEmptyCombatSupplies } from '../../types/encounterLoadout';
 import { createEmptyInventory } from '../../types/inventory';
 import { createStatsFromBaseLevels, type PlayerStats } from '../../types/playerState';
-import { type Coordinate, type MechanicsConfig, PrayerType } from '../../types/simulation';
+import {
+  type Coordinate,
+  EventType,
+  type MechanicsConfig,
+  PrayerType,
+  type SimulationEvent,
+} from '../../types/simulation';
 import type { NpcActor } from '../actors/NpcActor';
 import type { PrevalidatedAttackRequest } from '../combat/CombatSystem';
 import { applyNpcPoison, POISON_PERIOD_TICKS } from '../combat/npcPoison';
@@ -867,7 +877,7 @@ describe('SimulationEngine equipment effects', () => {
         equipment: state.playerEquipment,
         equipmentStats: state.equipmentStats,
         activePrayer: state.activePrayer,
-        offensivePrayer: state.offensivePrayer,
+        boostPrayers: [...state.boostPrayers],
         independentPrayers: [],
         selectedAttackStyleIndex: state.selectedAttackStyleIndex,
         combatTimers: state.combatTimers,
@@ -1702,12 +1712,12 @@ describe('SimulationEngine Preserve', () => {
     engine.setMechanicsConfig({ ...engine.getState().mechanicsConfig, zealPrayer: offensive === PrayerType.Zeal });
 
     engine.queueProtectionPrayer(PrayerType.Redemption);
-    engine.queueOffensivePrayer(offensive);
+    engine.queueBoostPrayer(offensive);
     engine.queueIndependentPrayer(PrayerType.Preserve);
     engine.advanceTick(engine.getState().playerPosition);
 
     expect(engine.activePrayer).toBe(PrayerType.Redemption);
-    expect(engine.offensivePrayer).toBe(offensive);
+    expect(engine.boostPrayers).toEqual([offensive]);
     expect(engine.independentPrayers).toEqual([PrayerType.Preserve]);
     expect(player.prayerState.activePrayers).toEqual([PrayerType.Redemption, offensive, PrayerType.Preserve]);
   });
@@ -1800,10 +1810,10 @@ describe('SimulationEngine prayer unlock toggles', () => {
 
   it('drops a queued Zeal click while Zeal is locked by default, without a rejection', () => {
     const engine = makeEngine({});
-    engine.queueOffensivePrayer(PrayerType.Zeal);
+    engine.queueBoostPrayer(PrayerType.Zeal);
     tick(engine);
 
-    expect(engine.offensivePrayer).toBeNull();
+    expect(engine.boostPrayers).toEqual([]);
     expect(engine.prayerState.activePrayers).toEqual([]);
     expect(prayerEvents(engine)).toEqual([]);
   });
@@ -1814,7 +1824,7 @@ describe('SimulationEngine prayer unlock toggles', () => {
     tick(engine);
 
     expect(engine.activePrayer).toBe(PrayerType.ProtectMelee);
-    expect(engine.offensivePrayer).toBeNull();
+    expect(engine.boostPrayers).toEqual([]);
   });
 
   it.each([
@@ -1823,12 +1833,12 @@ describe('SimulationEngine prayer unlock toggles', () => {
     [PrayerType.MysticVigour, 'upgradedPrayers'],
   ] as const)('turns %s off when %s is switched off', (prayer, key) => {
     const engine = makeEngine({ [key]: true });
-    engine.queueOffensivePrayer(prayer);
+    engine.queueBoostPrayer(prayer);
     tick(engine);
-    expect(engine.offensivePrayer).toBe(prayer);
+    expect(engine.boostPrayers).toEqual([prayer]);
 
     engine.setMechanicsConfig({ [key]: false });
-    expect(engine.offensivePrayer).toBeNull();
+    expect(engine.boostPrayers).toEqual([]);
     expect(engine.prayerState.activePrayers).toEqual([]);
     tick(engine);
     expect(prayerEvents(engine)).toEqual([expect.objectContaining({ type: 'prayer_changed', from: prayer, to: null })]);
@@ -1836,15 +1846,221 @@ describe('SimulationEngine prayer unlock toggles', () => {
 
   it('keeps unlocked prayers lit and never swaps Piety for Zeal', () => {
     const engine = makeEngine({});
-    engine.queueOffensivePrayer(PrayerType.Deadeye);
+    engine.queueBoostPrayer(PrayerType.Deadeye);
     tick(engine);
     engine.setMechanicsConfig({ infiniteHealth: true });
-    expect(engine.offensivePrayer).toBe(PrayerType.Deadeye);
+    expect(engine.boostPrayers).toEqual([PrayerType.Deadeye]);
 
-    engine.queueOffensivePrayer(PrayerType.Piety);
+    engine.queueBoostPrayer(PrayerType.Piety);
     tick(engine);
     engine.setMechanicsConfig({ zealPrayer: true });
-    expect(engine.offensivePrayer).toBe(PrayerType.Piety);
+    expect(engine.boostPrayers).toEqual([PrayerType.Piety]);
+  });
+
+  it('keeps a skin prayer lit when the Deadeye beside it is locked', () => {
+    const engine = makeEngine({ upgradedPrayers: true });
+    engine.queueBoostPrayer(PrayerType.SteelSkin);
+    engine.queueBoostPrayer(PrayerType.Deadeye);
+    tick(engine);
+    expect(engine.boostPrayers).toEqual([PrayerType.SteelSkin, PrayerType.Deadeye]);
+
+    engine.setMechanicsConfig({ upgradedPrayers: false });
+    expect(engine.boostPrayers).toEqual([PrayerType.SteelSkin]);
+    expect(engine.prayerState.activePrayers).toEqual([PrayerType.SteelSkin]);
+  });
+});
+
+class BoostBlockedEncounter extends LobbyEncounter {
+  getEngineRules(): EncounterEngineRules {
+    return { prayerRestrictions: { offensive: 'blocked' } };
+  }
+}
+
+describe('SimulationEngine boost prayer conflicts', () => {
+  const tick = (engine: SimulationEngine): void => engine.advanceTick(engine.getState().playerPosition);
+  const changedThisTick = (engine: SimulationEngine) =>
+    engine
+      .getLastTickEvents()
+      .flatMap((event) => (isCoreEvent(event, 'prayer_changed') ? [{ from: event.from, to: event.to }] : []));
+  const loggedThisTick = (engine: SimulationEngine) =>
+    engine
+      .getEventLog()
+      .filter(
+        (event): event is Extract<SimulationEvent, { type: EventType.PRAYER_CHANGE }> =>
+          event.type === EventType.PRAYER_CHANGE && event.tick === engine.getState().currentTick,
+      )
+      .map(({ from, to }) => ({ from, to }));
+  const SINGLE_STATS = [PrayerType.ThickSkin, PrayerType.BurstOfStrength, PrayerType.ClarityOfThought];
+
+  function engineWithSingleStats(): SimulationEngine {
+    const engine = new SimulationEngine({ encounter: new LobbyEncounter() });
+    for (const prayer of SINGLE_STATS) engine.queueBoostPrayer(prayer);
+    tick(engine);
+    expect(engine.boostPrayers).toEqual(SINGLE_STATS);
+    return engine;
+  }
+
+  it('burns every lit single-stat prayer and drains them all', () => {
+    const engine = engineWithSingleStats();
+    expect(engine.prayerState.activePrayers).toEqual(SINGLE_STATS);
+    tick(engine);
+    expect(engine.prayerState.drainCounter).toBe(3);
+  });
+
+  it('turns all three rows off with one Chivalry click and one change, logging each', () => {
+    const engine = engineWithSingleStats();
+    engine.queueBoostPrayer(PrayerType.Chivalry);
+    tick(engine);
+
+    expect(engine.boostPrayers).toEqual([PrayerType.Chivalry]);
+    expect(engine.prayerState.activePrayers).toEqual([PrayerType.Chivalry]);
+    expect(changedThisTick(engine)).toEqual([{ from: PrayerType.ThickSkin, to: PrayerType.Chivalry }]);
+    expect(loggedThisTick(engine)).toEqual([
+      { from: PrayerType.ThickSkin, to: PrayerType.Chivalry },
+      { from: PrayerType.BurstOfStrength, to: null },
+      { from: PrayerType.ClarityOfThought, to: null },
+    ]);
+  });
+
+  it('plays only the Chivalry activation sound for that click', () => {
+    const engine = engineWithSingleStats();
+    engine.queueBoostPrayer(PrayerType.Chivalry);
+    tick(engine);
+    const audio = { play: vi.fn(), preloadSounds: vi.fn().mockResolvedValue(undefined) };
+
+    new EventAudioPlayer(audio as unknown as AudioEngine, coreAudioRules).onEvents(
+      [...engine.getLastTickEvents()],
+      engine.getState().playerPosition,
+    );
+
+    // 3826 is Chivalry's activation sound; the shared deactivation sound never plays.
+    expect(audio.play.mock.calls.map(([soundId]) => soundId)).toEqual([3826]);
+  });
+
+  it('lets Sharp Eye turn the offence rows off but leave Thick Skin burning', () => {
+    const engine = engineWithSingleStats();
+    engine.queueBoostPrayer(PrayerType.SharpEye);
+    tick(engine);
+
+    expect(engine.boostPrayers).toEqual([PrayerType.ThickSkin, PrayerType.SharpEye]);
+    expect(engine.getState().boostPrayers).toEqual([PrayerType.ThickSkin, PrayerType.SharpEye]);
+  });
+
+  it('predicts several lit boost prayers before the tick', () => {
+    const engine = engineWithSingleStats();
+    engine.queueBoostPrayer(PrayerType.MysticWill);
+
+    expect(engine.getState().pendingBoostPrayers).toEqual([true, [PrayerType.ThickSkin, PrayerType.MysticWill]]);
+    expect(engine.getState().boostPrayers).toEqual(SINGLE_STATS);
+  });
+
+  it('replays the recorded offensivePrayer action as before: a swap, and null clearing the set', () => {
+    const engine = new SimulationEngine({ encounter: new LobbyEncounter() });
+    engine.applyAction({ type: 'offensivePrayer', prayer: PrayerType.Piety });
+    tick(engine);
+    expect(engine.boostPrayers).toEqual([PrayerType.Piety]);
+
+    engine.applyAction({ type: 'offensivePrayer', prayer: PrayerType.Rigour });
+    tick(engine);
+    expect(engine.boostPrayers).toEqual([PrayerType.Rigour]);
+    expect(changedThisTick(engine)).toEqual([{ from: PrayerType.Piety, to: PrayerType.Rigour }]);
+    expect(loggedThisTick(engine)).toEqual([{ from: PrayerType.Piety, to: PrayerType.Rigour }]);
+
+    engine.applyAction({ type: 'offensivePrayer', prayer: null });
+    tick(engine);
+    expect(engine.boostPrayers).toEqual([]);
+    expect(changedThisTick(engine)).toEqual([{ from: PrayerType.Rigour, to: null }]);
+  });
+
+  it('blocks every boost prayer where the encounter blocks offensive prayers', () => {
+    const engine = new SimulationEngine({ encounter: new BoostBlockedEncounter() });
+    engine.queueBoostPrayer(PrayerType.ThickSkin);
+    engine.queueBoostPrayer(PrayerType.Chivalry);
+    tick(engine);
+
+    expect(engine.boostPrayers).toEqual([]);
+    expect(engine.prayerState.activePrayers).toEqual([]);
+    expect(changedThisTick(engine)).toEqual([]);
+  });
+
+  it('takes down every lit boost prayer when the restriction is enforced', () => {
+    const engine = new SimulationEngine({ encounter: new BoostBlockedEncounter() });
+    const player = engine['worldState'].getPlayer();
+    if (!player) throw new TypeError('Missing player actor');
+    player.boostPrayers = [PrayerType.SteelSkin, PrayerType.Deadeye];
+    tick(engine);
+
+    expect(engine.boostPrayers).toEqual([]);
+    expect(changedThisTick(engine)).toEqual([
+      { from: PrayerType.SteelSkin, to: null },
+      { from: PrayerType.Deadeye, to: null },
+    ]);
+  });
+});
+
+describe('SimulationEngine tiered prayers and Chivalry', () => {
+  const tick = (engine: SimulationEngine): void => engine.advanceTick(engine.getState().playerPosition);
+  const changedThisTick = (engine: SimulationEngine) =>
+    engine
+      .getLastTickEvents()
+      .flatMap((event) => (isCoreEvent(event, 'prayer_changed') ? [{ from: event.from, to: event.to }] : []));
+
+  it.each(WIKI_TIERED_PRAYER_ROWS)('lights $prayer from a book click on the next tick and turns it off again', ({
+    prayer,
+  }) => {
+    const engine = new SimulationEngine({ encounter: new LobbyEncounter() });
+    engine.queueBoostPrayer(prayer);
+    // Queued, not yet applied: the server answers the click on the tick that drains the queue.
+    expect(engine.boostPrayers).toEqual([]);
+    expect(engine.getState().pendingBoostPrayers).toEqual([true, [prayer]]);
+
+    tick(engine);
+    expect(engine.boostPrayers).toEqual([prayer]);
+    expect(engine.getState().boostPrayers).toEqual([prayer]);
+    expect(engine.prayerState.activePrayers).toEqual([prayer]);
+    expect(changedThisTick(engine)).toEqual([{ from: null, to: prayer }]);
+
+    engine.queueBoostPrayer(prayer);
+    tick(engine);
+    expect(engine.boostPrayers).toEqual([]);
+    expect(engine.prayerState.activePrayers).toEqual([]);
+    expect(changedThisTick(engine)).toEqual([{ from: prayer, to: null }]);
+  });
+
+  // Resistance 60 at +0 prayer bonus, so a point goes every 60 / drain effect ticks: 60 for a drain
+  // effect of 1, 10 for 6, 5 for 12 (https://oldschool.runescape.wiki/w/Prayer?oldid=15411470,
+  // "Prayer drain mechanics"). Nothing drains on the tick it lights, tick 1.
+  it.each(WIKI_TIERED_PRAYER_ROWS)('drains a point every 60 / $drainEffect ticks with only $prayer lit', ({
+    prayer,
+    drainEffect,
+  }) => {
+    const engine = new SimulationEngine({ encounter: new LobbyEncounter() });
+    expect(engine.equipmentStats.prayer).toBe(0);
+    const startPoints = engine.prayerState.points;
+    const ticksPerPoint = 60 / drainEffect;
+    engine.queueBoostPrayer(prayer);
+
+    const drainTicks: number[] = [];
+    let points = startPoints;
+    while (engine.getState().currentTick < 1 + 3 * ticksPerPoint) {
+      tick(engine);
+      if (engine.prayerState.points !== points) drainTicks.push(engine.getState().currentTick);
+      points = engine.prayerState.points;
+    }
+
+    expect(drainTicks).toEqual([1 + ticksPerPoint, 1 + 2 * ticksPerPoint, 1 + 3 * ticksPerPoint]);
+    expect(engine.prayerState.points).toBe(startPoints - 3);
+    expect(engine.boostPrayers).toEqual([prayer]);
+  });
+
+  it.each(WIKI_TIERED_PRAYER_ROWS)('refuses $prayer where the encounter blocks offensive prayers', ({ prayer }) => {
+    const engine = new SimulationEngine({ encounter: new BoostBlockedEncounter() });
+    engine.queueBoostPrayer(prayer);
+    tick(engine);
+
+    expect(engine.boostPrayers).toEqual([]);
+    expect(engine.prayerState.activePrayers).toEqual([]);
+    expect(changedThisTick(engine)).toEqual([]);
   });
 });
 

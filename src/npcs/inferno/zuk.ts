@@ -120,7 +120,7 @@ export const zukDefinition = createNpcDefinition<ZukState, ZukConfig>({
       attacker,
       target: playerFormulaActor(player),
       targetEquipmentStats: player.equipmentStats,
-      targetPrayerMultipliers: lookupPrayerMultipliersFromState(player.activePrayer, player.offensivePrayer),
+      targetPrayerMultipliers: lookupPrayerMultipliersFromState(player.activePrayer, player.boostPrayers),
       random: context.random,
     });
     return {

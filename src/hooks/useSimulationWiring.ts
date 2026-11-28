@@ -42,6 +42,7 @@ import type { PlayerConfig } from '../types/player';
 import type { PracticeSessionState } from '../types/practiceSession';
 import {
   type Coordinate,
+  isPrayerType,
   type MechanicsConfig,
   PRAYER_CATEGORIES,
   type PrayerCategory,
@@ -140,8 +141,8 @@ interface UseSimulationWiringParams {
 /** `[hasPreview, prayer]` — mirrors `SimulationState.pendingProtectionPrayer`. */
 type PrayerSlotPreview = [boolean, PrayerType | null];
 
-/** `[hasPreview, prayers]` — mirrors `SimulationState.pendingIndependentPrayers`. */
-type IndependentPrayerPreview = [boolean, readonly PrayerType[]];
+/** `[hasPreview, prayers]` — mirrors `SimulationState.pendingBoostPrayers` and `pendingIndependentPrayers`. */
+type PrayerSetPreview = [boolean, readonly PrayerType[]];
 
 /** Prayers whose local bit the client has flipped, keyed by prayer. */
 export type PrayerBits = Readonly<Partial<Record<PrayerType, boolean>>>;
@@ -151,9 +152,10 @@ export type PrayerBits = Readonly<Partial<Record<PrayerType, boolean>>>;
  * consumer re-derives it from engine projections.
  */
 export interface PrayerPresentation {
-  /** Each slot's base prayer before local bits: committed state, or the Instant Prayer prediction. */
+  /** Each slot's base prayers before local bits: committed state, or the Instant Prayer prediction. */
   readonly protection: PrayerType | null;
-  readonly offensive: PrayerType | null;
+  /** The boost prayers lit; a conflict-free set. */
+  readonly boost: readonly PrayerType[];
   /** The independent prayers lit. A set, not a slot: these evict nothing and nothing evicts them. */
   readonly independent: readonly PrayerType[];
   /** Bits the client flipped that the server has not answered yet. Outranks the slot. */
@@ -177,8 +179,8 @@ export interface InputPresentation {
 }
 
 const NO_PRAYER_SLOT_PREVIEW: PrayerSlotPreview = [false, null];
-const NO_INDEPENDENT_PRAYERS: readonly PrayerType[] = [];
-const NO_INDEPENDENT_PREVIEW: IndependentPrayerPreview = [false, NO_INDEPENDENT_PRAYERS];
+const NO_PRAYERS: readonly PrayerType[] = [];
+const NO_PRAYER_SET_PREVIEW: PrayerSetPreview = [false, NO_PRAYERS];
 const NO_PRAYER_BITS: PrayerBits = {};
 const NO_SENT_STAMP = (): void => {};
 
@@ -309,13 +311,13 @@ function isSlotLit(prayer: PrayerType | null, bits: PrayerBits): boolean {
 
 function anyPrayerLit(
   protection: PrayerType | null,
-  offensive: PrayerType | null,
+  boost: readonly PrayerType[],
   independent: readonly PrayerType[],
   bits: PrayerBits,
 ): boolean {
   return (
     isSlotLit(protection, bits) ||
-    isSlotLit(offensive, bits) ||
+    boost.some((prayer) => isSlotLit(prayer, bits)) ||
     independent.some((prayer) => isSlotLit(prayer, bits)) ||
     Object.values(bits).some((lit) => lit === true)
   );
@@ -335,9 +337,9 @@ function resolvePredictedPrayer(
   return committed;
 }
 
-/** Same precedence as {@link resolvePredictedPrayer}, for the independent SET. */
-function resolvePredictedIndependent(
-  preview: IndependentPrayerPreview,
+/** Same precedence as {@link resolvePredictedPrayer}, for a prayer SET. */
+function resolvePredictedSet(
+  preview: PrayerSetPreview,
   pending: readonly [boolean, readonly PrayerType[]],
   committed: readonly PrayerType[],
 ): readonly PrayerType[] {
@@ -352,16 +354,16 @@ function resolvePredictedIndependent(
  */
 export function committedPrayerPresentation(state: {
   activePrayer: PrayerType | null;
-  offensivePrayer: PrayerType | null;
+  boostPrayers: readonly PrayerType[];
   independentPrayers?: readonly PrayerType[];
 }): PrayerPresentation {
-  const independent = state.independentPrayers ?? NO_INDEPENDENT_PRAYERS;
+  const independent = state.independentPrayers ?? NO_PRAYERS;
   return {
     protection: state.activePrayer,
-    offensive: state.offensivePrayer,
+    boost: state.boostPrayers,
     independent,
     visualOverrides: NO_PRAYER_BITS,
-    anyLit: anyPrayerLit(state.activePrayer, state.offensivePrayer, independent, NO_PRAYER_BITS),
+    anyLit: anyPrayerLit(state.activePrayer, state.boostPrayers, independent, NO_PRAYER_BITS),
   };
 }
 
@@ -394,7 +396,7 @@ export interface UseSimulationWiringReturn {
   handleMarkOfDarknessCast: () => void;
   handleDeathChargeCast: () => void;
   handleIndependentPrayerChange: (prayer: PrayerType) => void;
-  handleOffensivePrayerChange: (prayer: PrayerType | null) => void;
+  handleBoostPrayerChange: (prayer: PrayerType | null) => void;
   handlePrayerChange: (prayer: PrayerType | null) => void;
   handleQuickPrayerToggle: (selectedPrayers: string[]) => void;
   handleReset: () => void;
@@ -525,12 +527,11 @@ export function useSimulationWiring({
   const instantInventoryPreviewRef = useRef<InventoryEquipmentPreview | null>(null);
   const [instantInventoryResetToken, setInstantInventoryResetToken] = useState(0);
   const [protectionPrayerPreview, setProtectionPrayerPreview] = useState<PrayerSlotPreview>(NO_PRAYER_SLOT_PREVIEW);
-  const [offensivePrayerPreview, setOffensivePrayerPreview] = useState<PrayerSlotPreview>(NO_PRAYER_SLOT_PREVIEW);
-  const [independentPrayerPreview, setIndependentPrayerPreview] =
-    useState<IndependentPrayerPreview>(NO_INDEPENDENT_PREVIEW);
+  const [boostPrayerPreview, setBoostPrayerPreview] = useState<PrayerSetPreview>(NO_PRAYER_SET_PREVIEW);
+  const [independentPrayerPreview, setIndependentPrayerPreview] = useState<PrayerSetPreview>(NO_PRAYER_SET_PREVIEW);
   const [localPrayerBits, setLocalPrayerBits] = useState<PrayerBits>(NO_PRAYER_BITS);
   const protectionPrayerPreviewSeqRef = useRef(0);
-  const offensivePrayerPreviewSeqRef = useRef(0);
+  const boostPrayerPreviewSeqRef = useRef(0);
   const independentPrayerPreviewSeqRef = useRef(0);
   const localPrayerBitsRef = useRef<PrayerBits>(NO_PRAYER_BITS);
   // Monotonic across resets, so a stamp from before one can never match a write
@@ -552,15 +553,11 @@ export function useSimulationWiring({
           simulationState.activePrayer,
         )
       : simulationState.activePrayer;
-    const offensive = prayerPredictionEnabled
-      ? resolvePredictedPrayer(
-          offensivePrayerPreview,
-          simulationState.pendingOffensivePrayer,
-          simulationState.offensivePrayer,
-        )
-      : simulationState.offensivePrayer;
+    const boost = prayerPredictionEnabled
+      ? resolvePredictedSet(boostPrayerPreview, simulationState.pendingBoostPrayers, simulationState.boostPrayers)
+      : simulationState.boostPrayers;
     const independent = prayerPredictionEnabled
-      ? resolvePredictedIndependent(
+      ? resolvePredictedSet(
           independentPrayerPreview,
           simulationState.pendingIndependentPrayers,
           simulationState.independentPrayers,
@@ -571,21 +568,21 @@ export function useSimulationWiring({
     const bits = prayerPredictionEnabled ? NO_PRAYER_BITS : localPrayerBits;
     return {
       protection,
-      offensive,
+      boost,
       independent,
       visualOverrides: bits,
-      anyLit: anyPrayerLit(protection, offensive, independent, bits),
+      anyLit: anyPrayerLit(protection, boost, independent, bits),
     };
   }, [
     protectionPrayerPreview,
-    offensivePrayerPreview,
+    boostPrayerPreview,
     independentPrayerPreview,
     localPrayerBits,
     prayerPredictionEnabled,
     simulationState.pendingProtectionPrayer,
-    simulationState.pendingOffensivePrayer,
+    simulationState.pendingBoostPrayers,
     simulationState.activePrayer,
-    simulationState.offensivePrayer,
+    simulationState.boostPrayers,
     simulationState.pendingIndependentPrayers,
     simulationState.independentPrayers,
   ]);
@@ -706,13 +703,13 @@ export function useSimulationWiring({
 
   const resetInstantPrayerPreview = useCallback(() => {
     protectionPrayerPreviewSeqRef.current += 1;
-    offensivePrayerPreviewSeqRef.current += 1;
-    // Independents retire through the same buffered-input callback as the two exclusive slots, so a
-    // reset that discards that buffer must invalidate this preview too or Preserve stays lit.
+    // The sets retire through the same buffered-input callback as the protection slot, so a reset
+    // that discards that buffer must invalidate their previews too or Preserve stays lit.
+    boostPrayerPreviewSeqRef.current += 1;
     independentPrayerPreviewSeqRef.current += 1;
     setProtectionPrayerPreview(NO_PRAYER_SLOT_PREVIEW);
-    setOffensivePrayerPreview(NO_PRAYER_SLOT_PREVIEW);
-    setIndependentPrayerPreview(NO_INDEPENDENT_PREVIEW);
+    setBoostPrayerPreview(NO_PRAYER_SET_PREVIEW);
+    setIndependentPrayerPreview(NO_PRAYER_SET_PREVIEW);
   }, []);
 
   const clearLocalPrayerBits = useCallback(() => {
@@ -764,16 +761,20 @@ export function useSimulationWiring({
     [prayerPredictionEnabled],
   );
 
-  /** {@link previewPrayerSlot} for the independent SET, which is predicted whole rather than per slot. */
-  const previewIndependentPrayers = useCallback(
-    (prayers: readonly PrayerType[]): (() => void) => {
+  /** {@link previewPrayerSlot} for a prayer SET, which is predicted whole rather than per prayer. */
+  const previewPrayerSet = useCallback(
+    (
+      setPreview: Dispatch<SetStateAction<PrayerSetPreview>>,
+      seqRef: MutableRefObject<number>,
+      prayers: readonly PrayerType[],
+    ): (() => void) => {
       if (!prayerPredictionEnabled) return () => {};
-      const seq = independentPrayerPreviewSeqRef.current + 1;
-      independentPrayerPreviewSeqRef.current = seq;
-      setIndependentPrayerPreview([true, prayers]);
+      const seq = seqRef.current + 1;
+      seqRef.current = seq;
+      setPreview([true, prayers]);
       return () => {
-        if (independentPrayerPreviewSeqRef.current !== seq) return;
-        setIndependentPrayerPreview(NO_INDEPENDENT_PREVIEW);
+        if (seqRef.current !== seq) return;
+        setPreview(NO_PRAYER_SET_PREVIEW);
       };
     },
     [prayerPredictionEnabled],
@@ -786,8 +787,8 @@ export function useSimulationWiring({
     switch (PRAYER_CATEGORIES[prayer]) {
       case 'protection':
         return engine.activePrayer === prayer;
-      case 'offensive':
-        return engine.offensivePrayer === prayer;
+      case 'boost':
+        return engine.boostPrayers.includes(prayer);
       default:
         return engine.independentPrayers.includes(prayer);
     }
@@ -2018,20 +2019,16 @@ export function useSimulationWiring({
     });
   };
 
-  const handleOffensivePrayerChange = (prayer: PrayerType | null) => {
+  const handleBoostPrayerChange = (prayer: PrayerType | null) => {
     if (replay.replayMode) return;
-    const action = { type: 'offensive', prayer } as const;
+    const action = { type: 'boost', prayer } as const;
     const { predicted, retire: retirePrediction } = predictPrayerAction(action);
-    recordPrayerFlickInput(predicted.offensive === null ? 'off' : 'on');
-    const markBitsSent = flipPrayerBits(clickedPrayerBits('offensive', prayer));
-    const retirePreview = previewPrayerSlot(
-      setOffensivePrayerPreview,
-      offensivePrayerPreviewSeqRef,
-      predicted.offensive,
-    );
+    recordPrayerFlickInput(prayer !== null && predicted.boost.includes(prayer) ? 'on' : 'off');
+    const markBitsSent = flipPrayerBits(clickedPrayerBits('boost', prayer));
+    const retirePreview = previewPrayerSet(setBoostPrayerPreview, boostPrayerPreviewSeqRef, predicted.boost);
     dispatchInput(() => {
       replay.recordAction({ type: 'offensivePrayer', prayer });
-      engineRef.current.queueOffensivePrayer(prayer);
+      engineRef.current.queueBoostPrayer(prayer);
       retirePrediction();
       markBitsSent();
       retirePreview();
@@ -2047,9 +2044,7 @@ export function useSimulationWiring({
    */
   const handleQuickPrayerToggle = (selectedPrayers: string[]) => {
     if (replay.replayMode) return;
-    const selections = selectedPrayers.filter(
-      (prayer): prayer is PrayerType => PRAYER_CATEGORIES[prayer] !== undefined,
-    );
+    const selections = selectedPrayers.filter(isPrayerType);
 
     // Instant Prayer prediction only, resolved off the engine (never off React
     // state, which can still be a render behind) with the same pure resolver the
@@ -2060,31 +2055,31 @@ export function useSimulationWiring({
     // with the same pure resolver it commits with, so two orb clicks inside one
     // tick read as on then off rather than two ons.
     recordPrayerFlickInput(
-      predicted.protection === null && predicted.offensive === null && predicted.independent.length === 0
+      predicted.protection === null && predicted.boost.length === 0 && predicted.independent.length === 0
         ? 'off'
         : 'on',
     );
     // The orb writes no book bits: it flips the quick-prayer flag and redraws the orb
     // alone, so the prayers it assigns reach the book from the server and the book
-    // holds committed state until the tick. Instant Prayer predicts both slots below.
+    // holds committed state until the tick. Instant Prayer predicts the slot and both sets below.
     const retireProtection = previewPrayerSlot(
       setProtectionPrayerPreview,
       protectionPrayerPreviewSeqRef,
       predicted.protection,
     );
-    const retireOffensive = previewPrayerSlot(
-      setOffensivePrayerPreview,
-      offensivePrayerPreviewSeqRef,
-      predicted.offensive,
+    const retireBoost = previewPrayerSet(setBoostPrayerPreview, boostPrayerPreviewSeqRef, predicted.boost);
+    const retireIndependent = previewPrayerSet(
+      setIndependentPrayerPreview,
+      independentPrayerPreviewSeqRef,
+      predicted.independent,
     );
-    const retireIndependent = previewIndependentPrayers(predicted.independent);
 
     dispatchInput(() => {
       replay.recordAction({ type: 'quickPrayerToggle', selections });
       engineRef.current.queueQuickPrayerToggle(selections);
       retirePrediction();
       retireProtection();
-      retireOffensive();
+      retireBoost();
       retireIndependent();
       setSimulationState(engineRef.current.getState());
     });
@@ -2096,7 +2091,11 @@ export function useSimulationWiring({
     const { predicted, retire: retirePrediction } = predictPrayerAction(action);
     recordPrayerFlickInput(predicted.independent.includes(prayer) ? 'on' : 'off');
     const markBitsSent = flipPrayerBits(clickedPrayerBits('independent', prayer));
-    const retirePreview = previewIndependentPrayers(predicted.independent);
+    const retirePreview = previewPrayerSet(
+      setIndependentPrayerPreview,
+      independentPrayerPreviewSeqRef,
+      predicted.independent,
+    );
     dispatchInput(() => {
       replay.recordAction({ type: 'independentPrayer', prayer });
       engineRef.current.queueIndependentPrayer(prayer);
@@ -2451,7 +2450,7 @@ export function useSimulationWiring({
     handleMarkOfDarknessCast,
     handleDeathChargeCast,
     handleIndependentPrayerChange,
-    handleOffensivePrayerChange,
+    handleBoostPrayerChange,
     handlePrayerChange,
     handleQuickPrayerToggle,
     handleReset,
