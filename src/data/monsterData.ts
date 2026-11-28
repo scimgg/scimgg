@@ -1,6 +1,7 @@
 import type { NpcBurnImmunity, NpcFormulaStats } from '../core/actors/types';
 import type { MonsterStatOverride } from '../types/monsterStatOverride';
 import monstersJson from './osrs/monsters.json';
+import type { SpellElement } from './spellCatalog';
 
 interface MonsterEntry {
   readonly ids: readonly number[];
@@ -39,6 +40,7 @@ interface MonsterEntry {
     freeze: number;
   };
   readonly attributes: readonly string[];
+  readonly elementalWeakness?: { readonly element: SpellElement; readonly percent: number };
 }
 
 const monsters = monstersJson as MonsterEntry[];
@@ -69,6 +71,7 @@ export function getMonsterFormulaStats(npcId: number, version?: string): NpcForm
     freezeResistance: m.immunities.freeze,
     poisonResistance: m.immunities.poison,
     attributes: m.attributes,
+    ...(m.elementalWeakness === undefined ? {} : { elementalWeakness: m.elementalWeakness }),
     levels: {
       attack: m.levels.attack,
       strength: m.levels.strength,

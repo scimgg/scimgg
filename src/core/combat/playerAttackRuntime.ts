@@ -70,8 +70,12 @@ export function planPlayerAttackFromRuntime(input: PlayerAttackRuntimeInput): Pl
   const equipmentStats = resolveEquipmentStats(input);
   if (equipmentStats === null) return null;
 
-  const magicBaseMaxHit = input.magicBaseMaxHitOverride ?? resolveMagicBaseMaxHit(input);
-  if (magicBaseMaxHit === null) return null;
+  const magicBase = input.magicBaseMaxHitOverride === undefined ? resolveMagicBase(input) : undefined;
+  if (magicBase === null) return null;
+  const magicBaseMaxHit = input.magicBaseMaxHitOverride ?? magicBase?.maxHit;
+  const weakness = input.target.formulaStats?.elementalWeakness;
+  const elementalWeaknessPercent =
+    weakness !== undefined && magicBase?.element === weakness.element ? weakness.percent : 0;
 
   const attacker: PlayerFormulaActor = {
     kind: 'player',
@@ -104,6 +108,7 @@ export function planPlayerAttackFromRuntime(input: PlayerAttackRuntimeInput): Pl
     ...(input.standardAccuracyMode === undefined ? {} : { standardAccuracyMode: input.standardAccuracyMode }),
     ...(input.defenceStyle === undefined ? {} : { defenceStyle: input.defenceStyle }),
     rangedDefenceType: getRangedDefenceType(input.player.equipment.weapon),
+    ...(elementalWeaknessPercent === 0 ? {} : { elementalWeaknessPercent }),
   });
   if (
     plan.kind === 'ready' &&
@@ -206,7 +211,10 @@ function addAmmoStats(base: Readonly<EquipmentStats>, ammo: Readonly<EquipmentSt
   };
 }
 
-function resolveMagicBaseMaxHit(input: PlayerAttackRuntimeInput): number | null | undefined {
+/** A magic attack's base damage, and the element of the spell that deals it (none for a powered staff). */
+type MagicBase = { readonly maxHit: number; readonly element: string | null };
+
+function resolveMagicBase(input: PlayerAttackRuntimeInput): MagicBase | null | undefined {
   if (input.formulaStyle !== 'magic') return undefined;
 
   switch (input.resources.kind) {
@@ -214,10 +222,15 @@ function resolveMagicBaseMaxHit(input: PlayerAttackRuntimeInput): number | null 
       const spellId = input.resources.spellId;
       const spell = spells.find((candidate) => candidate.name === spellId);
       if (spell === undefined) return null;
-      return spell.name === 'Magic Dart' ? Math.floor(input.player.stats.magic.current / 10) + 10 : spell.maxHit;
+      return {
+        maxHit: spell.name === 'Magic Dart' ? Math.floor(input.player.stats.magic.current / 10) + 10 : spell.maxHit,
+        element: spell.element,
+      };
     }
-    case 'none':
-      return getPoweredStaffBaseMaxHit(input.player.equipment.weapon, input.player.stats.magic.current) ?? null;
+    case 'none': {
+      const maxHit = getPoweredStaffBaseMaxHit(input.player.equipment.weapon, input.player.stats.magic.current);
+      return maxHit === undefined ? null : { maxHit, element: null };
+    }
     case 'ammo':
     case 'unavailable':
       return null;

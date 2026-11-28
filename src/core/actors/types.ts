@@ -1,4 +1,5 @@
 import type { ItemActionOption } from '../../data/itemEffects';
+import type { SpellElement } from '../../data/spellCatalog';
 import type { PlayerEquipment } from '../../rs/model/PlayerModelLoader';
 import type { DamageType, MeleeReach } from '../combat/attackTypes';
 
@@ -91,6 +92,8 @@ export interface NpcFormulaStats {
   alwaysAccuratePlayerHit?: boolean;
   /** Multiplier on the ACCURACY AND DAMAGE INCREASE a demonbane weapon or spell grants, not on the hit itself. */
   demonbaneVulnerability?: number;
+  /** The wiki's `elemental_weakness` fields: a spell of this element gains `percent` accuracy and base damage. */
+  elementalWeakness?: { readonly element: SpellElement; readonly percent: number };
   levels: {
     attack: number;
     strength: number;

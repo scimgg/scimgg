@@ -140,9 +140,10 @@
 
 .detailed-dps__rows > div {
   display: flex;
+  flex-wrap: wrap;
   align-items: baseline;
   justify-content: space-between;
-  gap: 12px;
+  gap: 2px 12px;
   min-width: 0;
 }
 
@@ -160,6 +161,22 @@
 .detailed-dps__sep {
   color: var(--detailed-dps-dim);
   margin: 0 1px;
+}
+
+/* A weakness the current attack does not apply: stepped down to the label
+   color rather than --detailed-dps-dim, which is too faint for words. */
+.detailed-dps__inactive {
+  color: var(--detailed-dps-label);
+}
+
+/* A row's own second line, in the formula line's face: the row wraps, and
+   this takes the full width under its label and value. */
+.detailed-dps__rows dd.detailed-dps__note {
+  flex-basis: 100%;
+  color: var(--detailed-dps-label);
+  font-family: "RuneScape Small", sans-serif;
+  line-height: 14px;
+  text-align: left;
 }
 
 .detailed-dps__breakdown h3 {

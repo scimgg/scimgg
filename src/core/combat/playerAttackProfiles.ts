@@ -161,6 +161,8 @@ export type PlayerAttackRequest = {
   readonly defenceStyle?: CombatFormulaStyle;
   /** The attacking weapon's ranged type; only consulted when the defence roll is ranged. */
   readonly rangedDefenceType: RangedDefenceType;
+  /** The target's elemental weakness percent when the cast spell matches its element; absent otherwise. */
+  readonly elementalWeaknessPercent?: number;
 };
 
 export type SupportedPlayerAttackProfile = Exclude<PlayerAttackProfile, { readonly kind: 'unsupported' }>;

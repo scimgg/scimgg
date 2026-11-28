@@ -1,6 +1,7 @@
 import type React from 'react';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { SimulationEngine } from '../core/SimulationEngine';
+import type { SpellElement } from '../data/spellCatalog';
 import type { UIPosition } from '../hooks/usePersistedSettings';
 import type { NpcSnapshot, SimulationState } from '../types/simulation';
 import { BOSS_HEALTH_BAR_WIDTH } from './BossHealthBarOverlay';
@@ -64,7 +65,22 @@ const STYLE_LABELS = {
   magic: 'Magic',
 } as const;
 
-type Row = { readonly label: string; readonly value: React.ReactNode };
+const ELEMENT_LABELS: Record<SpellElement, string> = {
+  air: 'Air',
+  water: 'Water',
+  earth: 'Earth',
+  fire: 'Fire',
+};
+
+const ELEMENT_SPELLS: Record<SpellElement, string> = {
+  air: 'an air spell',
+  water: 'a water spell',
+  earth: 'an earth spell',
+  fire: 'a fire spell',
+};
+
+/** `note` is a subordinate line under the row, for a value that needs its state spelled out. */
+type Row = { readonly label: string; readonly value: React.ReactNode; readonly note?: string };
 
 function formatDps(value: number): string {
   return value.toFixed(3);
@@ -156,6 +172,18 @@ export const DetailedDpsOverlay: React.FC<DetailedDpsOverlayProps> = ({
       { label: 'Attack roll', value: formatInteger(calculation.baseAttackRoll) },
       { label: 'Defence roll', value: formatInteger(calculation.baseDefenceRoll) },
     );
+    const weakness = calculation.elementalWeakness;
+    if (weakness !== undefined) {
+      rows.push({
+        label: 'Weakness',
+        value: (
+          <span className={weakness.applied ? undefined : 'detailed-dps__inactive'}>
+            {ELEMENT_LABELS[weakness.element]} {weakness.percent}%
+          </span>
+        ),
+        note: weakness.applied ? 'Applied to this spell' : `Needs ${ELEMENT_SPELLS[weakness.element]}`,
+      });
+    }
     if (calculation.outgoingDamageMultiplier !== 1 || calculation.specialAttackDamageMultiplier !== 1) {
       rows.push({
         label: 'Multipliers',
@@ -192,6 +220,7 @@ export const DetailedDpsOverlay: React.FC<DetailedDpsOverlayProps> = ({
               <div key={row.label}>
                 <dt>{row.label}</dt>
                 <dd>{row.value}</dd>
+                {row.note !== undefined && <dd className="detailed-dps__note">{row.note}</dd>}
               </div>
             ))}
           </dl>

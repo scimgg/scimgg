@@ -84,4 +84,14 @@ describe('monsterData', () => {
       rangedHeavy: 449,
     });
   });
+
+  it('carries the elemental weakness through an encounter restat, and omits it for a monster without one', () => {
+    const restatted = applyMonsterStatOverrideToFormulaStats(getMonsterFormulaStats(14176, 'Phase 3'), {
+      skills: { def: 247, magic: 1 },
+      defensive: { magic: 0 },
+    });
+
+    expect(restatted?.elementalWeakness).toEqual({ element: 'water', percent: 50 });
+    expect(getMonsterFormulaStats(12821)).not.toHaveProperty('elementalWeakness');
+  });
 });
