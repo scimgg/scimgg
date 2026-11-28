@@ -29,7 +29,7 @@
   },
   "dependencies": {
     "@foxglove/wasm-bz2": "0.3.0",
-    "driver.js": "1.4.0",
+    "driver.js": "1.14.0",
     "gl-matrix": "^3.4.4",
     "jszip": "^3.10.2",
     "pako": "^2.1.0",
@@ -42,11 +42,11 @@
   },
   "devDependencies": {
     "@babel/parser": "7.29.8",
-    "@biomejs/biome": "2.4.8",
+    "@biomejs/biome": "2.6.8",
     "@google/design.md": "0.4.0",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.3",
-    "@testing-library/user-event": "^14.6.12",
+    "@testing-library/user-event": "^14.6.13",
     "@types/node": "^25.2.0",
     "@types/pako": "^2.0.4",
     "@types/react": "^19.3.0",
