@@ -308,6 +308,8 @@ export interface SimulationState {
    * axe has no such field and recordings without it still compare equal.
    */
   soulreaperStacks?: number;
+  /** Remaining ticks on an active Overload (+) timer; absent when inactive. */
+  overloadTicksRemaining?: number;
   combatTimers: CombatTimers;
   inventory: Inventory;
   groundItems: readonly GroundItem[];

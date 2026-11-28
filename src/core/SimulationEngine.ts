@@ -3249,7 +3249,7 @@ export class SimulationEngine {
     // appear. applyEffects only mutates HP silently, so emit the visual event
     // here. Damage is clamped to the 1-HP floor handleSelfDamage enforces.
     const hasSelfDamage = filteredEffects.some(
-      (effect) => effect.op === 'self_damage' || effect.op === 'self_damage_formula',
+      (effect) => effect.op === 'self_damage' || effect.op === 'self_damage_formula' || effect.op === 'overload',
     );
     if (effectApplied && hasSelfDamage) {
       const selfDamageDealt = Math.max(0, state.playerHP - newState.playerHP);
@@ -3436,7 +3436,60 @@ export class SimulationEngine {
           const cappedHeal = Math.min(player.vitals.maxHp, player.vitals.hp + effect.data.amount);
           player.vitals.hp = Math.max(player.vitals.hp, cappedHeal);
           this.syncVitalsToStats();
+        } else if (effect.type === 'overload' && player.alive) {
+          const cappedHeal = Math.min(player.vitals.maxHp, player.vitals.hp + effect.data.expiryHeal);
+          player.vitals.hp = Math.max(player.vitals.hp, cappedHeal);
+          for (const skill of COMBAT_SKILLS) {
+            if (player.stats[skill].current > player.stats[skill].max) {
+              player.stats[skill] = { ...player.stats[skill], current: player.stats[skill].max };
+            }
+          }
+          this.syncVitalsToStats();
+          this.tickEvents.emit({
+            type: 'game_message',
+            kind: 'game',
+            segments: [{ text: 'The effects of overload have worn off, and you feel normal again.' }],
+          });
         }
+        continue;
+      }
+
+      if (effect.type === 'overload') {
+        let nextData = effect.data;
+        if (player.alive && nextData.selfDamageHitsRemaining > 0 && currentTick >= nextData.nextSelfDamageTick) {
+          const dealt = Math.min(nextData.selfDamagePerHit, Math.max(0, player.vitals.hp - 1));
+          if (dealt > 0) {
+            endPowerOfDeathOnDamage(player, dealt);
+            player.vitals.hp -= dealt;
+            this.syncVitalsToStats();
+          }
+          this.tickEvents.emit({
+            type: 'hitsplat_spawned',
+            targetId: PLAYER_ACTOR_ID,
+            amount: dealt,
+            hitsplatType: dealt > 0 ? 'damage' : 'block',
+          });
+          this.tryRedemption(currentTick);
+          nextData = {
+            ...nextData,
+            selfDamageHitsRemaining: nextData.selfDamageHitsRemaining - 1,
+            nextSelfDamageTick: nextData.nextSelfDamageTick + nextData.selfDamageIntervalTicks,
+          };
+        }
+        if (
+          player.alive &&
+          nextData.pulseIntervalTicks > 0 &&
+          (effect.tickDuration - nextTicksRemaining) % nextData.pulseIntervalTicks === 0
+        ) {
+          for (const skill of COMBAT_SKILLS) {
+            const level = player.stats[skill];
+            const targetLevel = level.max + Math.floor(level.max * nextData.percent) + nextData.flat;
+            if (level.current < targetLevel) {
+              player.stats[skill] = { ...level, current: targetLevel };
+            }
+          }
+        }
+        nextEffects.push({ ...effect, ticksRemaining: nextTicksRemaining, data: nextData });
         continue;
       }
 
@@ -3876,6 +3929,7 @@ export class SimulationEngine {
 
       const newState = applyEffects(prepotEffects, state, {
         ringOfEnduranceEquipped: player.equipment.ring === RING_OF_ENDURANCE_ITEM_ID,
+        isPrepot: true,
       });
 
       player.vitals.hp = newState.playerHP;

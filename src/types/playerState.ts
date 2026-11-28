@@ -137,14 +137,28 @@ export interface DelayedHealEffectTimer extends EffectTimerBase {
   };
 }
 
+export interface OverloadEffectTimer extends EffectTimerBase {
+  type: 'overload';
+  data: {
+    percent: number;
+    flat: number;
+    pulseIntervalTicks: number;
+    selfDamageHitsRemaining: number;
+    selfDamagePerHit: number;
+    selfDamageIntervalTicks: number;
+    nextSelfDamageTick: number;
+    expiryHeal: number;
+  };
+}
+
 export interface StatusEffectTimer extends EffectTimerBase {
-  type: Exclude<EffectType, 'delayed_heal'>;
+  type: Exclude<EffectType, 'delayed_heal' | 'overload'>;
   /** Stamina extended by the ring of endurance; cleared when ring removal halves the remaining time. */
   ringExtended?: boolean;
   data?: undefined;
 }
 
-export type EffectTimer = DelayedHealEffectTimer | StatusEffectTimer;
+export type EffectTimer = DelayedHealEffectTimer | OverloadEffectTimer | StatusEffectTimer;
 
 /** The skills whose boosts naturally decay, and which decay locks cover. */
 export const COMBAT_SKILLS = ['attack', 'strength', 'defence', 'ranged', 'magic'] as const;
@@ -254,6 +268,13 @@ export const STAT_DECAY_PRESERVE_EXTENSION_TICKS = STAT_DECAY_CYCLE_PRESERVE_TIC
  */
 export const PRESERVE_QUALIFY_TICKS = 25;
 export const DIVINE_POTION_DURATION_TICKS = 500; // 5 minutes
+/** Overload (+): 5-minute duration, re-boosts every 15s (25 ticks), 5×10 HP hits every 2 ticks, heals 50 HP on expiry (/w/Overload_(+)). */
+export const OVERLOAD_DURATION_TICKS = 500;
+export const OVERLOAD_REBOOST_INTERVAL_TICKS = 25;
+export const OVERLOAD_SELF_DAMAGE_HITS = 5;
+export const OVERLOAD_SELF_DAMAGE_PER_HIT = 10;
+export const OVERLOAD_SELF_DAMAGE_INTERVAL_TICKS = 2;
+export const OVERLOAD_EXPIRY_HEAL = 50;
 export const PURGING_STAFF_ITEM_ID = 29594;
 export const LIGHTBEARER_ITEM_ID = 25975;
 // https://oldschool.runescape.wiki/w/Ring_of_endurance: charges aren't modeled;

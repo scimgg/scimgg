@@ -374,6 +374,10 @@ export function toSimulationState(world: WorldState, engineSnapshot: EngineSnaps
     stats: player.stats,
     specialAttack: player.specialAttack,
     ...(player.soulreaper === undefined ? {} : { soulreaperStacks: player.soulreaper.stacks }),
+    ...(() => {
+      const overload = player.activeEffects?.find((effect) => effect.type === 'overload');
+      return overload && overload.ticksRemaining > 0 ? { overloadTicksRemaining: overload.ticksRemaining } : {};
+    })(),
     combatTimers: player.combatTimers,
     inventory: player.inventory,
     groundItems: world.groundItems.map((item) => ({ ...item, position: [...item.position] as Coordinate })),

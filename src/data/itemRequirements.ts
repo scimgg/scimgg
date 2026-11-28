@@ -33,6 +33,7 @@ export const ITEM_WIELD_REQUIREMENTS: Record<number, PresetRequirements> = {
 
   27275: { magic: 85 }, // Tumeken's shadow — /w/Tumeken's_shadow
   31113: { magic: 83 }, // Eye of ayak — /w/Eye_of_ayak
+  22323: { magic: 75 }, // Sanguinesti staff — /w/Sanguinesti_staff
   29594: { attack: 50, magic: 77 }, // Purging staff — /w/Purging_staff (demonbane battlestaff)
   27679: { magic: 70 }, // Accursed sceptre (a) — /w/Accursed_sceptre_(a)
   6889: { magic: 60 }, // Mage's book — /w/Mage's_book

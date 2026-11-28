@@ -13,4 +13,6 @@ export const INFOBOX_ITEM_IDS = {
   antipoison: 2446,
   /** Surge potion(4), the full dose, for the surge potion cooldown. */
   surgePotion: 30875,
+  /** Overload (+)(4) — matches RuneLite's GameTimer.OVERLOAD icon in CoX. */
+  overloadPlus: 20996,
 } as const;

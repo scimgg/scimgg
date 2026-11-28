@@ -18,6 +18,7 @@ import type {
   TimedEffectType,
 } from '../types/playerState';
 import {
+  COMBAT_SKILLS,
   clonePlayerStats,
   POISON_TICK_INTERVAL,
   RESTORABLE_STATS,
@@ -129,7 +130,9 @@ export interface ItemActionState {
 export function isItemActionRefused(effects: readonly EffectOp[], state: ItemActionState): boolean {
   return effects.some(
     (effect) =>
-      effect.op === 'surge' && (state.combatTimers.surgePotionCooldownTicks > 0 || state.specialAttack.energy >= 100),
+      (effect.op === 'surge' &&
+        (state.combatTimers.surgePotionCooldownTicks > 0 || state.specialAttack.energy >= 100)) ||
+      (effect.op === 'overload' && state.activeEffects.some((active) => active.type === 'overload')),
   );
 }
 
@@ -139,6 +142,8 @@ export type ItemActionModifiers = {
   readonly blockOverheal?: boolean;
   readonly enhancedPrayerRestoration?: boolean;
   readonly ringOfEnduranceEquipped?: boolean;
+  /** True when applied via tick-0 auto-prepot (suppresses Overload self-damage pulses). */
+  readonly isPrepot?: boolean;
 };
 
 const VENOM_THRESHOLD = 1_000_000;
@@ -209,7 +214,7 @@ function handleDelayedHeal(
   group?: string,
 ): ItemActionState {
   const filteredEffects = group
-    ? state.activeEffects.filter((effect) => effect.data?.group !== group)
+    ? state.activeEffects.filter((effect) => effect.type !== 'delayed_heal' || effect.data.group !== group)
     : state.activeEffects;
 
   const newEffect: EffectTimer = {
@@ -461,6 +466,42 @@ export function applyEffectOp(op: EffectOp, state: ItemActionState, modifiers?: 
     case 'apply_timed_effect': {
       const ringExtended = op.effectType === 'stamina' && modifiers?.ringOfEnduranceEquipped === true;
       return handleApplyTimedEffect(state, op.effectType, op.durationTicks * (ringExtended ? 2 : 1), ringExtended);
+    }
+
+    case 'overload': {
+      let stats = state.stats;
+      for (const skill of COMBAT_SKILLS) {
+        const level = stats[skill];
+        stats = withStatCurrent(
+          stats,
+          skill,
+          boostStat(level.max, level.current, scaledStatAmount(level.max, op.percent, op.flat)),
+        );
+      }
+      const isPrepot = modifiers?.isPrepot === true;
+      const afterDamage = isPrepot ? { ...state, stats } : handleSelfDamage({ ...state, stats }, op.selfDamagePerHit);
+      const remainingHits = isPrepot ? 0 : Math.max(0, op.selfDamageHits - 1);
+      const overloadTimer: EffectTimer = {
+        id: `overload_${state.currentTick}`,
+        type: 'overload',
+        ticksRemaining: op.durationTicks,
+        tickDuration: op.durationTicks,
+        startedTick: state.currentTick,
+        data: {
+          percent: op.percent,
+          flat: op.flat,
+          pulseIntervalTicks: op.pulseIntervalTicks,
+          selfDamageHitsRemaining: remainingHits,
+          selfDamagePerHit: op.selfDamagePerHit,
+          selfDamageIntervalTicks: op.selfDamageIntervalTicks,
+          nextSelfDamageTick: state.currentTick + op.selfDamageIntervalTicks,
+          expiryHeal: op.expiryHeal,
+        },
+      };
+      return {
+        ...afterDamage,
+        activeEffects: [...afterDamage.activeEffects.filter((effect) => effect.type !== 'overload'), overloadTimer],
+      };
     }
 
     case 'self_damage':

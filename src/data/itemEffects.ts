@@ -1,5 +1,13 @@
 import type { CombatSkill, PlayerStats, TimedEffectType } from '../types/playerState';
-import { DIVINE_POTION_DURATION_TICKS } from '../types/playerState';
+import {
+  DIVINE_POTION_DURATION_TICKS,
+  OVERLOAD_DURATION_TICKS,
+  OVERLOAD_EXPIRY_HEAL,
+  OVERLOAD_REBOOST_INTERVAL_TICKS,
+  OVERLOAD_SELF_DAMAGE_HITS,
+  OVERLOAD_SELF_DAMAGE_INTERVAL_TICKS,
+  OVERLOAD_SELF_DAMAGE_PER_HIT,
+} from '../types/playerState';
 import type { PrayerRestoreFormula } from './prayerRestoration';
 
 export { EMPTY_VIAL_ID } from './itemIds';
@@ -61,6 +69,17 @@ export type EffectOp =
   /** Suspends natural decay of these skills' boosts; see `expireStatDecayLocks`. */
   | { readonly op: 'divine_decay_lock'; readonly stats: readonly CombatSkill[]; readonly durationTicks: number }
   | { op: 'apply_timed_effect'; effectType: TimedEffectType; durationTicks: number }
+  | {
+      readonly op: 'overload';
+      readonly percent: number;
+      readonly flat: number;
+      readonly durationTicks: number;
+      readonly pulseIntervalTicks: number;
+      readonly selfDamageHits: number;
+      readonly selfDamagePerHit: number;
+      readonly selfDamageIntervalTicks: number;
+      readonly expiryHeal: number;
+    }
   | { op: 'self_damage'; amount: number }
   | { readonly op: 'self_damage_formula'; readonly percent: number; readonly flat: number };
 
@@ -275,6 +294,27 @@ export const ITEM_ACTIONS: Readonly<Record<number, ItemActionDef>> = {
     11,
   ),
 
+  // Overload (+): Chambers of Xeric potion (/w/Overload_(+)). Boosts Attack, Strength, Defence,
+  // Ranged and Magic by floor(base * 0.16) + 6 every 15s (25 ticks) for 5 minutes (500 ticks),
+  // deals 5×10 HP self-damage spaced 2 ticks apart (requires >= 51 HP), and heals 50 HP on expiry.
+  // Cache IDs descend from (4) to (1): 20996, 20995, 20994, 20993.
+  ...withMinHpToUse(
+    doseChain([20996, 20995, 20994, 20993], 229, 'potion', 3, () => [
+      {
+        op: 'overload',
+        percent: 0.16,
+        flat: 6,
+        durationTicks: OVERLOAD_DURATION_TICKS,
+        pulseIntervalTicks: OVERLOAD_REBOOST_INTERVAL_TICKS,
+        selfDamageHits: OVERLOAD_SELF_DAMAGE_HITS,
+        selfDamagePerHit: OVERLOAD_SELF_DAMAGE_PER_HIT,
+        selfDamageIntervalTicks: OVERLOAD_SELF_DAMAGE_INTERVAL_TICKS,
+        expiryHeal: OVERLOAD_EXPIRY_HEAL,
+      },
+    ]),
+    51,
+  ),
+
   // https://oldschool.runescape.wiki/w/Forgotten_brew?oldid=15191164: Magic and Prayer from BASE
   // levels; Attack, Strength and Defence drained from each one's CURRENT level.
   ...doseChainByStep(27629, 3, 229, 'potion', 3, () => [
@@ -386,6 +426,7 @@ const PREPOT_EFFECT_OPS: ReadonlySet<EffectOp['op']> = new Set([
   'divine_decay_lock',
   'saturated_heart',
   'apply_timed_effect',
+  'overload',
   'cure_poison',
 ]);
 
